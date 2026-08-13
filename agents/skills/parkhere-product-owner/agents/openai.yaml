@@ -1,0 +1,4 @@
+interface:
+  display_name: "ParkHere Product Owner"
+  short_description: "Define escopo e regras do ParkHere"
+  default_prompt: "Use -product-owner to transformar uma ideia do ParkHere em requisitos, roadmap e critérios de aceite."

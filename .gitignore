@@ -1,0 +1,51 @@
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python/FastAPI
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+htmlcov/
+.coverage
+
+# Alembic/runtime
+*.log
+
+# Flutter/Dart
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/build/
+**/coverage/
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+**/android/**/generated/
+
+# iOS/macOS generated
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/Generated.xcconfig
+**/Runner.xcworkspace/xcuserdata/
+**/Runner.xcodeproj/xcuserdata/
+
+# Docker/local data
+mysql_data/
+*.sqlite
+*.db

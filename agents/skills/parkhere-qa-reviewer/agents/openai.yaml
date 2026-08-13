@@ -1,0 +1,4 @@
+interface:
+  display_name: "ParkHere QA Reviewer"
+  short_description: "Revisa qualidade, risco e testes"
+  default_prompt: "Use -qa-reviewer to revisar mudanças do ParkHere e propor validações objetivas."

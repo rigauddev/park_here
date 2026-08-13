@@ -1,0 +1,4 @@
+interface:
+  display_name: "ParkHere Backend API"
+  short_description: "Evolui a API FastAPI multi-tenant"
+  default_prompt: "Use -backend-api to implementar ou revisar endpoints FastAPI do ParkHere."

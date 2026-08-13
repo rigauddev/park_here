@@ -1,0 +1,60 @@
+services:
+  api:
+    build:
+      context: ./parkhere_backend
+    container_name: parkhere_api
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - ./parkhere_backend/.env
+    volumes:
+      - ./parkhere_backend:/app
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+
+  mysql:
+    image: mysql:8.0
+    platform: linux/amd64
+    container_name: parkhere_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: parkfinder
+    command: ["mysqld", "--host-cache-size=0"]
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    platform: linux/amd64
+    build:
+      context: ./parkhere_user_app
+    container_name: parkhere_web
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+    env_file:
+      - ./parkhere_user_app/.env
+    volumes:
+      - ./parkhere_user_app:/app
+    command: >
+      sh -c "flutter pub get &&
+      flutter run -d web-server
+      --web-hostname=0.0.0.0
+      --web-port=8080"
+
+volumes:
+  mysql_data:

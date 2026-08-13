@@ -1,0 +1,4 @@
+interface:
+  display_name: "ParkHere Flutter App"
+  short_description: "Constrói o app Flutter do cliente"
+  default_prompt: "Use -flutter-app to desenvolver telas, providers e fluxos Flutter do ParkHere."

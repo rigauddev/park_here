@@ -1,0 +1,22 @@
+services:
+  parkfinder_user_app:
+    container_name: parkfinder_user_app
+
+    platform: linux/amd64
+    build:
+      context: .
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - .:/app
+
+    command: >
+      sh -c "flutter pub get &&
+      flutter run -d web-server
+      --web-hostname=0.0.0.0
+      --web-port=8080"
+    
+    env_file:
+      - .env
