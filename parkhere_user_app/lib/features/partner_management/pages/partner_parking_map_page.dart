@@ -15,7 +15,6 @@ class PartnerParkingMapPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final layouts = ref.watch(partnerParkingMapProvider);
-    final isPartnerOwner = ref.watch(authProvider).isPartnerOwner;
 
     return Scaffold(
       appBar: AppBar(
@@ -42,10 +41,7 @@ class PartnerParkingMapPage extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
               for (final layout in items)
-                _ParkingLayoutPanel(
-                  layout: layout,
-                  showFinancialSummary: isPartnerOwner,
-                ),
+                _ParkingLayoutPanel(layout: layout, showFinancialSummary: true),
             ],
           );
         },
