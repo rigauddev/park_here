@@ -11,6 +11,8 @@ class Reservation(BaseModel):
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     vehicle_id = Column(String(36), ForeignKey("vehicles.id"), nullable=True)
     status = Column(String(40), nullable=False, default="pre_reserved")
+    checked_in_at = Column(DateTime(timezone=True), nullable=True)
+    checked_out_at = Column(DateTime(timezone=True), nullable=True)
     route_minutes = Column(Integer, nullable=False, default=15)
     hold_expires_at = Column(DateTime(timezone=True), nullable=False)
     estimated_total = Column(Float, nullable=False, default=0)

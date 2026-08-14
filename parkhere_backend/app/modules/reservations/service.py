@@ -16,6 +16,9 @@ from app.modules.reservations.schemas import (
     ReservationResponse,
     ReservationServiceSnapshot,
 )
+from app.modules.customer_assets.models import Vehicle
+from app.modules.users.models.user_model import User
+from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
 
 @dataclass
@@ -36,8 +39,10 @@ class ReservationService:
     async def create_pre_checkin(
         db: AsyncSession,
         data: PreCheckinReservationRequest,
+        current_user: User,
     ) -> ReservationResponse:
         parking = await _get_parking_with_services(db, data.parking_id)
+        await _ensure_reservation_permission(db, data, current_user, parking)
 
         if parking.available_spots <= 0:
             raise HTTPException(status_code=409, detail="No available spots")
@@ -47,6 +52,7 @@ class ReservationService:
 
         reservation = Reservation(
             parking_id=parking.id,
+            user_id=current_user.id,
             vehicle_id=data.vehicle_id,
             route_minutes=data.route_minutes,
             hold_expires_at=datetime.utcnow() + timedelta(minutes=data.route_minutes),
@@ -70,6 +76,49 @@ class ReservationService:
 
         return to_response(reservation)
 
+    @staticmethod
+    async def checkin(
+        db: AsyncSession,
+        reservation_id: str,
+        current_user: User,
+    ) -> ReservationResponse:
+        reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+        _ensure_reservation_access(current_user, reservation, parking)
+
+        if reservation.status != "confirmed" or reservation.payment_status != "paid":
+            raise HTTPException(
+                status_code=409,
+                detail="Reservation must be paid and confirmed before check-in",
+            )
+
+        reservation.status = "checked_in"
+        reservation.checked_in_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(reservation)
+        return to_response(reservation)
+
+    @staticmethod
+    async def checkout(
+        db: AsyncSession,
+        reservation_id: str,
+        current_user: User,
+    ) -> ReservationResponse:
+        reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+        _ensure_reservation_access(current_user, reservation, parking)
+
+        if reservation.status != "checked_in":
+            raise HTTPException(
+                status_code=409,
+                detail="Reservation must be checked in before checkout",
+            )
+
+        reservation.status = "completed"
+        reservation.checked_out_at = datetime.utcnow()
+        parking.available_spots = min(parking.available_spots + 1, parking.total_spots)
+        await db.commit()
+        await db.refresh(reservation)
+        return to_response(reservation)
+
 
 async def _get_parking_with_services(db: AsyncSession, parking_id: str) -> Parking:
     result = await db.execute(
@@ -81,6 +130,70 @@ async def _get_parking_with_services(db: AsyncSession, parking_id: str) -> Parki
     if parking is None:
         raise HTTPException(status_code=404, detail="Parking not found")
     return parking
+
+
+async def _get_reservation_with_parking(
+    db: AsyncSession,
+    reservation_id: str,
+) -> tuple[Reservation, Parking]:
+    result = await db.execute(
+        select(Reservation, Parking)
+        .join(Parking, Parking.id == Reservation.parking_id)
+        .where(Reservation.id == reservation_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    return row[0], row[1]
+
+
+async def _ensure_reservation_permission(
+    db: AsyncSession,
+    data: PreCheckinReservationRequest,
+    current_user: User,
+    parking: Parking,
+) -> None:
+    if current_user.role == UserRoleEnum.CUSTOMER:
+        if not data.vehicle_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Vehicle is required to create a reservation",
+            )
+
+        result = await db.execute(
+            select(Vehicle).where(
+                Vehicle.id == data.vehicle_id,
+                Vehicle.user_id == current_user.id,
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Vehicle not allowed")
+        return
+
+    if current_user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+        if current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Parking not allowed")
+        return
+
+    raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+
+def _ensure_reservation_access(
+    current_user: User,
+    reservation: Reservation,
+    parking: Parking,
+) -> None:
+    if current_user.role == UserRoleEnum.CUSTOMER:
+        if reservation.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        return
+
+    if current_user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+        if current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        return
+
+    raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
 async def _calculate_pricing(
@@ -202,6 +315,12 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         id=reservation.id,
         parking_id=reservation.parking_id,
         status=reservation.status,
+        checked_in_at=reservation.checked_in_at.isoformat()
+        if reservation.checked_in_at
+        else None,
+        checked_out_at=reservation.checked_out_at.isoformat()
+        if reservation.checked_out_at
+        else None,
         route_minutes=reservation.route_minutes,
         hold_expires_at=reservation.hold_expires_at.isoformat(),
         estimated_total=reservation.estimated_total,

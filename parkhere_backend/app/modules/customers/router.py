@@ -17,4 +17,7 @@ async def customer_signup(
     return {
         "access_token": tokens[0],
         "refresh_token": tokens[1],
+        "role": "customer",
+        "account_type": "customer",
+        "tenant_id": None,
     }

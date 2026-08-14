@@ -85,6 +85,13 @@ Fluxo alvo:
 
 ## Tarefas Tecnicas
 
+- Guardar links oficiais do Mercado Pago neste documento e revisar antes de implementar credenciais reais.
+- Criar modulo `mercado_pago_client` isolado para HTTP/API do provedor.
+- Criar onboarding OAuth do parceiro para conectar a conta Mercado Pago do estabelecimento.
+- Salvar `provider_account_id`, status da conta e data da ultima validacao em `partner_payment_accounts`.
+- Criar payment intent com split 1:1 quando o parceiro tiver conta ativa.
+- Usar `marketplace_fee`/taxa da aplicacao para a parte ParkHere quando suportado no checkout escolhido.
+- Criar fallback sandbox/mock enquanto credenciais e contas reais nao estiverem aprovadas.
 - Criar tabelas `wallet_credits` e `wallet_ledger_entries`.
 - Criar politica de cancelamento por parceiro: prazo gratuito, taxa fixa, taxa percentual e teto.
 - Criar politica ParkHere de taxa de cancelamento por tipo de servico.
@@ -93,3 +100,46 @@ Fluxo alvo:
 - Criar job para expirar pre-reservas nao confirmadas.
 - Criar alertas de atraso no app.
 - Criar comprovante com taxa do parceiro, taxa ParkHere, credito aplicado e split planejado.
+
+## Como Vamos Tratar Cada Ponto
+
+Taxa do parceiro:
+
+- Cadastrada pelo parceiro no servico/estacionamento.
+- Entra no `base_amount` ou `services_amount` da reserva.
+- Fica congelada no snapshot da reserva para comprovante e auditoria.
+
+Taxa ParkHere:
+
+- Cadastrada pelo gestor do app em `platform_fees`.
+- Calculada no backend por tipo de servico.
+- Nunca deve ser hard-coded no Flutter.
+- No Mercado Pago, deve virar taxa da aplicacao/marketplace fee quando a integracao real permitir.
+
+Pix:
+
+- Reserva fica `payment_pending` ate webhook/confirmacao do pagamento.
+- Nao usar Pix para cobranca posterior automatica de multa.
+- Cancelamento por Pix pode virar reembolso pelo provedor ou credito interno, conforme politica aceita.
+
+Cartao:
+
+- App pode mostrar cartoes salvos, mas ParkHere nao guarda PAN completo nem CVV.
+- CVV deve ser solicitado na hora do pagamento quando exigido.
+- Token/cofre de cartao fica sob responsabilidade do provedor.
+
+Cancelamento:
+
+- Backend calcula se esta dentro da janela sem taxa.
+- Fora da janela, aplica taxa do parceiro e taxa ParkHere.
+- Valor excedente vira credito em carteira ou reembolso parcial, conforme regra da reserva e capacidade do provedor.
+
+Credito em carteira:
+
+- O saldo fica registrado como passivo ParkHere.
+- Ao usar credito em nova reserva, a reserva mostra `credito aplicado`.
+- O parceiro nao deve sofrer desconto invisivel; o financeiro precisa demonstrar se o valor veio de pagamento novo ou credito ParkHere.
+
+Comprovante:
+
+- Deve listar valor do servico/vaga, extras, taxa ParkHere, credito usado, total pago, metodo de pagamento e status do split/repasse.

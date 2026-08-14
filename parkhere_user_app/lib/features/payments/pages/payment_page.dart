@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
 import '../../account/providers/account_provider.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../model/payment_method_enum.dart';
 import '../services/payment_service.dart';
 
@@ -61,9 +62,15 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     setState(() => _isLoading = true);
 
     try {
+      final accessToken = ref.read(authProvider).accessToken;
+      if (accessToken == null) {
+        throw Exception("Sessao expirada. Entre novamente.");
+      }
+
       final result = await PaymentService().processPayment(
         amount: widget.amount,
         method: paymentMethod,
+        accessToken: accessToken,
         reservationId: widget.reservationId,
       );
 

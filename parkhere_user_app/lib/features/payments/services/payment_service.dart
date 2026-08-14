@@ -8,16 +8,19 @@ class PaymentService {
   Future<PaymentResult> processPayment({
     required double amount,
     required PaymentMethod method,
+    required String accessToken,
     String? reservationId,
   }) async {
     if (reservationId != null) {
-      final intent = await _api.post(
+      final intent = await _api.postAuthorized(
         "/payments/reservations/$reservationId/intent",
         {"method": _methodName(method)},
+        accessToken,
       );
-      final confirmed = await _api.post(
+      final confirmed = await _api.postAuthorized(
         "/payments/${intent["id"]}/confirm",
         {},
+        accessToken,
       );
 
       return PaymentResult(

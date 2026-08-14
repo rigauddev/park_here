@@ -134,6 +134,9 @@
 - Criar politicas de cancelamento por parceiro: prazo sem taxa, taxa fixa/percentual, tolerancia de atraso e no-show.
 - Criar alertas de atraso para reserva pre-confirmada.
 - Integrar confirmacao de reserva com pagamento Mercado Pago, Pix/cartao e split marketplace.
+- Implementar Mercado Pago em blocos: client HTTP, OAuth do parceiro, payment intent, webhook, split 1:1, reembolso parcial/total, relatorios e conciliacao.
+- Implementar carteira de credito antes de liberar cancelamento com credito em producao.
+- Criar comprovante fiscal/operacional exibindo tarifa do parceiro, taxa ParkHere, taxa de cancelamento, credito aplicado e repasse.
 - Criar aceite de termo de responsabilidade antes do check-in.
 
 ## Fase 3: Automacao

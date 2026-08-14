@@ -13,6 +13,8 @@ from app.modules.payments.schemas import (
     PaymentSplitResponse,
 )
 from app.modules.reservations.models import Reservation
+from app.modules.users.models.user_model import User
+from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
 
 class PaymentService:
@@ -21,9 +23,11 @@ class PaymentService:
         db: AsyncSession,
         reservation_id: str,
         data: CreatePaymentIntentRequest,
+        current_user: User,
     ) -> PaymentIntentResponse:
         reservation = await _get_reservation(db, reservation_id)
         parking = await _get_parking(db, reservation.parking_id)
+        _ensure_payment_permission(current_user, reservation, parking)
         partner_account = await _get_partner_payment_account(db, parking.tenant_id)
 
         if reservation.payment_status == "paid":
@@ -81,6 +85,7 @@ class PaymentService:
     async def confirm_payment(
         db: AsyncSession,
         payment_id: str,
+        current_user: User,
     ) -> PaymentIntentResponse:
         result = await db.execute(
             select(PaymentTransaction).where(PaymentTransaction.id == payment_id)
@@ -90,6 +95,8 @@ class PaymentService:
             raise HTTPException(status_code=404, detail="Payment not found")
 
         reservation = await _get_reservation(db, transaction.reservation_id)
+        parking = await _get_parking(db, reservation.parking_id)
+        _ensure_payment_permission(current_user, reservation, parking)
         transaction.status = "paid"
         transaction.provider_payment_id = transaction.provider_payment_id or f"mp_mock_{payment_id}"
         reservation.payment_status = "paid"
@@ -130,6 +137,24 @@ async def _get_partner_payment_account(
         )
     )
     return result.scalar_one_or_none()
+
+
+def _ensure_payment_permission(
+    current_user: User,
+    reservation: Reservation,
+    parking: Parking,
+) -> None:
+    if current_user.role == UserRoleEnum.CUSTOMER:
+        if reservation.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        return
+
+    if current_user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+        if current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        return
+
+    raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
 def _mock_checkout_url(external_reference: str) -> str:

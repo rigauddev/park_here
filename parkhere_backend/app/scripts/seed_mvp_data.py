@@ -30,6 +30,7 @@ DEFAULT_OPERATOR_PERMISSIONS = [
     "checkout.own",
     "payments.receive",
 ]
+SEED_VEHICLE_ID = "00000000-0000-0000-0000-000000000001"
 
 
 async def seed():
@@ -225,6 +226,7 @@ async def seed():
         )
 
         vehicle = Vehicle(
+            id=SEED_VEHICLE_ID,
             user_id=customer.id,
             nickname="Meu carro",
             plate="PKH1A23",

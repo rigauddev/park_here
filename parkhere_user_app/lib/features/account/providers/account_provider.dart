@@ -77,7 +77,7 @@ class AccountNotifier extends StateNotifier<AccountState> {
       vehicles: setupDone
           ? const [
               VehicleModel(
-                id: 'seed-vehicle',
+                id: '00000000-0000-0000-0000-000000000001',
                 nickname: 'Meu carro',
                 plate: 'PKH1A23',
                 brand: 'Toyota',

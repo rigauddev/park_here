@@ -31,6 +31,8 @@ class ReservationResponse(BaseModel):
     id: str
     parking_id: str
     status: str
+    checked_in_at: str | None = None
+    checked_out_at: str | None = None
     route_minutes: int
     hold_expires_at: str
     estimated_total: float

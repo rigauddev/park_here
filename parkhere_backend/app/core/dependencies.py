@@ -20,9 +20,10 @@ async def get_current_user(
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         email: str = payload.get("sub")
-        tenant_id: str = payload.get("tenant_id")
+        tenant_id: str | None = payload.get("tenant_id")
+        role: str | None = payload.get("role")
 
-        if not email or not tenant_id:
+        if not email:
             raise HTTPException(status_code=401, detail="Invalid token")
 
     except JWTError:
@@ -37,16 +38,17 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    # Buscar tenant
-    result = await db.execute(
-        select(Tenant).where(Tenant.id == tenant_id)
-    )
+    if not tenant_id:
+        if role == "customer":
+            return user
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = result.scalar_one_or_none()
 
     if not tenant:
         raise HTTPException(status_code=403, detail="Tenant not found")
 
-    # Verificar status do tenant
     if tenant.status == TenantStatusEnum.SUSPENDED:
         raise HTTPException(status_code=403, detail="Tenant suspended")
 
@@ -65,4 +67,3 @@ def require_role(required_roles: list):
             )
         return user
     return role_checker
-
