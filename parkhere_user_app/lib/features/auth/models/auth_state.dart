@@ -14,6 +14,8 @@ class AuthState {
   final String? refreshToken;
   final String? userEmail;
   final AuthAccountType? accountType;
+  final String? role;
+  final String? tenantId;
   final String? mfaToken;
 
   const AuthState({
@@ -22,6 +24,8 @@ class AuthState {
     this.refreshToken,
     this.userEmail,
     this.accountType,
+    this.role,
+    this.tenantId,
     this.mfaToken,
   });
 
@@ -33,6 +37,8 @@ class AuthState {
     String? refreshToken,
     String? userEmail,
     AuthAccountType? accountType,
+    String? role,
+    String? tenantId,
     String? mfaToken,
     bool clearMfaToken = false,
   }) {
@@ -42,7 +48,17 @@ class AuthState {
       refreshToken: refreshToken ?? this.refreshToken,
       userEmail: userEmail ?? this.userEmail,
       accountType: accountType ?? this.accountType,
+      role: role ?? this.role,
+      tenantId: tenantId ?? this.tenantId,
       mfaToken: clearMfaToken ? null : mfaToken ?? this.mfaToken,
     );
   }
+
+  bool get isPartnerSession =>
+      accountType == AuthAccountType.partner ||
+      role != null && role != 'customer';
+
+  bool get isPartnerOwner => role == 'parking_admin' || role == 'super_admin';
+
+  bool get isOperator => role == 'operator';
 }

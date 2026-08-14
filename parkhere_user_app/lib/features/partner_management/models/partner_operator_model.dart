@@ -4,6 +4,7 @@ class PartnerOperatorModel {
   final String email;
   final String? phone;
   final String role;
+  final List<String> permissions;
   final bool isActive;
   final DateTime createdAt;
 
@@ -13,6 +14,7 @@ class PartnerOperatorModel {
     required this.email,
     required this.phone,
     required this.role,
+    required this.permissions,
     required this.isActive,
     required this.createdAt,
   });
@@ -24,6 +26,10 @@ class PartnerOperatorModel {
       email: json['email'] as String,
       phone: json['phone'] as String?,
       role: json['role'] as String,
+      permissions: [
+        for (final item in (json['permissions'] as List<dynamic>? ?? []))
+          item as String,
+      ],
       isActive: json['is_active'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );

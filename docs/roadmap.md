@@ -17,6 +17,8 @@
 - Criar modelos e endpoints de estacionamentos.
 - Criar endpoints de precificacao e servicos adicionais.
 - Criar fluxo backend de pre-reserva, reserva, expiracao e cancelamento.
+- Pre-reserva deve expirar por `tempo de trajeto + tolerancia do parceiro`.
+- Reserva confirmada por pagamento bloqueia a vaga sem limite de chegada alem do horario de funcionamento e regras do estabelecimento.
 - Criar fluxo backend de check-in/checkout manual.
 - Integrar app Flutter aos endpoints reais.
 - Persistir pagamentos com status simulado ou sandbox.
@@ -97,6 +99,8 @@
 - Criar financeiro Pro do parceiro com repasses, taxas e comissoes de guias/agentes.
 - Criar regra comercial de operadores: 2 inclusos no plano atual e taxa extra acima disso.
 - Auditar reservas, pagamentos, repasses e comprovantes.
+- Criar ledger de credito de carteira para cancelamentos, reembolsos parciais e uso em reservas futuras.
+- Criar relatorio de credito aplicado na reserva para parceiro e admin.
 - Garantir que parceiros nao visualizem dados de outros tenants.
 
 ## Fase 2: Operacao De Estacionamento
@@ -124,7 +128,12 @@
 - Incidentes.
 - Relatorios de ocupacao e receita.
 - Permissoes por papel.
-- Operador do parceiro pode reservar vaga, receber pagamento, fazer check-in e checkout manual, sem acesso a configuracoes financeiras.
+- Permissoes configuraveis por operador do parceiro.
+- Operador do parceiro pertence ao tenant do parceiro que o criou.
+- Operador do parceiro pode ver reservas, patio de vagas, criar reserva, cancelar reserva criada por ele, receber pagamento e fazer check-in/checkout manual das reservas criadas por ele, sem acesso a configuracoes financeiras.
+- Criar politicas de cancelamento por parceiro: prazo sem taxa, taxa fixa/percentual, tolerancia de atraso e no-show.
+- Criar alertas de atraso para reserva pre-confirmada.
+- Integrar confirmacao de reserva com pagamento Mercado Pago, Pix/cartao e split marketplace.
 - Criar aceite de termo de responsabilidade antes do check-in.
 
 ## Fase 3: Automacao

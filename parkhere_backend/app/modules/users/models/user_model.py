@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Float, Enum, ForeignKey
+from sqlalchemy import Column, String, Boolean, Float, Enum, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from app.db.base import BaseModel
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
@@ -30,6 +30,7 @@ class User(BaseModel):
     )
 
     commission_percentage = Column(Float, nullable=True)
+    permissions = Column(Text, nullable=True)
 
     is_active = Column(Boolean, default=True)
 

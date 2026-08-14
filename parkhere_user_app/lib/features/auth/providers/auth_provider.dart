@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/services/api_service.dart';
@@ -19,7 +21,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// 🔎 Verifica token ao iniciar app
   Future<void> checkAuthOnStartup() async {
     final tokens = await _storage.getTokens();
-    final accountType = tokens["account_type"] == "partner"
+    final tokenClaims = _decodeAccessClaims(tokens["access"]);
+    final role = tokens["role"] ?? tokenClaims["role"];
+    final tenantId = tokens["tenant_id"] ?? tokenClaims["tenant_id"];
+    final accountTypeName =
+        tokens["account_type"] ?? _accountTypeNameFromRole(role);
+    final accountType = accountTypeName == "partner"
         ? AuthAccountType.partner
         : AuthAccountType.customer;
 
@@ -30,6 +37,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         refreshToken: tokens["refresh"],
         userEmail: tokens["user_email"],
         accountType: accountType,
+        role: role,
+        tenantId: tenantId,
         clearMfaToken: true,
       );
     } else {
@@ -86,22 +95,31 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       final accessToken = response["access_token"] as String;
       final refreshToken = response["refresh_token"] as String;
-      final accountType = state.accountType ?? AuthAccountType.customer;
-      final accountTypeName = accountType == AuthAccountType.customer
-          ? "customer"
-          : "partner";
+      final tokenClaims = _decodeAccessClaims(accessToken);
+      final role = response["role"] as String? ?? tokenClaims["role"];
+      final tenantId =
+          response["tenant_id"] as String? ?? tokenClaims["tenant_id"];
+      final accountTypeName =
+          response["account_type"] as String? ?? _accountTypeNameFromRole(role);
+      final accountType = accountTypeName == "partner"
+          ? AuthAccountType.partner
+          : AuthAccountType.customer;
 
       await _storage.saveTokens(
         accessToken,
         refreshToken,
         accountType: accountTypeName,
         userEmail: state.userEmail,
+        role: role,
+        tenantId: tenantId,
       );
       state = state.copyWith(
         status: AuthStatus.authenticated,
         accessToken: accessToken,
         refreshToken: refreshToken,
         accountType: accountType,
+        role: role,
+        tenantId: tenantId,
         clearMfaToken: true,
       );
     } catch (_) {
@@ -178,6 +196,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       tokens["refresh"]!,
       accountType: tokens["account_type"],
       userEmail: tokens["user_email"],
+      role: tokens["role"],
+      tenantId: tokens["tenant_id"],
     );
 
     state = state.copyWith(accessToken: newAccess);
@@ -187,5 +207,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout() async {
     await _storage.clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  String _accountTypeNameFromRole(String? role) {
+    return role == null || role == 'customer' ? 'customer' : 'partner';
+  }
+
+  Map<String, String?> _decodeAccessClaims(String? token) {
+    if (token == null) return {};
+
+    try {
+      final parts = token.split('.');
+      if (parts.length < 2) return {};
+
+      final normalizedPayload = base64Url.normalize(parts[1]);
+      final payload = utf8.decode(base64Url.decode(normalizedPayload));
+      final data = jsonDecode(payload) as Map<String, dynamic>;
+
+      return {
+        'role': data['role'] as String?,
+        'tenant_id': data['tenant_id'] as String?,
+      };
+    } catch (_) {
+      return {};
+    }
   }
 }

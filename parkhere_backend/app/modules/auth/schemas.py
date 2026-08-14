@@ -51,6 +51,9 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    role: str
+    account_type: str
+    tenant_id: str | None = None
 
 class MFARequest(BaseModel):
     mfa_token: str

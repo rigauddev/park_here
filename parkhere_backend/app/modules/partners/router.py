@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -27,6 +28,22 @@ from app.modules.users.models.user_model_role_enum import UserRoleEnum
 router = APIRouter(prefix="/partners", tags=["Partners"])
 
 FREE_OPERATOR_LIMIT = 2
+OPERATOR_PERMISSION_LABELS = {
+    "reservations.view": "Ver reservas recebidas",
+    "parking_map.view": "Ver patio de vagas",
+    "reservations.create": "Criar reserva operacional",
+    "reservations.cancel_own": "Cancelar reservas criadas pelo operador",
+    "checkin.own": "Realizar check-in de reservas criadas pelo operador",
+    "checkout.own": "Realizar checkout de reservas criadas pelo operador",
+    "payments.receive": "Receber pagamento no local",
+}
+DEFAULT_OPERATOR_PERMISSIONS = list(OPERATOR_PERMISSION_LABELS.keys())
+OWNER_PERMISSIONS = [
+    "partner.company.manage",
+    "partner.users.manage",
+    "partner.pricing.manage",
+    *DEFAULT_OPERATOR_PERMISSIONS,
+]
 
 
 class PartnerOperatorCreateRequest(BaseModel):
@@ -35,6 +52,7 @@ class PartnerOperatorCreateRequest(BaseModel):
     phone: str | None = None
     password: str
     accepted_terms: bool
+    permissions: list[str] | None = None
 
 
 class PartnerOperatorResponse(BaseModel):
@@ -43,6 +61,7 @@ class PartnerOperatorResponse(BaseModel):
     email: str
     phone: str | None
     role: str
+    permissions: list[str]
     is_active: bool
     created_at: str
 
@@ -100,6 +119,8 @@ async def get_my_partner_profile(
     return {
         "tenant_id": current_user.tenant_id,
         "role": current_user.role.value,
+        "permissions": _user_permissions(current_user),
+        "available_operator_permissions": OPERATOR_PERMISSION_LABELS,
         "user_email": current_user.email,
         "service_type": profile.service_type if profile else None,
         "company_name": profile.company_name if profile else None,
@@ -216,6 +237,24 @@ async def create_partner_operator(
     if not data.accepted_terms:
         raise HTTPException(status_code=422, detail="Terms acceptance is required")
 
+    if not data.name.strip():
+        raise HTTPException(status_code=422, detail="Name is required")
+
+    if not data.email.strip():
+        raise HTTPException(status_code=422, detail="Email is required")
+
+    if not _is_valid_email(data.email):
+        raise HTTPException(status_code=422, detail="Invalid email format")
+
+    if data.phone and not _is_valid_phone(data.phone):
+        raise HTTPException(status_code=422, detail="Invalid phone format")
+
+    if not _is_valid_password(data.password):
+        raise HTTPException(
+            status_code=422,
+            detail="Password must have at least 8 characters, uppercase, lowercase and special character",
+        )
+
     normalized_email = data.email.strip().lower()
     existing_result = await db.execute(select(User).where(User.email == normalized_email))
     if existing_result.scalar_one_or_none():
@@ -233,6 +272,18 @@ async def create_partner_operator(
             detail="Free plan includes up to 2 operators. Extra operators require an additional fee.",
         )
 
+    permissions = data.permissions or DEFAULT_OPERATOR_PERMISSIONS
+    invalid_permissions = [
+        permission
+        for permission in permissions
+        if permission not in OPERATOR_PERMISSION_LABELS
+    ]
+    if invalid_permissions:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid permissions: {', '.join(invalid_permissions)}",
+        )
+
     operator = User(
         tenant_id=current_user.tenant_id,
         name=data.name.strip(),
@@ -243,6 +294,7 @@ async def create_partner_operator(
         phone_verified=False,
         email_verified=True,
         role=UserRoleEnum.OPERATOR,
+        permissions=json.dumps(permissions),
     )
     db.add(operator)
     await db.commit()
@@ -331,8 +383,51 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
         email=user.email,
         phone=user.phone,
         role=user.role.value,
+        permissions=_user_permissions(user),
         is_active=user.is_active,
         created_at=user.created_at.isoformat(),
+    )
+
+
+def _user_permissions(user: User) -> list[str]:
+    if user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.SUPER_ADMIN}:
+        return OWNER_PERMISSIONS
+
+    if user.role == UserRoleEnum.OPERATOR:
+        if user.permissions:
+            try:
+                values = json.loads(user.permissions)
+            except json.JSONDecodeError:
+                return DEFAULT_OPERATOR_PERMISSIONS
+
+            if isinstance(values, list):
+                return [
+                    permission
+                    for permission in values
+                    if isinstance(permission, str)
+                    and permission in OPERATOR_PERMISSION_LABELS
+                ]
+
+        return DEFAULT_OPERATOR_PERMISSIONS
+
+    return []
+
+
+def _is_valid_email(value: str) -> bool:
+    return bool(re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", value.strip()))
+
+
+def _is_valid_phone(value: str) -> bool:
+    digits = re.sub(r"\D", "", value)
+    return 10 <= len(digits) <= 11
+
+
+def _is_valid_password(value: str) -> bool:
+    return (
+        len(value) >= 8
+        and bool(re.search(r"[A-Z]", value))
+        and bool(re.search(r"[a-z]", value))
+        and bool(re.search(r"[^A-Za-z0-9]", value))
     )
 
 

@@ -5,6 +5,7 @@
 - Escolher idioma na pagina inicial: Portugues Brasil ou Ingles.
 - Entrar como cliente.
 - Criar conta e autenticar.
+- Formularios devem validar campos obrigatorios, e-mail, telefone, CPF/CNPJ, data, hora e senha forte antes de enviar para API.
 - Visualizar estacionamentos no mapa.
 - Filtrar por vagas, cobertura, vagas VIP e servicos.
 - Ver preco por hora, diaria e mensal.
@@ -22,6 +23,7 @@
 - Enviar documentacao do estabelecimento, alvara e documentos pessoais do responsavel.
 - Aguardar vistoria/aprovacao antes de publicar.
 - Gerenciar usuarios internos: admin, operador, guia/servico.
+- Definir permissoes do operador ao criar usuario interno.
 - Configurar precificacao.
 - Configurar servicos adicionais.
 - Cadastrar taxas repassadas pela plataforma por tipo de servico.

@@ -289,7 +289,17 @@ class AuthService:
             "sub": user.email
         })
 
-        return access_token, refresh_token
+        account_type = (
+            "customer" if user.role == UserRoleEnum.CUSTOMER else "partner"
+        )
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "role": user.role.value,
+            "account_type": account_type,
+            "tenant_id": user.tenant_id,
+        }
     
     @staticmethod
     async def send_mfa_code(db: AsyncSession, mfa_token: str, method: str):

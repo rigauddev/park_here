@@ -140,7 +140,7 @@ Primeiro bloco implementavel da fase de gestao:
 
 Todos exigem bearer token de parceiro/admin e isolamento por `tenant_id`. No MVP, `SUPER_ADMIN` pode usar endpoints tecnicos para suporte, mas a interface de admin do sistema deve ficar separada da interface do parceiro.
 
-`GET /partners/operators` pode ser usado por gestor e operador do tenant para listar equipe. `POST /partners/operators` exige `PARKING_ADMIN`, aceite de termos e respeita o limite gratuito de 2 operadores.
+`GET /partners/operators` pode ser usado por gestor e operador do tenant para listar equipe. `POST /partners/operators` exige `PARKING_ADMIN`, aceite de termos, respeita o limite gratuito de 2 operadores e cria o operador sempre no mesmo `tenant_id` do parceiro gestor.
 
 ## Permissoes Do Parceiro
 
@@ -154,10 +154,22 @@ Dono/gestor (`PARKING_ADMIN`):
 
 Operador (`OPERATOR`):
 
-- Acessa mapa de vagas.
-- Visualiza reservas recebidas.
+- Pertence ao estabelecimento do parceiro que o criou.
+- Acessa somente as telas operacionais liberadas por permissao.
+- Permissoes padrao: ver reservas, ver patio de vagas, criar reserva operacional, cancelar reserva criada por ele, receber pagamento, fazer check-in e checkout das reservas criadas por ele.
 - Pode receber pagamento e fazer check-in/checkout manual quando o fluxo operacional permitir.
 - Nao altera tarifas, dados cadastrais, financeiro, taxas ou usuarios.
+- Nao deve ver menu de cliente, veiculos, carteira ou servicos publicos.
+
+Permissoes MVP:
+
+- `reservations.view`: ver reservas recebidas.
+- `parking_map.view`: ver patio de vagas.
+- `reservations.create`: criar reserva operacional.
+- `reservations.cancel_own`: cancelar reservas criadas pelo proprio operador.
+- `checkin.own`: realizar check-in de reservas criadas pelo proprio operador.
+- `checkout.own`: realizar checkout de reservas criadas pelo proprio operador.
+- `payments.receive`: receber pagamento no local.
 
 Cliente:
 

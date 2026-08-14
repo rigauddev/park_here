@@ -21,6 +21,16 @@ from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
+DEFAULT_OPERATOR_PERMISSIONS = [
+    "reservations.view",
+    "parking_map.view",
+    "reservations.create",
+    "reservations.cancel_own",
+    "checkin.own",
+    "checkout.own",
+    "payments.receive",
+]
+
 
 async def seed():
     async with engine.begin() as conn:
@@ -82,6 +92,7 @@ async def seed():
             phone_verified=True,
             email_verified=True,
             role=UserRoleEnum.OPERATOR,
+            permissions=__import__("json").dumps(DEFAULT_OPERATOR_PERMISSIONS),
         )
         customer = User(
             name="Cliente",
@@ -506,11 +517,13 @@ async def ensure_partner_operator_seed_user(db, commit=True):
             phone_verified=True,
             email_verified=True,
             role=UserRoleEnum.OPERATOR,
+            permissions=__import__("json").dumps(DEFAULT_OPERATOR_PERMISSIONS),
         )
         db.add(user)
     else:
         user.tenant_id = tenant.id
         user.role = UserRoleEnum.OPERATOR
+        user.permissions = __import__("json").dumps(DEFAULT_OPERATOR_PERMISSIONS)
         user.phone_verified = True
         user.email_verified = True
         user.is_active = True

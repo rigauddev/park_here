@@ -21,6 +21,8 @@ class PartnerPaymentAccountSummary {
 class PartnerProfileModel {
   final String tenantId;
   final String role;
+  final List<String> permissions;
+  final Map<String, String> availableOperatorPermissions;
   final String userEmail;
   final String? serviceType;
   final String? companyName;
@@ -30,6 +32,8 @@ class PartnerProfileModel {
   const PartnerProfileModel({
     required this.tenantId,
     required this.role,
+    required this.permissions,
+    required this.availableOperatorPermissions,
     required this.userEmail,
     required this.serviceType,
     required this.companyName,
@@ -43,6 +47,14 @@ class PartnerProfileModel {
     return PartnerProfileModel(
       tenantId: json['tenant_id'] as String? ?? '',
       role: json['role'] as String? ?? '',
+      permissions: [
+        for (final item in (json['permissions'] as List<dynamic>? ?? []))
+          item as String,
+      ],
+      availableOperatorPermissions:
+          (json['available_operator_permissions'] as Map<String, dynamic>? ??
+                  {})
+              .map((key, value) => MapEntry(key, value as String)),
       userEmail: json['user_email'] as String? ?? '',
       serviceType: json['service_type'] as String?,
       companyName: json['company_name'] as String?,

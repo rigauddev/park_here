@@ -35,6 +35,7 @@ class PartnerOperatorsNotifier
     required String phone,
     required String password,
     required bool acceptedTerms,
+    required List<String> permissions,
   }) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessao expirada. Entre novamente.');
@@ -45,6 +46,7 @@ class PartnerOperatorsNotifier
       'phone': phone,
       'password': password,
       'accepted_terms': acceptedTerms,
+      'permissions': permissions,
     }, token);
 
     state = const AsyncLoading();
