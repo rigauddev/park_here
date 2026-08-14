@@ -19,12 +19,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// 🔎 Verifica token ao iniciar app
   Future<void> checkAuthOnStartup() async {
     final tokens = await _storage.getTokens();
+    final accountType = tokens["account_type"] == "partner"
+        ? AuthAccountType.partner
+        : AuthAccountType.customer;
 
     if (tokens["access"] != null) {
       state = state.copyWith(
         status: AuthStatus.authenticated,
         accessToken: tokens["access"],
         refreshToken: tokens["refresh"],
+        userEmail: tokens["user_email"],
+        accountType: accountType,
+        clearMfaToken: true,
       );
     } else {
       state = state.copyWith(status: AuthStatus.unauthenticated);
@@ -80,12 +86,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       final accessToken = response["access_token"] as String;
       final refreshToken = response["refresh_token"] as String;
+      final accountType = state.accountType ?? AuthAccountType.customer;
+      final accountTypeName = accountType == AuthAccountType.customer
+          ? "customer"
+          : "partner";
 
-      await _storage.saveTokens(accessToken, refreshToken);
+      await _storage.saveTokens(
+        accessToken,
+        refreshToken,
+        accountType: accountTypeName,
+        userEmail: state.userEmail,
+      );
       state = state.copyWith(
         status: AuthStatus.authenticated,
         accessToken: accessToken,
         refreshToken: refreshToken,
+        accountType: accountType,
+        clearMfaToken: true,
       );
     } catch (_) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
@@ -156,7 +173,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     // Aqui depois chamará backend
     const newAccess = "new_access_token";
 
-    await _storage.saveTokens(newAccess, tokens["refresh"]!);
+    await _storage.saveTokens(
+      newAccess,
+      tokens["refresh"]!,
+      accountType: tokens["account_type"],
+      userEmail: tokens["user_email"],
+    );
 
     state = state.copyWith(accessToken: newAccess);
   }

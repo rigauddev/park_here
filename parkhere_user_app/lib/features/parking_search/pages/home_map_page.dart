@@ -708,12 +708,31 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
     if (!mounted) return;
 
+    String? reservationId;
+    var serverTotal = total;
+    var platformFeeAmount = 0.0;
+
     try {
-      await ref.read(apiServiceProvider).post("/reservations/pre-checkin", {
-        "parking_id": parking.id,
-        "route_minutes": minutes,
-        "estimated_total": total,
-      });
+      final response = await ref.read(apiServiceProvider).post(
+        "/reservations/pre-checkin",
+        {
+          "parking_id": parking.id,
+          "route_minutes": minutes,
+          "estimated_total": total,
+          "spot_type": "uncovered",
+          "pricing_plan": plan.name,
+          "duration_hours": 1,
+          "service_codes": [
+            if (selected.carWash) "car_wash",
+            if (selected.tourGuide) "tour_guide",
+            if (selected.transport) "transport",
+          ],
+        },
+      );
+      reservationId = response["id"] as String?;
+      serverTotal = (response["final_total"] as num?)?.toDouble() ?? total;
+      platformFeeAmount =
+          (response["platform_fee_amount"] as num?)?.toDouble() ?? 0;
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -739,7 +758,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             carWash: selected.carWash,
             tourGuide: selected.tourGuide,
             transport: selected.transport,
-            total: total,
+            total: serverTotal,
+            reservationId: reservationId,
+            platformFeeAmount: platformFeeAmount,
             userLocationLat: userLocationLat,
             userLocationLng: userLocationLng,
           ),

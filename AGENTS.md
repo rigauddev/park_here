@@ -19,5 +19,5 @@ ParkHere e um SaaS/app de gestao e reserva de estacionamentos. O MVP tem backend
 - Manter check-in/checkout por placa e reconhecimento facial como V2.
 - No MVP, usar validacao manual/app/portaria e projetar extensibilidade por metodo.
 - Nao versionar `build/`, `Pods/`, `.dart_tool/`, `__pycache__/` ou `.env`.
+- Ao concluir blocos de desenvolvimento, revisar e limpar arquivos temporarios, caches e artefatos gerados que nao sejam necessarios (`build/`, `.dart_tool/`, `.pytest_cache/`, `__pycache__/`, logs locais, outputs de teste), preservando apenas arquivos fonte, docs, migrations e assets intencionais.
 - Antes de concluir mudancas, rodar validacoes possiveis: `flutter analyze`, `flutter test`, testes backend ou ao menos import/build local.
-

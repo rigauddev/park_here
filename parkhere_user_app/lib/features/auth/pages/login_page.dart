@@ -42,6 +42,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+    final isMfaStep = authState.status == AuthStatus.mfaRequired;
+    final displayedLoginMode = isMfaStep
+        ? (authState.accountType == AuthAccountType.partner
+              ? LoginMode.partner
+              : LoginMode.customer)
+        : loginMode;
 
     ref.listen<AuthState>(authProvider, (previous, next) {
       if (next.status == AuthStatus.authenticated) {
@@ -144,8 +150,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                           const SizedBox(height: 22),
                           _AccessModeSelector(
-                            loginMode: loginMode,
+                            loginMode: displayedLoginMode,
                             isPortuguese: isPortuguese,
+                            enabled: !isMfaStep,
                             onChanged: (mode) {
                               setState(() => loginMode = mode);
                             },
@@ -197,14 +204,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               ),
                               onPressed: isLoading ? null : _submitLogin,
                               child: isLoading
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
+                                  ? const _LoginLoadingLabel()
                                   : Text(
                                       authState.status == AuthStatus.mfaRequired
                                           ? (isPortuguese
@@ -470,14 +470,41 @@ class _RigaudTechFooter extends StatelessWidget {
   }
 }
 
+class _LoginLoadingLabel extends StatelessWidget {
+  const _LoginLoadingLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(
+          "assets/branding/logo_rigaud_tech_clean.png",
+          width: 34,
+          height: 16,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(width: 10),
+        const Text(
+          'Entrando...',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+}
+
 class _AccessModeSelector extends StatelessWidget {
   final LoginMode loginMode;
   final bool isPortuguese;
+  final bool enabled;
   final ValueChanged<LoginMode> onChanged;
 
   const _AccessModeSelector({
     required this.loginMode,
     required this.isPortuguese,
+    this.enabled = true,
     required this.onChanged,
   });
 
@@ -497,7 +524,7 @@ class _AccessModeSelector extends StatelessWidget {
               icon: Icons.directions_car_filled_outlined,
               title: isPortuguese ? "Cliente" : "Customer",
               subtitle: isPortuguese ? "Reservar vaga" : "Book parking",
-              onTap: () => onChanged(LoginMode.customer),
+              onTap: enabled ? () => onChanged(LoginMode.customer) : null,
             ),
           ),
           const SizedBox(width: 6),
@@ -507,7 +534,7 @@ class _AccessModeSelector extends StatelessWidget {
               icon: Icons.storefront,
               title: isPortuguese ? "Parceiro" : "Partner",
               subtitle: isPortuguese ? "Gerir serviços" : "Manage services",
-              onTap: () => onChanged(LoginMode.partner),
+              onTap: enabled ? () => onChanged(LoginMode.partner) : null,
             ),
           ),
         ],
@@ -521,7 +548,7 @@ class _AccessModeButton extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _AccessModeButton({
     required this.selected,

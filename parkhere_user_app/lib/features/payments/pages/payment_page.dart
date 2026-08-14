@@ -9,12 +9,14 @@ import '../services/payment_service.dart';
 
 class PaymentPage extends ConsumerStatefulWidget {
   final double amount;
+  final String? reservationId;
   final bool payNow;
   final VoidCallback onPaymentSuccess;
 
   const PaymentPage({
     super.key,
     required this.amount,
+    this.reservationId,
     required this.payNow,
     required this.onPaymentSuccess,
   });
@@ -59,9 +61,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     setState(() => _isLoading = true);
 
     try {
-      final result = await PaymentService.processPayment(
+      final result = await PaymentService().processPayment(
         amount: widget.amount,
         method: paymentMethod,
+        reservationId: widget.reservationId,
       );
 
       if (result.success) {
@@ -176,6 +179,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               "Valor: R\$ ${widget.amount.toStringAsFixed(2)}",
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
+            if (widget.reservationId != null) ...[
+              const SizedBox(height: 8),
+              const Text(
+                "Pagamento via Mercado Pago preparado com split ParkHere/parceiro.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF55708F)),
+              ),
+            ],
 
             const SizedBox(height: 30),
 
