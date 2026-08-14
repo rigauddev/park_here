@@ -57,7 +57,7 @@ class AuthService:
                 email=email,
                 password_hash=hash_password(password),
                 phone=phone,
-                role=UserRoleEnum.PARKING_ADMIN
+                role=UserRoleEnum.PARTNER_MANAGER
             )
 
             db.add(admin_user)
@@ -96,7 +96,7 @@ class AuthService:
             email=data.email,
             password_hash=hash_password(data.password),
             phone=data.phone,
-            role=UserRoleEnum.PARKING_ADMIN,
+            role=UserRoleEnum.PARTNER_MANAGER,
         )
         db.add(partner_user)
 
@@ -241,7 +241,10 @@ class AuthService:
         if account_type == "customer" and user.role != UserRoleEnum.CUSTOMER:
             return None
 
-        if account_type == "partner" and user.role == UserRoleEnum.CUSTOMER:
+        if account_type == "partner" and user.role in {
+            UserRoleEnum.CUSTOMER,
+            UserRoleEnum.SUPER_ADMIN,
+        }:
             return None
 
         methods = []

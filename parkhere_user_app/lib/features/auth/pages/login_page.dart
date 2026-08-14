@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/widgets/main_navigation.dart';
 import '../models/auth_state.dart';
@@ -26,8 +27,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final mfaController = TextEditingController();
 
   bool isLoading = false;
+  bool showPassword = false;
   LoginLanguage language = LoginLanguage.ptBr;
   LoginMode loginMode = LoginMode.customer;
+  String? loginError;
 
   bool get isPortuguese => language == LoginLanguage.ptBr;
 
@@ -59,6 +62,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     });
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeOutCubic,
@@ -106,7 +110,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
-                  vertical: 72,
+                  vertical: 96,
                 ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
@@ -169,7 +173,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               controller: passwordController,
                               label: isPortuguese ? "Senha" : "Password",
                               icon: Icons.lock_outline,
-                              obscureText: true,
+                              obscureText: !showPassword,
+                              suffixIcon: IconButton(
+                                tooltip: showPassword
+                                    ? (isPortuguese
+                                          ? 'Ocultar senha'
+                                          : 'Hide password')
+                                    : (isPortuguese
+                                          ? 'Mostrar senha'
+                                          : 'Show password'),
+                                onPressed: () => setState(
+                                  () => showPassword = !showPassword,
+                                ),
+                                icon: Icon(
+                                  showPassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                ),
+                              ),
                             ),
                           ],
                           if (authState.status == AuthStatus.mfaRequired) ...[
@@ -278,11 +299,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
               ),
             ),
-            SafeArea(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
+            if (loginError != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(child: _LoginErrorBanner(message: loginError!)),
+                ),
+              ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 12,
+              child: SafeArea(
+                top: false,
+                child: Center(
                   child: _RigaudTechFooter(isPortuguese: isPortuguese),
                 ),
               ),
@@ -298,6 +327,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     required String label,
     required IconData icon,
     bool obscureText = false,
+    Widget? suffixIcon,
   }) {
     return TextField(
       controller: controller,
@@ -305,6 +335,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: const Color(0xFF169FC4)),
+        suffixIcon: suffixIcon,
         filled: true,
         fillColor: const Color(0xFFF7FBFD),
         border: OutlineInputBorder(
@@ -322,7 +353,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Future<void> _submitLogin() async {
     final authState = ref.read(authProvider);
 
-    setState(() => isLoading = true);
+    setState(() {
+      isLoading = true;
+      loginError = null;
+    });
 
     try {
       if (authState.status != AuthStatus.mfaRequired) {
@@ -355,9 +389,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (e) {
       if (!mounted) return;
       final message = _authErrorMessage(e);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      setState(() => loginError = message);
+      Future<void>.delayed(const Duration(seconds: 4), () {
+        if (!mounted || loginError != message) return;
+        setState(() => loginError = null);
+      });
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -371,6 +407,51 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
 
     return rawMessage;
+  }
+}
+
+class _LoginErrorBanner extends StatelessWidget {
+  final String message;
+
+  const _LoginErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEBEE),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFD32F2F)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Color(0xFFD32F2F)),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Color(0xFFD32F2F),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -389,13 +470,7 @@ class _LanguageFlagButton extends StatelessWidget {
       message: "Idioma / Language",
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          onChanged(
-            language == LoginLanguage.ptBr
-                ? LoginLanguage.en
-                : LoginLanguage.ptBr,
-          );
-        },
+        onTap: () => _showLanguageSheet(context),
         child: Material(
           color: Colors.white.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(18),
@@ -426,6 +501,43 @@ class _LanguageFlagButton extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _showLanguageSheet(BuildContext context) async {
+    final selected = await showModalBottomSheet<LoginLanguage>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Text('🇧🇷', style: TextStyle(fontSize: 28)),
+                  title: const Text('Português Brasil'),
+                  trailing: language == LoginLanguage.ptBr
+                      ? const Icon(Icons.check, color: Color(0xFF169FC4))
+                      : null,
+                  onTap: () => Navigator.pop(context, LoginLanguage.ptBr),
+                ),
+                ListTile(
+                  leading: const Text('🇺🇸', style: TextStyle(fontSize: 28)),
+                  title: const Text('English'),
+                  trailing: language == LoginLanguage.en
+                      ? const Icon(Icons.check, color: Color(0xFF169FC4))
+                      : null,
+                  onTap: () => Navigator.pop(context, LoginLanguage.en),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null) onChanged(selected);
+  }
 }
 
 class _RigaudTechFooter extends StatelessWidget {
@@ -435,38 +547,47 @@ class _RigaudTechFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              isPortuguese ? "Desenvolvido por" : "Developed by",
-              style: const TextStyle(
-                color: Color(0xFF55708F),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: _openRigaudTech,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.86),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isPortuguese ? "Desenvolvido por" : "Developed by",
+                style: const TextStyle(
+                  color: Color(0xFF55708F),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(width: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.asset(
-                "assets/branding/logo_rigaud_tech_clean.png",
-                width: 72,
-                height: 20,
-                fit: BoxFit.contain,
+              const SizedBox(width: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.asset(
+                  "assets/branding/logo_rigaud_tech_clean.png",
+                  width: 72,
+                  height: 20,
+                  fit: BoxFit.contain,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Future<void> _openRigaudTech() async {
+    final uri = Uri.parse('https://rigaudtech.com.br');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
 

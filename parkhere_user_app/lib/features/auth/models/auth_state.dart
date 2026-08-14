@@ -58,7 +58,8 @@ class AuthState {
       accountType == AuthAccountType.partner ||
       role != null && role != 'customer';
 
-  bool get isPartnerOwner => role == 'parking_admin' || role == 'super_admin';
+  bool get isPartnerOwner =>
+      role == 'partner_manager' || role == 'parking_admin';
 
   bool get isOperator => role == 'operator';
 }

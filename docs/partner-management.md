@@ -5,7 +5,8 @@
 Hoje a gestao existe em dois blocos diferentes:
 
 - `tenants` representam estabelecimentos/contas parceiras.
-- `PARKING_ADMIN` representa dono/admin de estacionamento.
+- `PARTNER_MANAGER` representa dono/gestor de um estabelecimento parceiro.
+- `PARKING_ADMIN` fica como papel legado temporario para dados antigos e deve ser migrado para `PARTNER_MANAGER`.
 - `SUPER_ADMIN` representa a gestao interna ParkHere/Rigaud Tech.
 - `/auth/register-parking` cadastra um estacionamento inicial.
 - `parkings` e `parking_services` ja existem para alimentar o app do motorista.
@@ -107,7 +108,7 @@ No MVP, o codigo de guia e o vinculo da reserva podem entrar antes do pagamento 
 
 Primeiro bloco implementavel da fase de gestao:
 
-- Parceiro com papel `PARKING_ADMIN` entra na area de gestao.
+- Parceiro com papel `PARTNER_MANAGER` entra na area de gestao do proprio estabelecimento.
 - Parceiro lista apenas estacionamentos do proprio `tenant_id`.
 - Parceiro cadastra/edita nome, endereco, latitude, longitude e status ativo.
 - Parceiro informa se possui portaria 24h.
@@ -140,11 +141,11 @@ Primeiro bloco implementavel da fase de gestao:
 
 Todos exigem bearer token de parceiro/admin e isolamento por `tenant_id`. No MVP, `SUPER_ADMIN` pode usar endpoints tecnicos para suporte, mas a interface de admin do sistema deve ficar separada da interface do parceiro.
 
-`GET /partners/operators` pode ser usado por gestor e operador do tenant para listar equipe. `POST /partners/operators` exige `PARKING_ADMIN`, aceite de termos, respeita o limite gratuito de 2 operadores e cria o operador sempre no mesmo `tenant_id` do parceiro gestor.
+`GET /partners/operators` pode ser usado por gestor e operador do tenant para listar equipe. `POST /partners/operators` exige `PARTNER_MANAGER`, aceite de termos, respeita o limite gratuito de 2 operadores e cria o operador sempre no mesmo `tenant_id` do parceiro gestor.
 
 ## Permissoes Do Parceiro
 
-Dono/gestor (`PARKING_ADMIN`):
+Dono/gestor (`PARTNER_MANAGER`):
 
 - Gerencia dados do estacionamento.
 - Gerencia tarifas e servicos.
@@ -158,6 +159,9 @@ Operador (`OPERATOR`):
 - Acessa somente as telas operacionais liberadas por permissao.
 - Permissoes padrao: ver reservas, ver patio de vagas, criar reserva operacional, cancelar reserva criada por ele, receber pagamento, fazer check-in e checkout das reservas criadas por ele.
 - Pode receber pagamento e fazer check-in/checkout manual quando o fluxo operacional permitir.
+- Funcao caixa operacional permite receber dinheiro/Pix no mapa de vagas ou nos detalhes da reserva.
+- Modalidade por hora deve ficar para pagamento no checkout, pois o valor final depende do tempo real de permanencia.
+- Diaria/semanal/mensal podem permitir pagar agora ou pagar na volta conforme decisao operacional do estabelecimento.
 - Nao altera tarifas, dados cadastrais, financeiro, taxas ou usuarios.
 - Nao deve ver menu de cliente, veiculos, carteira ou servicos publicos.
 

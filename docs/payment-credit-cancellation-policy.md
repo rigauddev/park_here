@@ -100,6 +100,11 @@ Fluxo alvo:
 - Criar job para expirar pre-reservas nao confirmadas.
 - Criar alertas de atraso no app.
 - Criar comprovante com taxa do parceiro, taxa ParkHere, credito aplicado e split planejado.
+- Integrar Mercado Pago em modo sandbox usando o mock atual como contrato inicial antes de credenciais reais.
+- Fluxo operacional MVP aceita dinheiro e Pix mock para reservas criadas pelo operador.
+- Integracao com maquininha/cartao presencial fica para V2.
+- Caixa do estacionamento registra pagamento operacional e alimenta os totais do mapa: recebido, a receber, reservas por status e servicos por status.
+- Reservas por hora devem ser cobradas no checkout para evitar divergencia entre estimativa e permanencia real.
 
 ## Como Vamos Tratar Cada Ponto
 

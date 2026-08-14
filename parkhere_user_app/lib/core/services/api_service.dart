@@ -3,7 +3,16 @@ import 'package:http/http.dart' as http;
 
 import '../constants/api_constants.dart';
 
+class ApiUnauthorizedException implements Exception {
+  const ApiUnauthorizedException();
+
+  @override
+  String toString() => 'Sessao expirada. Entre novamente.';
+}
+
 class ApiService {
+  static Future<void> Function()? onUnauthorized;
+
   Future<List<dynamic>> get(String endpoint) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
@@ -25,6 +34,7 @@ class ApiService {
       return jsonDecode(response.body) as List<dynamic>;
     }
 
+    await _handleUnauthorized(response);
     throw Exception("Erro na API: ${response.statusCode}");
   }
 
@@ -40,6 +50,7 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
+    await _handleUnauthorized(response);
     throw Exception("Erro na API: ${response.statusCode}");
   }
 
@@ -59,6 +70,7 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
+    await _handleUnauthorized(response);
     throw Exception("Erro na API: ${response.statusCode}");
   }
 
@@ -79,7 +91,14 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
+    await _handleUnauthorized(response);
     throw Exception("Erro na API: ${response.statusCode}");
+  }
+
+  Future<void> _handleUnauthorized(http.Response response) async {
+    if (response.statusCode != 401) return;
+    await onUnauthorized?.call();
+    throw const ApiUnauthorizedException();
   }
 
   Future<Map<String, dynamic>> putAuthorized(

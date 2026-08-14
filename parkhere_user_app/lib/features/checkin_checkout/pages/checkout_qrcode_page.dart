@@ -12,7 +12,6 @@ class CheckoutQRCodePage extends StatefulWidget {
 }
 
 class _CheckoutQRCodePageState extends State<CheckoutQRCodePage> {
-
   late String qrData;
   late Timer timer;
   int secondsRemaining = 120; // ⏳ 2 minutos de validade
@@ -62,7 +61,6 @@ class _CheckoutQRCodePageState extends State<CheckoutQRCodePage> {
 
   @override
   Widget build(BuildContext context) {
-
     final expired = secondsRemaining == 0;
 
     return Scaffold(
@@ -75,7 +73,6 @@ class _CheckoutQRCodePageState extends State<CheckoutQRCodePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-
             if (!expired) ...[
               const Text(
                 "Apresente este QR Code na saída",
@@ -84,10 +81,7 @@ class _CheckoutQRCodePageState extends State<CheckoutQRCodePage> {
 
               const SizedBox(height: 24),
 
-              QrImageView(
-                data: qrData,
-                size: 250,
-              ),
+              QrImageView(data: qrData, size: 250),
 
               const SizedBox(height: 24),
 
@@ -102,11 +96,7 @@ class _CheckoutQRCodePageState extends State<CheckoutQRCodePage> {
             ],
 
             if (expired) ...[
-              const Icon(
-                Icons.error_outline,
-                color: Colors.red,
-                size: 60,
-              ),
+              const Icon(Icons.error_outline, color: Colors.red, size: 60),
               const SizedBox(height: 16),
               const Text(
                 "QR Code expirado",
@@ -126,7 +116,7 @@ class _CheckoutQRCodePageState extends State<CheckoutQRCodePage> {
                   });
                 },
                 child: const Text("Gerar novo QR"),
-              )
+              ),
             ],
 
             const SizedBox(height: 40),

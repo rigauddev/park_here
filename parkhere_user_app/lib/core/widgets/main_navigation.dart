@@ -51,6 +51,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     final auth = ref.watch(authProvider);
     final isPartner = auth.isPartnerSession;
     final isPartnerOwner = auth.isPartnerOwner;
+    if (isPartner && !isPartnerOwner && _selectedArea == _MainArea.financial) {
+      _selectedArea = _MainArea.map;
+    }
     final page = _pageFor(_selectedArea, isPartner, isPartnerOwner);
 
     if (isWebLayout) {
@@ -138,7 +141,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               selectedIcon: Icon(Icons.person),
               label: 'Perfil',
             ),
-          if (isPartner)
+          if (isPartner && isPartnerOwner)
             const NavigationDestination(
               icon: Icon(Icons.lock_outline),
               selectedIcon: Icon(Icons.lock),
@@ -178,7 +181,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.users:
         return isPartnerOwner ? const PartnerUsersPage() : const ProfilePage();
       case _MainArea.financial:
-        return const PartnerFinancialLockedPage();
+        return isPartnerOwner
+            ? const PartnerFinancialLockedPage()
+            : const PartnerParkingMapPage();
       case _MainArea.profile:
         return const ProfilePage();
     }
@@ -191,10 +196,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           return 0;
         case _MainArea.reservations:
           return 1;
-        case _MainArea.financial:
-          return 2;
         case _MainArea.profile:
-          return 3;
+          return 2;
         default:
           return 0;
       }
@@ -232,8 +235,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         case 1:
           return _MainArea.reservations;
         case 2:
-          return _MainArea.financial;
-        case 3:
           return _MainArea.profile;
         default:
           return _MainArea.map;
@@ -319,7 +320,7 @@ class _WebMenu extends ConsumerWidget {
                 ),
                 if (isPartner && isPartnerOwner)
                   _MenuItem(Icons.group_outlined, 'Usuarios', _MainArea.users),
-                if (isPartner)
+                if (isPartner && isPartnerOwner)
                   _MenuItem(
                     Icons.lock_outline,
                     'Financeiro Pro',
@@ -461,7 +462,7 @@ class _MobileDrawer extends StatelessWidget {
                 title: const Text('Mapa de vagas'),
                 onTap: () => onSelected(_MainArea.map),
               ),
-            if (isPartner)
+            if (isPartner && isPartnerOwner)
               ListTile(
                 leading: const Icon(Icons.lock_outline),
                 title: const Text('Financeiro Pro'),
@@ -494,32 +495,9 @@ class _MobileDrawer extends StatelessWidget {
               title: const Text('Perfil'),
               onTap: () => onSelected(_MainArea.profile),
             ),
-            const Divider(),
-            const _DrawerLogoutTile(),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _DrawerLogoutTile extends ConsumerWidget {
-  const _DrawerLogoutTile();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ListTile(
-      leading: const Icon(Icons.logout, color: Colors.red),
-      title: const Text('Sair', style: TextStyle(color: Colors.red)),
-      onTap: () async {
-        await ref.read(authProvider.notifier).logout();
-        if (!context.mounted) return;
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-          (_) => false,
-        );
-      },
     );
   }
 }

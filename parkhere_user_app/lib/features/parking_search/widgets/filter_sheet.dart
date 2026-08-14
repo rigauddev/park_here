@@ -24,8 +24,9 @@ class ParkingFilterSheet extends ConsumerWidget {
             title: const Text("Área coberta"),
             value: filter.covered,
             onChanged: (v) {
-              ref.read(filterProvider.notifier).state =
-                  filter.copyWith(covered: v);
+              ref.read(filterProvider.notifier).state = filter.copyWith(
+                covered: v,
+              );
             },
           ),
 
@@ -33,8 +34,7 @@ class ParkingFilterSheet extends ConsumerWidget {
             title: const Text("Vagas VIP"),
             value: filter.vip,
             onChanged: (v) {
-              ref.read(filterProvider.notifier).state =
-                  filter.copyWith(vip: v);
+              ref.read(filterProvider.notifier).state = filter.copyWith(vip: v);
             },
           ),
 
@@ -42,8 +42,9 @@ class ParkingFilterSheet extends ConsumerWidget {
             title: const Text("Lavagem disponível"),
             value: filter.carWash,
             onChanged: (v) {
-              ref.read(filterProvider.notifier).state =
-                  filter.copyWith(carWash: v);
+              ref.read(filterProvider.notifier).state = filter.copyWith(
+                carWash: v,
+              );
             },
           ),
 
@@ -51,8 +52,9 @@ class ParkingFilterSheet extends ConsumerWidget {
             title: const Text("Guia turístico"),
             value: filter.tourGuide,
             onChanged: (v) {
-              ref.read(filterProvider.notifier).state =
-                  filter.copyWith(tourGuide: v);
+              ref.read(filterProvider.notifier).state = filter.copyWith(
+                tourGuide: v,
+              );
             },
           ),
 
@@ -60,8 +62,9 @@ class ParkingFilterSheet extends ConsumerWidget {
             title: const Text("Veículo para deslocamento"),
             value: filter.transport,
             onChanged: (v) {
-              ref.read(filterProvider.notifier).state =
-                  filter.copyWith(transport: v);
+              ref.read(filterProvider.notifier).state = filter.copyWith(
+                transport: v,
+              );
             },
           ),
         ],

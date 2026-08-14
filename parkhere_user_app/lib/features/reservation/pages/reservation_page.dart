@@ -7,36 +7,216 @@ import '../models/reservation_model.dart';
 import '../providers/reservation_provider.dart';
 import 'resevation_details_page.dart';
 
-class ReservationPage extends ConsumerWidget {
+class ReservationPage extends ConsumerStatefulWidget {
   const ReservationPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReservationPage> createState() => _ReservationPageState();
+}
+
+class _ReservationPageState extends ConsumerState<ReservationPage>
+    with SingleTickerProviderStateMixin {
+  String serviceFilter = 'all';
+
+  @override
+  Widget build(BuildContext context) {
     final reservationsAsync = ref.watch(reservationsProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text("Historico de reservas")),
-      body: reservationsAsync.when(
-        data: (reservations) {
-          if (reservations.isEmpty) {
-            return const Center(child: Text("Nenhuma reserva encontrada."));
-          }
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("Reservas e serviços"),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Reservas'),
+              Tab(text: 'Serviços'),
+            ],
+          ),
+        ),
+        body: reservationsAsync.when(
+          data: (reservations) {
+            if (reservations.isEmpty) {
+              return const Center(child: Text("Nenhuma reserva encontrada."));
+            }
 
-          final ordered = [...reservations]
-            ..sort((a, b) => b.checkinAt.compareTo(a.checkinAt));
+            final ordered = [...reservations]
+              ..sort((a, b) => b.checkinAt.compareTo(a.checkinAt));
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: ordered.length,
-            itemBuilder: (context, index) {
-              return _ReservationCard(reservation: ordered[index]);
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text("Erro: $e")),
+            final contractedServices = _contractedServices(ordered)
+                .where(
+                  (service) =>
+                      serviceFilter == 'all' || service.code == serviceFilter,
+                )
+                .toList();
+
+            return TabBarView(
+              children: [
+                ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: ordered.length,
+                  itemBuilder: (context, index) {
+                    return _ReservationCard(reservation: ordered[index]);
+                  },
+                ),
+                ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: serviceFilter,
+                      decoration: const InputDecoration(
+                        labelText: 'Filtrar por tipo de serviço',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'all', child: Text('Todos')),
+                        DropdownMenuItem(
+                          value: 'parking',
+                          child: Text('Estacionamento'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'car_wash',
+                          child: Text('Lava jato'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'tour_guide',
+                          child: Text('Passeios turísticos'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'transport',
+                          child: Text('Transporte'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => serviceFilter = value);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    if (contractedServices.isEmpty)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: 40),
+                          child: Text('Nenhum serviço contratado.'),
+                        ),
+                      )
+                    else
+                      for (final service in contractedServices)
+                        _ContractedServiceCard(service: service),
+                  ],
+                ),
+              ],
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text("Erro: $e")),
+        ),
       ),
     );
+  }
+
+  List<_ContractedService> _contractedServices(
+    List<ReservationModel> reservations,
+  ) {
+    final services = <_ContractedService>[];
+
+    for (final reservation in reservations) {
+      final amount = reservation.finalValue ?? reservation.estimatedValue;
+      services.add(
+        _ContractedService(
+          code: 'parking',
+          name: 'Estacionamento',
+          reservation: reservation,
+          amount: amount,
+        ),
+      );
+
+      if (reservation.carWash) {
+        services.add(
+          _ContractedService(
+            code: 'car_wash',
+            name: 'Lava jato',
+            reservation: reservation,
+            amount: 0,
+          ),
+        );
+      }
+      if (reservation.tourGuide) {
+        services.add(
+          _ContractedService(
+            code: 'tour_guide',
+            name: 'Passeio turístico',
+            reservation: reservation,
+            amount: 0,
+          ),
+        );
+      }
+      if (reservation.transport) {
+        services.add(
+          _ContractedService(
+            code: 'transport',
+            name: 'Transporte',
+            reservation: reservation,
+            amount: 0,
+          ),
+        );
+      }
+    }
+
+    return services;
+  }
+}
+
+class _ContractedService {
+  final String code;
+  final String name;
+  final ReservationModel reservation;
+  final double amount;
+
+  const _ContractedService({
+    required this.code,
+    required this.name,
+    required this.reservation,
+    required this.amount,
+  });
+}
+
+class _ContractedServiceCard extends StatelessWidget {
+  final _ContractedService service;
+
+  const _ContractedServiceCard({required this.service});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppTheme.softCyan,
+          foregroundColor: AppTheme.primary,
+          child: Icon(_iconFor(service.code)),
+        ),
+        title: Text(service.name),
+        subtitle: Text(service.reservation.parkingName),
+        trailing: service.amount > 0
+            ? Text(
+                'R\$ ${service.amount.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w900,
+                ),
+              )
+            : const Text('Incluído'),
+      ),
+    );
+  }
+
+  IconData _iconFor(String code) {
+    return switch (code) {
+      'car_wash' => Icons.local_car_wash,
+      'tour_guide' => Icons.tour,
+      'transport' => Icons.local_taxi,
+      _ => Icons.local_parking,
+    };
   }
 }
 

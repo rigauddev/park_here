@@ -34,6 +34,7 @@
 - Validar e-mail antes de liberar cadastro de cliente/parceiro.
 - Criar recuperacao de senha por codigo enviado por e-mail e bloqueio do fluxo ate cadastrar nova senha.
 - Criar checklist de publicacao Play Store/App Store e revisar permissao, privacidade e dados antes de builds de loja.
+- Definir access token com validade de 6 horas, logout automatico em token expirado e em retorno `401 Unauthorized`.
 
 ## Fase 1.1: Cadastro De Parceiro Simples
 
@@ -48,6 +49,7 @@
 - Testar listagem e aprovacao manual via API.
 - Separar parceiros de divulgacao e parceiros de gestao.
 - Separar interface `Minha empresa` do parceiro da futura gestao geral do admin do sistema.
+- Separar papeis internos: `SUPER_ADMIN` para admin master ParkHere e `PARTNER_MANAGER` para gestor do estabelecimento.
 
 ## Fase 1.2: Documentos E Vistoria
 
@@ -120,6 +122,13 @@
 - Painel ou app operacional para portaria.
 - Criar mapa operacional 2D de vagas com status livre, pre-reservado e ocupado.
 - Ao clicar em vaga ocupada/pre-reservada, mostrar detalhes da solicitacao.
+- Ao clicar em vaga livre, operador pode criar reserva operacional e iniciar check-in pelo celular.
+- Operador pode criar pre-reserva sem pagamento ou reserva confirmada com pagamento operacional.
+- Pagamento operacional MVP: dinheiro com valor recebido/troco e Pix com QR code; cartao/maquininha fica para V2.
+- Funcao caixa do estacionamento fica acoplada ao mapa de vagas no MVP: receber dinheiro/Pix, calcular troco, registrar pagamento e alimentar totais operacionais.
+- Cards do mapa devem somar reservas, servicos, recebido e a receber por status.
+- Check-in operacional deve exigir fotos de frente, traseira e laterais do veiculo.
+- Proxima etapa: persistir fotos do check-in em storage seguro com auditoria por reserva.
 - Gestao de vagas por setor/tipo.
 - Evoluir mapa operacional para visualizacao 3D com veiculos e setores depois da modelagem de vagas fisicas.
 - Gestao de servicos oferecidos pelo parceiro.

@@ -1,7 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
 
@@ -11,6 +15,7 @@ class PartnerParkingMapPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final layouts = ref.watch(partnerParkingMapProvider);
+    final isPartnerOwner = ref.watch(authProvider).isPartnerOwner;
 
     return Scaffold(
       appBar: AppBar(
@@ -36,7 +41,11 @@ class PartnerParkingMapPage extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
-              for (final layout in items) _ParkingLayoutPanel(layout: layout),
+              for (final layout in items)
+                _ParkingLayoutPanel(
+                  layout: layout,
+                  showFinancialSummary: isPartnerOwner,
+                ),
             ],
           );
         },
@@ -47,8 +56,12 @@ class PartnerParkingMapPage extends ConsumerWidget {
 
 class _ParkingLayoutPanel extends StatelessWidget {
   final PartnerParkingLayout layout;
+  final bool showFinancialSummary;
 
-  const _ParkingLayoutPanel({required this.layout});
+  const _ParkingLayoutPanel({
+    required this.layout,
+    required this.showFinancialSummary,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +94,57 @@ class _ParkingLayoutPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            if (showFinancialSummary) ...[
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _MoneySummaryCard(
+                    icon: Icons.schedule,
+                    label: 'Pre-reservas',
+                    value: layout.preReservedAmount,
+                    color: Colors.orange,
+                  ),
+                  _MoneySummaryCard(
+                    icon: Icons.verified_outlined,
+                    label: 'Reservas confirmadas',
+                    value: layout.confirmedAmount,
+                    color: AppTheme.success,
+                  ),
+                  _MoneySummaryCard(
+                    icon: Icons.login,
+                    label: 'Em permanencia',
+                    value: layout.checkedInAmount,
+                    color: AppTheme.primary,
+                  ),
+                  _MoneySummaryCard(
+                    icon: Icons.point_of_sale,
+                    label: 'Recebido no caixa',
+                    value: layout.paidAmount,
+                    color: const Color(0xFF00897B),
+                  ),
+                  _MoneySummaryCard(
+                    icon: Icons.pending_actions,
+                    label: 'A receber',
+                    value: layout.pendingPaymentAmount,
+                    color: Colors.red,
+                  ),
+                  _MoneySummaryCard(
+                    icon: Icons.local_car_wash,
+                    label: 'Servicos pre-reserva',
+                    value: layout.servicesAmountByStatus['pre_reserved'] ?? 0,
+                    color: Colors.orange,
+                  ),
+                  _MoneySummaryCard(
+                    icon: Icons.miscellaneous_services,
+                    label: 'Servicos confirmados',
+                    value: layout.servicesAmountByStatus['confirmed'] ?? 0,
+                    color: AppTheme.success,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -120,7 +184,7 @@ class _ParkingLayoutPanel extends StatelessWidget {
                 ),
                 itemBuilder: (context, index) {
                   final slot = layout.slots[index];
-                  return _ParkingSlotTile(slot: slot);
+                  return _ParkingSlotTile(parkingId: layout.id, slot: slot);
                 },
               ),
             ),
@@ -131,13 +195,14 @@ class _ParkingLayoutPanel extends StatelessWidget {
   }
 }
 
-class _ParkingSlotTile extends StatelessWidget {
+class _ParkingSlotTile extends ConsumerWidget {
+  final String parkingId;
   final PartnerParkingSlot slot;
 
-  const _ParkingSlotTile({required this.slot});
+  const _ParkingSlotTile({required this.parkingId, required this.slot});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final color = switch (slot.status) {
       'occupied' => AppTheme.primary,
       'pre_reserved' => Colors.orange,
@@ -146,8 +211,8 @@ class _ParkingSlotTile extends StatelessWidget {
 
     return InkWell(
       onTap: slot.reservation == null
-          ? null
-          : () => _showReservation(context, slot),
+          ? () => _showCreateReservation(context, parkingId, slot)
+          : () => _showReservation(context, ref, slot),
       borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
@@ -182,8 +247,27 @@ class _ParkingSlotTile extends StatelessWidget {
     );
   }
 
-  void _showReservation(BuildContext context, PartnerParkingSlot slot) {
+  void _showCreateReservation(
+    BuildContext context,
+    String parkingId,
+    PartnerParkingSlot slot,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (_) =>
+          _FreeSlotReservationDialog(parkingId: parkingId, slotCode: slot.code),
+    );
+  }
+
+  void _showReservation(
+    BuildContext context,
+    WidgetRef ref,
+    PartnerParkingSlot slot,
+  ) {
     final reservation = slot.reservation!;
+    final canCheckin =
+        reservation.status == 'confirmed' &&
+        reservation.paymentStatus == 'paid';
     showDialog<void>(
       context: context,
       builder: (context) {
@@ -271,12 +355,41 @@ class _ParkingSlotTile extends StatelessWidget {
               label: const Text('Fechar'),
             ),
             OutlinedButton.icon(
-              onPressed: () {},
+              onPressed: reservation.paymentStatus == 'paid'
+                  ? null
+                  : () {
+                      Navigator.pop(context);
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => _CashierPaymentDialog(
+                          reservationId: reservation.id,
+                          amount: reservation.finalTotal,
+                          onCompleted: () {
+                            ref.invalidate(partnerParkingMapProvider);
+                            ref.invalidate(partnerReservationsProvider);
+                          },
+                        ),
+                      );
+                    },
               icon: const Icon(Icons.receipt_long_outlined),
               label: const Text('Pagamento'),
             ),
             FilledButton.icon(
-              onPressed: () {},
+              onPressed: canCheckin
+                  ? () {
+                      Navigator.pop(context);
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => _CheckinPhotosDialog(
+                          reservationId: reservation.id,
+                          onCompleted: () {
+                            ref.invalidate(partnerParkingMapProvider);
+                            ref.invalidate(partnerReservationsProvider);
+                          },
+                        ),
+                      );
+                    }
+                  : null,
               icon: const Icon(Icons.login),
               label: const Text('Check-in'),
             ),
@@ -294,6 +407,760 @@ class _ParkingSlotTile extends StatelessWidget {
       _ => '${reservation.durationHours}h',
     };
     return plan;
+  }
+}
+
+class _FreeSlotReservationDialog extends ConsumerStatefulWidget {
+  final String parkingId;
+  final String slotCode;
+
+  const _FreeSlotReservationDialog({
+    required this.parkingId,
+    required this.slotCode,
+  });
+
+  @override
+  ConsumerState<_FreeSlotReservationDialog> createState() =>
+      _FreeSlotReservationDialogState();
+}
+
+class _FreeSlotReservationDialogState
+    extends ConsumerState<_FreeSlotReservationDialog> {
+  final cashReceivedController = TextEditingController();
+  _OperationalReservationMode mode = _OperationalReservationMode.preReserve;
+  _OperationalPaymentMethod paymentMethod = _OperationalPaymentMethod.cash;
+  _OperationalPricingPlan pricingPlan = _OperationalPricingPlan.hourly;
+  _OperationalPayTiming payTiming = _OperationalPayTiming.checkout;
+  String? pixQrCode;
+  double? finalTotal;
+  double? changeAmount;
+  bool isSubmitting = false;
+
+  @override
+  void dispose() {
+    cashReceivedController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Vaga ${widget.slotCode}'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Crie uma pre-reserva sem pagamento ou uma reserva confirmada com pagamento.',
+                style: TextStyle(color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 14),
+              SegmentedButton<_OperationalReservationMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: _OperationalReservationMode.preReserve,
+                    icon: Icon(Icons.schedule),
+                    label: Text('Pre-reserva'),
+                  ),
+                  ButtonSegment(
+                    value: _OperationalReservationMode.paidReservation,
+                    icon: Icon(Icons.verified_outlined),
+                    label: Text('Reserva'),
+                  ),
+                ],
+                selected: {mode},
+                onSelectionChanged: isSubmitting
+                    ? null
+                    : (values) => setState(() {
+                        mode = values.first;
+                        if (pricingPlan == _OperationalPricingPlan.hourly) {
+                          payTiming = _OperationalPayTiming.checkout;
+                        }
+                        pixQrCode = null;
+                        finalTotal = null;
+                        changeAmount = null;
+                      }),
+              ),
+              if (mode == _OperationalReservationMode.paidReservation) ...[
+                const SizedBox(height: 14),
+                DropdownButtonFormField<_OperationalPricingPlan>(
+                  initialValue: pricingPlan,
+                  decoration: const InputDecoration(labelText: 'Modalidade'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.hourly,
+                      child: Text('Por hora'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.daily,
+                      child: Text('Diaria'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.weekly,
+                      child: Text('Semanal'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.monthly,
+                      child: Text('Mensal'),
+                    ),
+                  ],
+                  onChanged: isSubmitting
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          setState(() {
+                            pricingPlan = value;
+                            if (pricingPlan == _OperationalPricingPlan.hourly) {
+                              payTiming = _OperationalPayTiming.checkout;
+                            }
+                            pixQrCode = null;
+                            finalTotal = null;
+                            changeAmount = null;
+                          });
+                        },
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<_OperationalPayTiming>(
+                  segments: const [
+                    ButtonSegment(
+                      value: _OperationalPayTiming.now,
+                      icon: Icon(Icons.payments_outlined),
+                      label: Text('Pagar agora'),
+                    ),
+                    ButtonSegment(
+                      value: _OperationalPayTiming.checkout,
+                      icon: Icon(Icons.logout),
+                      label: Text('Na volta'),
+                    ),
+                  ],
+                  selected: {payTiming},
+                  onSelectionChanged:
+                      isSubmitting ||
+                          pricingPlan == _OperationalPricingPlan.hourly
+                      ? null
+                      : (values) => setState(() {
+                          payTiming = values.first;
+                          pixQrCode = null;
+                          finalTotal = null;
+                          changeAmount = null;
+                        }),
+                ),
+                if (pricingPlan == _OperationalPricingPlan.hourly)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Na modalidade por hora, o pagamento deve ser realizado no checkout.',
+                      style: TextStyle(color: AppTheme.textMuted),
+                    ),
+                  ),
+              ],
+              if (mode == _OperationalReservationMode.paidReservation &&
+                  payTiming == _OperationalPayTiming.now) ...[
+                const SizedBox(height: 14),
+                DropdownButtonFormField<_OperationalPaymentMethod>(
+                  initialValue: paymentMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Forma de pagamento',
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: _OperationalPaymentMethod.cash,
+                      child: Text('Dinheiro'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPaymentMethod.pix,
+                      child: Text('Pix'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPaymentMethod.card,
+                      child: Text('Cartao - maquininha V2'),
+                    ),
+                  ],
+                  onChanged: isSubmitting
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          setState(() {
+                            paymentMethod = value;
+                            pixQrCode = null;
+                            finalTotal = null;
+                            changeAmount = null;
+                          });
+                        },
+                ),
+                if (paymentMethod == _OperationalPaymentMethod.cash) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: cashReceivedController,
+                    enabled: !isSubmitting,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Valor recebido',
+                      prefixText: 'R\$ ',
+                    ),
+                  ),
+                ],
+                if (paymentMethod == _OperationalPaymentMethod.card) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Integracao com maquininha sera habilitada na V2.',
+                    style: TextStyle(color: AppTheme.textMuted),
+                  ),
+                ],
+                if (finalTotal != null) ...[
+                  const SizedBox(height: 12),
+                  _DetailLine('Total', 'R\$ ${finalTotal!.toStringAsFixed(2)}'),
+                ],
+                if (changeAmount != null)
+                  _DetailLine(
+                    'Troco',
+                    'R\$ ${changeAmount!.toStringAsFixed(2)}',
+                  ),
+                if (pixQrCode != null) ...[
+                  const SizedBox(height: 12),
+                  Center(
+                    child: QrImageView(
+                      data: pixQrCode!,
+                      size: 180,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    pixQrCode!,
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+              if (mode == _OperationalReservationMode.paidReservation) ...[
+                const SizedBox(height: 10),
+                Text(
+                  payTiming == _OperationalPayTiming.now
+                      ? 'O pagamento fica registrado para cliente, estabelecimento e admin do sistema.'
+                      : 'A reserva fica pendente no caixa para receber no checkout.',
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSubmitting ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed:
+              !isSubmitting &&
+                  (payTiming == _OperationalPayTiming.checkout ||
+                      paymentMethod != _OperationalPaymentMethod.card)
+              ? _submit
+              : null,
+          icon: isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.check),
+          label: Text(
+            mode == _OperationalReservationMode.preReserve
+                ? 'Criar pre-reserva'
+                : 'Criar reserva',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _submit() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+
+    setState(() => isSubmitting = true);
+    try {
+      final reservation = await createOperationalReservation(
+        token: token,
+        parkingId: widget.parkingId,
+        pricingPlan: mode == _OperationalReservationMode.paidReservation
+            ? pricingPlan.apiValue
+            : _OperationalPricingPlan.hourly.apiValue,
+        durationHours: 1,
+      );
+      final reservationId = reservation['id'] as String;
+
+      if (mode == _OperationalReservationMode.paidReservation &&
+          payTiming == _OperationalPayTiming.now) {
+        final payment = await createOperationalPaymentIntent(
+          token: token,
+          reservationId: reservationId,
+          method: paymentMethod.apiValue,
+        );
+        final total = (payment['gross_amount'] as num).toDouble();
+
+        if (paymentMethod == _OperationalPaymentMethod.cash) {
+          final received = _parseMoney(cashReceivedController.text);
+          if (received < total) {
+            throw Exception('Valor recebido menor que o total.');
+          }
+          await confirmOperationalPayment(
+            token: token,
+            paymentId: payment['id'] as String,
+          );
+          setState(() {
+            finalTotal = total;
+            changeAmount = received - total;
+          });
+        } else if (paymentMethod == _OperationalPaymentMethod.pix) {
+          setState(() {
+            finalTotal = total;
+            pixQrCode = payment['qr_code'] as String?;
+          });
+          await confirmOperationalPayment(
+            token: token,
+            paymentId: payment['id'] as String,
+          );
+        }
+      }
+
+      ref.invalidate(partnerParkingMapProvider);
+      ref.invalidate(partnerReservationsProvider);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            mode == _OperationalReservationMode.preReserve
+                ? 'Pre-reserva criada.'
+                : payTiming == _OperationalPayTiming.now
+                ? 'Reserva confirmada com pagamento.'
+                : 'Reserva criada para pagamento no checkout.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao criar reserva: $error')));
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
+    }
+  }
+
+  double _parseMoney(String value) {
+    final normalized = value.trim().replaceAll('.', '').replaceAll(',', '.');
+    return double.tryParse(normalized) ?? 0;
+  }
+}
+
+enum _OperationalReservationMode { preReserve, paidReservation }
+
+enum _OperationalPaymentMethod {
+  cash('cash'),
+  pix('pix'),
+  card('card');
+
+  final String apiValue;
+
+  const _OperationalPaymentMethod(this.apiValue);
+}
+
+enum _OperationalPricingPlan {
+  hourly('hourly'),
+  daily('daily'),
+  weekly('weekly'),
+  monthly('monthly');
+
+  final String apiValue;
+
+  const _OperationalPricingPlan(this.apiValue);
+}
+
+enum _OperationalPayTiming { now, checkout }
+
+class _CashierPaymentDialog extends ConsumerStatefulWidget {
+  final String reservationId;
+  final double amount;
+  final VoidCallback onCompleted;
+
+  const _CashierPaymentDialog({
+    required this.reservationId,
+    required this.amount,
+    required this.onCompleted,
+  });
+
+  @override
+  ConsumerState<_CashierPaymentDialog> createState() =>
+      _CashierPaymentDialogState();
+}
+
+class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
+  final cashReceivedController = TextEditingController();
+  _OperationalPaymentMethod paymentMethod = _OperationalPaymentMethod.cash;
+  bool isSubmitting = false;
+  String? pixQrCode;
+  double? changeAmount;
+
+  @override
+  void dispose() {
+    cashReceivedController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Caixa do estacionamento'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DetailLine('Total', 'R\$ ${widget.amount.toStringAsFixed(2)}'),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<_OperationalPaymentMethod>(
+                initialValue: paymentMethod,
+                decoration: const InputDecoration(
+                  labelText: 'Forma de pagamento',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: _OperationalPaymentMethod.cash,
+                    child: Text('Dinheiro'),
+                  ),
+                  DropdownMenuItem(
+                    value: _OperationalPaymentMethod.pix,
+                    child: Text('Pix'),
+                  ),
+                  DropdownMenuItem(
+                    value: _OperationalPaymentMethod.card,
+                    child: Text('Cartao - maquininha V2'),
+                  ),
+                ],
+                onChanged: isSubmitting
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          paymentMethod = value;
+                          pixQrCode = null;
+                          changeAmount = null;
+                        });
+                      },
+              ),
+              if (paymentMethod == _OperationalPaymentMethod.cash) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: cashReceivedController,
+                  enabled: !isSubmitting,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Valor recebido',
+                    prefixText: 'R\$ ',
+                  ),
+                ),
+              ],
+              if (paymentMethod == _OperationalPaymentMethod.card) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'Integracao com maquininha sera habilitada na V2.',
+                  style: TextStyle(color: AppTheme.textMuted),
+                ),
+              ],
+              if (changeAmount != null) ...[
+                const SizedBox(height: 12),
+                _DetailLine('Troco', 'R\$ ${changeAmount!.toStringAsFixed(2)}'),
+              ],
+              if (pixQrCode != null) ...[
+                const SizedBox(height: 12),
+                Center(
+                  child: QrImageView(
+                    data: pixQrCode!,
+                    size: 180,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  pixQrCode!,
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSubmitting ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed:
+              !isSubmitting && paymentMethod != _OperationalPaymentMethod.card
+              ? _receivePayment
+              : null,
+          icon: isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.point_of_sale),
+          label: const Text('Receber'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _receivePayment() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+
+    setState(() => isSubmitting = true);
+    try {
+      final payment = await createOperationalPaymentIntent(
+        token: token,
+        reservationId: widget.reservationId,
+        method: paymentMethod.apiValue,
+      );
+      final total = (payment['gross_amount'] as num).toDouble();
+      if (paymentMethod == _OperationalPaymentMethod.cash) {
+        final received = _parseMoney(cashReceivedController.text);
+        if (received < total) {
+          throw Exception('Valor recebido menor que o total.');
+        }
+        await confirmOperationalPayment(
+          token: token,
+          paymentId: payment['id'] as String,
+        );
+        setState(() => changeAmount = received - total);
+      } else {
+        setState(() => pixQrCode = payment['qr_code'] as String?);
+        await confirmOperationalPayment(
+          token: token,
+          paymentId: payment['id'] as String,
+        );
+      }
+
+      widget.onCompleted();
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pagamento recebido no caixa.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro no caixa: $error')));
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
+    }
+  }
+
+  double _parseMoney(String value) {
+    final normalized = value.trim().replaceAll('.', '').replaceAll(',', '.');
+    return double.tryParse(normalized) ?? 0;
+  }
+}
+
+class _CheckinPhotosDialog extends ConsumerStatefulWidget {
+  final String reservationId;
+  final VoidCallback onCompleted;
+
+  const _CheckinPhotosDialog({
+    required this.reservationId,
+    required this.onCompleted,
+  });
+
+  @override
+  ConsumerState<_CheckinPhotosDialog> createState() =>
+      _CheckinPhotosDialogState();
+}
+
+class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
+  final Map<String, XFile?> photos = {
+    'Frente': null,
+    'Traseira': null,
+    'Lateral esquerda': null,
+    'Lateral direita': null,
+  };
+  bool isSubmitting = false;
+
+  bool get hasAllPhotos => photos.values.every((photo) => photo != null);
+
+  @override
+  Widget build(BuildContext context) {
+    final canUseCamera =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+
+    return AlertDialog(
+      title: const Text('Check-in com fotos'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Capture frente, traseira e laterais do veiculo antes de confirmar o check-in.',
+                style: TextStyle(color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 14),
+              for (final entry in photos.entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: OutlinedButton.icon(
+                    onPressed: canUseCamera && !isSubmitting
+                        ? () => _takePhoto(entry.key)
+                        : null,
+                    icon: Icon(
+                      entry.value == null
+                          ? Icons.photo_camera_outlined
+                          : Icons.check_circle,
+                    ),
+                    label: Text(entry.key),
+                  ),
+                ),
+              if (!canUseCamera)
+                const Text(
+                  'O check-in com fotos deve ser feito no celular.',
+                  style: TextStyle(color: Colors.red),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSubmitting ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: hasAllPhotos && !isSubmitting ? _confirmCheckin : null,
+          icon: isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.login),
+          label: const Text('Confirmar check-in'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _takePhoto(String label) async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => photos[label] = picked);
+  }
+
+  Future<void> _confirmCheckin() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+
+    setState(() => isSubmitting = true);
+    try {
+      await checkinOperationalReservation(
+        token: token,
+        reservationId: widget.reservationId,
+      );
+      widget.onCompleted();
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Check-in realizado.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao realizar check-in: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
+    }
+  }
+}
+
+class _MoneySummaryCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final double value;
+  final Color color;
+
+  const _MoneySummaryCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: MediaQuery.sizeOf(context).width >= 900
+          ? 220
+          : MediaQuery.sizeOf(context).width - 52,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(color: AppTheme.textMuted)),
+                const SizedBox(height: 2),
+                Text(
+                  'R\$ ${value.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

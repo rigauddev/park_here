@@ -29,6 +29,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final auth = ref.watch(authProvider);
     final email = auth.userEmail ?? 'cliente@parkhere.test';
     final isPartner = auth.accountType == AuthAccountType.partner;
+    final isMobileLayout = MediaQuery.sizeOf(context).width < 900;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Perfil')),
@@ -157,24 +158,26 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               ),
             ),
           ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red,
-              side: const BorderSide(color: Colors.red),
+          if (isMobileLayout) ...[
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+              ),
+              onPressed: () async {
+                await ref.read(authProvider.notifier).logout();
+                if (!context.mounted) return;
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                  (_) => false,
+                );
+              },
+              icon: const Icon(Icons.logout),
+              label: const Text('Sair'),
             ),
-            onPressed: () async {
-              await ref.read(authProvider.notifier).logout();
-              if (!context.mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginPage()),
-                (_) => false,
-              );
-            },
-            icon: const Icon(Icons.logout),
-            label: const Text('Sair'),
-          ),
+          ],
         ],
       ),
     );

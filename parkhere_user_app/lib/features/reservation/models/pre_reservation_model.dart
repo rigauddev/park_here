@@ -17,9 +17,7 @@ class PreReservationModel {
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 
-  PreReservationModel copyWith({
-    bool? active,
-  }) {
+  PreReservationModel copyWith({bool? active}) {
     return PreReservationModel(
       id: id,
       parkingId: parkingId,

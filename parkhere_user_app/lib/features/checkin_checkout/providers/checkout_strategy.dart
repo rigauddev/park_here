@@ -5,10 +5,8 @@ abstract class CheckoutStrategy {
 }
 
 class HourlyCheckoutStrategy implements CheckoutStrategy {
-
   @override
   double calculate(ReservationModel reservation) {
-
     final now = DateTime.now();
     final duration = now.difference(reservation.checkinTime);
 
@@ -31,17 +29,16 @@ class HourlyCheckoutStrategy implements CheckoutStrategy {
     return total;
   }
 }
-class DailyCheckoutStrategy implements CheckoutStrategy {
 
+class DailyCheckoutStrategy implements CheckoutStrategy {
   @override
   double calculate(ReservationModel reservation) {
-
     double total = 0;
 
     final now = DateTime.now();
 
     if (now.isAfter(reservation.validUntil)) {
-      total += reservation.additionalHourPrice; 
+      total += reservation.additionalHourPrice;
     }
 
     if (reservation.hasUnpaidServices) {
@@ -51,11 +48,10 @@ class DailyCheckoutStrategy implements CheckoutStrategy {
     return total;
   }
 }
-class MonthlyCheckoutStrategy implements CheckoutStrategy {
 
+class MonthlyCheckoutStrategy implements CheckoutStrategy {
   @override
   double calculate(ReservationModel reservation) {
-
     final now = DateTime.now();
 
     if (now.isAfter(reservation.validUntil)) {
@@ -71,4 +67,3 @@ class MonthlyCheckoutStrategy implements CheckoutStrategy {
     return total;
   }
 }
-

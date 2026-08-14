@@ -170,7 +170,11 @@ async def _ensure_reservation_permission(
             raise HTTPException(status_code=403, detail="Vehicle not allowed")
         return
 
-    if current_user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+    if current_user.role in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+        UserRoleEnum.OPERATOR,
+    }:
         if current_user.tenant_id != parking.tenant_id:
             raise HTTPException(status_code=403, detail="Parking not allowed")
         return
@@ -188,8 +192,16 @@ def _ensure_reservation_access(
             raise HTTPException(status_code=403, detail="Reservation not allowed")
         return
 
-    if current_user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+    if current_user.role in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.PARKING_ADMIN}:
         if current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        return
+
+    if current_user.role == UserRoleEnum.OPERATOR:
+        if (
+            current_user.tenant_id != parking.tenant_id
+            or reservation.user_id != current_user.id
+        ):
             raise HTTPException(status_code=403, detail="Reservation not allowed")
         return
 

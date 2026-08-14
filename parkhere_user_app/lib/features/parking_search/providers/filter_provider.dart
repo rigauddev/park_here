@@ -33,5 +33,4 @@ class ParkingFilter {
   }
 }
 
-final filterProvider =
-    StateProvider<ParkingFilter>((ref) => ParkingFilter());
+final filterProvider = StateProvider<ParkingFilter>((ref) => ParkingFilter());

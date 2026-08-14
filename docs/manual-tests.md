@@ -18,6 +18,11 @@ Contas seed:
 - Parceiro/admin estacionamento: `admin@parkhere.test` / `123456`
 - Parceiro dono/gestor: `parceiro@parkhere.test` / `123456`
 - Operador do parceiro: `operador@parkhere.test` / `123456`
+- Gestor seed Central: `gestor.central@parkhere-salvador.test` / `123456`
+- Operador seed Central: `operador.central@parkhere-salvador.test` / `123456`
+- Operador Comercio: `operador.comercio@parkhere-salvador.test` / `123456`
+- Operador Pelourinho: `operador.pelourinho@parkhere-salvador.test` / `123456`
+- Operador Pelourinho: `operador2.parking@parkhere.com` / `123456`
 - MFA local: `000000`
 
 ## Fluxo Cliente: Reserva, Check-in, Pagamento E Checkout
@@ -31,7 +36,13 @@ Contas seed:
 7. Escolha plano e serviços extras.
 8. Confirme a rota/pre-reserva.
 9. Na tela de rota, escolha `Check-in antecipado e pagamento`.
-10. Marque/capture as 4 fotos obrigatórias.
+10. Clique em uma vaga livre.
+11. Crie uma pre-reserva e confirme que ela aparece como pendente de pagamento.
+12. Clique em outra vaga livre, escolha reserva com pagamento em dinheiro, informe valor recebido e confira o troco.
+13. Clique em outra vaga livre, escolha Pix e confirme que o QR code aparece.
+14. Crie reserva por hora e confirme que o pagamento fica para o checkout.
+15. Abra uma reserva pendente, clique em Pagamento e receba pelo caixa.
+16. Em uma reserva paga, abra os detalhes e realize check-in pelo celular com 4 fotos obrigatorias: frente, traseira, lateral esquerda e lateral direita.
 11. Confirme pagamento.
 12. O app deve chamar o backend de pagamento quando a reserva tiver `reservationId`.
 13. O backend cria `payment_transactions` com provider `mercado_pago`, split ParkHere/parceiro e status `paid` após confirmação mock.
@@ -59,6 +70,8 @@ Contas seed:
 1. Faça logout.
 2. Entre como `Parceiro`.
 3. Login: `operador@parkhere.test` / `123456`.
+4. Confirme que o menu Financeiro Pro nao aparece para operador.
+5. Confirme que o operador ve apenas menu operacional: mapa de vagas, reservas recebidas e perfil.
 4. MFA: `000000`.
 5. Confirme acesso a `Mapa de vagas` e `Reservas recebidas`.
 6. Confirme que gestão administrativa de estacionamento retorna `403` na API.

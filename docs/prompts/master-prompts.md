@@ -15,6 +15,7 @@ Ideia:
 Use $parkhere-backend-api.
 Leia docs/product-overview.md, docs/features.md e docs/architecture.md.
 Tarefa: implemente a funcionalidade abaixo no FastAPI seguindo a arquitetura modular do repo. Inclua modelos, schemas, rotas, service, migration Alembic quando necessario e testes ou validacao minima.
+Ao concluir, limpe caches/artefatos que nao devem ser versionados e atualize docs/roadmap quando houver impacto de produto.
 Funcionalidade:
 ```
 
@@ -24,6 +25,7 @@ Funcionalidade:
 Use $parkhere-flutter-app.
 Leia docs/features.md e docs/architecture.md.
 Tarefa: implemente ou ajuste o fluxo abaixo no app Flutter usando Riverpod e a estrutura por features existente. Evite regra de negocio pesada em widgets e mantenha modelos alinhados ao backend.
+Ao concluir, rode format/analyze quando possivel, limpe caches/artefatos que nao devem ser versionados e atualize docs/roadmap quando houver impacto de produto.
 Fluxo:
 ```
 

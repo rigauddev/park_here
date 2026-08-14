@@ -369,7 +369,10 @@ async def update_managed_parking(
 
 
 def _ensure_parking_manager(user: User):
-    if user.role != UserRoleEnum.PARKING_ADMIN:
+    if user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+    }:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     if not user.tenant_id:
@@ -390,7 +393,11 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
 
 
 def _user_permissions(user: User) -> list[str]:
-    if user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.SUPER_ADMIN}:
+    if user.role in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+        UserRoleEnum.SUPER_ADMIN,
+    }:
         return OWNER_PERMISSIONS
 
     if user.role == UserRoleEnum.OPERATOR:
@@ -437,7 +444,11 @@ async def _ensure_parking_partner(db: AsyncSession, user: User):
 
 
 async def _ensure_parking_staff(db: AsyncSession, user: User):
-    if user.role not in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+    if user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+        UserRoleEnum.OPERATOR,
+    }:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     if not user.tenant_id:
@@ -465,6 +476,42 @@ def _parking_layout_payload(
 ):
     reserved = [item for item in reservations if item[0].status != "checked_in"]
     occupied = [item for item in reservations if item[0].status == "checked_in"]
+    pre_reserved_amount = sum(
+        item[0].final_total for item in reservations if item[0].status == "pre_reserved"
+    )
+    confirmed_amount = sum(
+        item[0].final_total for item in reservations if item[0].status == "confirmed"
+    )
+    checked_in_amount = sum(
+        item[0].final_total for item in reservations if item[0].status == "checked_in"
+    )
+    pending_payment_amount = sum(
+        item[0].final_total
+        for item in reservations
+        if item[0].payment_status != "paid"
+    )
+    paid_amount = sum(
+        item[0].final_total
+        for item in reservations
+        if item[0].payment_status == "paid"
+    )
+    services_amount_by_status = {
+        "pre_reserved": sum(
+            item[0].services_amount
+            for item in reservations
+            if item[0].status == "pre_reserved"
+        ),
+        "confirmed": sum(
+            item[0].services_amount
+            for item in reservations
+            if item[0].status == "confirmed"
+        ),
+        "checked_in": sum(
+            item[0].services_amount
+            for item in reservations
+            if item[0].status == "checked_in"
+        ),
+    }
     occupied_count = len(occupied)
     reserved_count = len(reserved)
     free_count = max(parking.total_spots - occupied_count - reserved_count, 0)
@@ -494,6 +541,12 @@ def _parking_layout_payload(
         "available_spots": free_count,
         "pre_reserved_spots": reserved_count,
         "occupied_spots": occupied_count,
+        "pre_reserved_amount": pre_reserved_amount,
+        "confirmed_amount": confirmed_amount,
+        "checked_in_amount": checked_in_amount,
+        "pending_payment_amount": pending_payment_amount,
+        "paid_amount": paid_amount,
+        "services_amount_by_status": services_amount_by_status,
         "slots": slots[: parking.total_spots],
     }
 
@@ -540,6 +593,7 @@ def _reservation_services(reservation: Reservation) -> list[dict]:
 
 def _ensure_partner_user(user: User):
     if user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
         UserRoleEnum.PARKING_ADMIN,
         UserRoleEnum.OPERATOR,
         UserRoleEnum.TOUR_GUIDE,

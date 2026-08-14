@@ -35,7 +35,7 @@ class ParkingModel {
     required this.hasTransportService,
     required this.carWashPrice,
     required this.tourGuidePrice,
-    required this.transportPrice, 
+    required this.transportPrice,
     required this.hasCoveredArea,
     required this.hasVipSpots,
   });
@@ -57,7 +57,6 @@ class ParkingModel {
       tourGuidePrice: json["tourGuidePrice"],
       transportPrice: json["transportPrice"],
       pricing: ParkingPricing.fromJson(json["pricing"]),
-      
     );
   }
 }

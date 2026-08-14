@@ -5,12 +5,10 @@ import '../models/pre_reservation_model.dart';
 
 final preReservationProvider =
     AsyncNotifierProvider<PreReservationNotifier, PreReservationModel?>(
-  PreReservationNotifier.new,
-);
+      PreReservationNotifier.new,
+    );
 
-class PreReservationNotifier
-    extends AsyncNotifier<PreReservationModel?> {
-
+class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
   Timer? _timer;
 
   @override
@@ -23,10 +21,8 @@ class PreReservationNotifier
     required String parkingName,
     required int routeMinutes,
   }) async {
-
     final now = DateTime.now();
-    final expires =
-        now.add(Duration(minutes: routeMinutes));
+    final expires = now.add(Duration(minutes: routeMinutes));
 
     final pre = PreReservationModel(
       id: now.millisecondsSinceEpoch.toString(),
@@ -49,9 +45,7 @@ class PreReservationNotifier
       final current = state.value;
 
       if (current != null) {
-        state = AsyncData(
-          current.copyWith(active: false),
-        );
+        state = AsyncData(current.copyWith(active: false));
       }
     });
   }

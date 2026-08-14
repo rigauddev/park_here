@@ -104,6 +104,12 @@ class PartnerParkingLayout {
   final int availableSpots;
   final int preReservedSpots;
   final int occupiedSpots;
+  final double preReservedAmount;
+  final double confirmedAmount;
+  final double checkedInAmount;
+  final double pendingPaymentAmount;
+  final double paidAmount;
+  final Map<String, double> servicesAmountByStatus;
   final List<PartnerParkingSlot> slots;
 
   const PartnerParkingLayout({
@@ -113,6 +119,12 @@ class PartnerParkingLayout {
     required this.availableSpots,
     required this.preReservedSpots,
     required this.occupiedSpots,
+    required this.preReservedAmount,
+    required this.confirmedAmount,
+    required this.checkedInAmount,
+    required this.pendingPaymentAmount,
+    required this.paidAmount,
+    required this.servicesAmountByStatus,
     required this.slots,
   });
 
@@ -124,6 +136,19 @@ class PartnerParkingLayout {
       availableSpots: json['available_spots'] as int,
       preReservedSpots: json['pre_reserved_spots'] as int,
       occupiedSpots: json['occupied_spots'] as int,
+      preReservedAmount: (json['pre_reserved_amount'] as num? ?? 0).toDouble(),
+      confirmedAmount: (json['confirmed_amount'] as num? ?? 0).toDouble(),
+      checkedInAmount: (json['checked_in_amount'] as num? ?? 0).toDouble(),
+      pendingPaymentAmount: (json['pending_payment_amount'] as num? ?? 0)
+          .toDouble(),
+      paidAmount: (json['paid_amount'] as num? ?? 0).toDouble(),
+      servicesAmountByStatus: {
+        for (final entry
+            in (json['services_amount_by_status'] as Map<String, dynamic>? ??
+                    {})
+                .entries)
+          entry.key: (entry.value as num? ?? 0).toDouble(),
+      },
       slots: [
         for (final item in json['slots'] as List<dynamic>)
           PartnerParkingSlot.fromJson(item as Map<String, dynamic>),

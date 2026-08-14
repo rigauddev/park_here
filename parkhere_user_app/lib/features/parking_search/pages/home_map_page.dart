@@ -91,43 +91,41 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
                     const SizedBox(height: 15),
 
-                    // ✅ Botão Hora
-                    ListTile(
-                      leading: const Icon(Icons.access_time),
-                      title: const Text("Avulso por hora"),
-                      subtitle: Text(
-                        "Primeira hora: R\$ ${parking.pricing.firstHourPrice}",
-                      ),
-                      onTap: () {
-                        ref.read(selectedPlanProvider.notifier).state =
-                            PlanType.hourly;
-                      },
+                    _PlanChoiceCard(
+                      icon: Icons.access_time,
+                      title: 'Avulso por hora',
+                      subtitle: 'Ideal para paradas rápidas',
+                      price:
+                          'R\$ ${parking.pricing.firstHourPrice.toStringAsFixed(2)}',
+                      badge: 'Mais flexível',
+                      highlighted: true,
+                      onTap: () =>
+                          ref.read(selectedPlanProvider.notifier).state =
+                              PlanType.hourly,
                     ),
-
-                    // ✅ Botão Diária
-                    ListTile(
-                      leading: const Icon(Icons.calendar_today),
-                      title: const Text("Diária"),
-                      subtitle: Text(
-                        "Valor: R\$ ${parking.pricing.dailyPrice}",
-                      ),
-                      onTap: () {
-                        ref.read(selectedPlanProvider.notifier).state =
-                            PlanType.daily;
-                      },
+                    const SizedBox(height: 10),
+                    _PlanChoiceCard(
+                      icon: Icons.calendar_today,
+                      title: 'Diária',
+                      subtitle: 'Para permanecer o dia todo',
+                      price:
+                          'R\$ ${parking.pricing.dailyPrice.toStringAsFixed(2)}',
+                      badge: 'Dia completo',
+                      onTap: () =>
+                          ref.read(selectedPlanProvider.notifier).state =
+                              PlanType.daily,
                     ),
-
-                    // ✅ Botão Mensal
-                    ListTile(
-                      leading: const Icon(Icons.calendar_month),
-                      title: const Text("Mensal"),
-                      subtitle: Text(
-                        "Valor: R\$ ${parking.pricing.monthlyPrice}",
-                      ),
-                      onTap: () {
-                        ref.read(selectedPlanProvider.notifier).state =
-                            PlanType.monthly;
-                      },
+                    const SizedBox(height: 10),
+                    _PlanChoiceCard(
+                      icon: Icons.calendar_month,
+                      title: 'Mensal',
+                      subtitle: 'Melhor para rotina frequente',
+                      price:
+                          'R\$ ${parking.pricing.monthlyPrice.toStringAsFixed(2)}',
+                      badge: 'Recorrência',
+                      onTap: () =>
+                          ref.read(selectedPlanProvider.notifier).state =
+                              PlanType.monthly,
                     ),
 
                     const SizedBox(height: 20),
@@ -773,6 +771,120 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             userLocationLat: userLocationLat,
             userLocationLng: userLocationLng,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanChoiceCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String price;
+  final String badge;
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  const _PlanChoiceCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.price,
+    required this.badge,
+    this.highlighted = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = highlighted
+        ? const Color(0xFF169FC4)
+        : const Color(0xFF102657);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: highlighted ? const Color(0xFFEAFBFF) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: highlighted
+                ? const Color(0xFF64D6E6)
+                : const Color(0xFFD9E8F0),
+            width: highlighted ? 1.6 : 1,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x10102657),
+              blurRadius: 14,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: accent.withValues(alpha: 0.1),
+              foregroundColor: accent,
+              child: Icon(icon),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: Color(0xFF102657),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          badge,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Color(0xFF55708F)),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    price,
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,9 +1,7 @@
-
 import 'package:flutter_riverpod/legacy.dart';
 import 'checkout_notifier.dart';
 
-final checkoutProvider =
-    StateNotifierProvider<CheckoutNotifier, CheckoutState>(
+final checkoutProvider = StateNotifierProvider<CheckoutNotifier, CheckoutState>(
   (ref) => CheckoutNotifier(),
 );
 
@@ -39,4 +37,3 @@ class CheckoutState {
     );
   }
 }
-

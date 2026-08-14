@@ -7,8 +7,8 @@ import '../models/parking_session_model.dart';
 
 final checkinProvider =
     AsyncNotifierProvider<CheckinNotifier, ParkingSessionModel?>(
-  CheckinNotifier.new,
-);
+      CheckinNotifier.new,
+    );
 
 class CheckinNotifier extends AsyncNotifier<ParkingSessionModel?> {
   @override
@@ -50,9 +50,7 @@ class CheckinNotifier extends AsyncNotifier<ParkingSessionModel?> {
   // ===============================
   // ✅ CHECKOUT
   // ===============================
-  Future<void> checkout({
-    required ParkingModel parking,
-  }) async {
+  Future<void> checkout({required ParkingModel parking}) async {
     final session = state.value;
     if (session == null) return;
 

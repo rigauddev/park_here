@@ -386,7 +386,8 @@ class _ParkingManagementFormPageState
               ),
               SwitchListTile(
                 value: hasAutomaticAccess,
-                onChanged: (value) => setState(() => hasAutomaticAccess = value),
+                onChanged: (value) =>
+                    setState(() => hasAutomaticAccess = value),
                 title: const Text('Já possui atendimento automático'),
                 contentPadding: EdgeInsets.zero,
               ),

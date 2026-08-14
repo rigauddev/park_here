@@ -1,6 +1,8 @@
 import asyncio
+import json
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal, engine
 from app.core.security import hash_password
@@ -41,12 +43,17 @@ async def seed():
         existing = await db.execute(select(User).where(User.email == "cliente@parkhere.test"))
         if existing.scalar_one_or_none():
             await refresh_existing_seed(db)
+            await ensure_system_admin_seed_user(db)
             await ensure_partner_seed_user(db)
             await ensure_partner_operator_seed_user(db)
+            await cleanup_example_seed_users(db)
+            await ensure_descriptive_seed_users(db)
             await ensure_partner_profile(db)
             await ensure_demo_partner_tenants(db)
             await ensure_platform_fees(db)
             await ensure_partner_payment_accounts(db)
+            await ensure_customer_seed_assets(db)
+            await ensure_seed_reservations(db)
             print("Seed already applied.")
             print("Seed partner, parking management fields, platform fees and payment account refreshed.")
             return
@@ -61,16 +68,16 @@ async def seed():
         db.add(tenant)
         await db.flush()
 
-        parking_admin = User(
-            tenant_id=tenant.id,
-            name="Admin",
-            firt_name="ParkHere",
+        system_admin = User(
+            tenant_id=None,
+            name="Admin Master ParkHere",
+            firt_name="Admin",
             email="admin@parkhere.test",
             password_hash=hash_password("123456"),
             phone="71999990000",
             phone_verified=True,
             email_verified=True,
-            role=UserRoleEnum.PARKING_ADMIN,
+            role=UserRoleEnum.SUPER_ADMIN,
         )
         partner_user = User(
             tenant_id=tenant.id,
@@ -81,7 +88,7 @@ async def seed():
             phone="71999991111",
             phone_verified=True,
             email_verified=True,
-            role=UserRoleEnum.PARKING_ADMIN,
+            role=UserRoleEnum.PARTNER_MANAGER,
         )
         operator_user = User(
             tenant_id=tenant.id,
@@ -93,7 +100,7 @@ async def seed():
             phone_verified=True,
             email_verified=True,
             role=UserRoleEnum.OPERATOR,
-            permissions=__import__("json").dumps(DEFAULT_OPERATOR_PERMISSIONS),
+            permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
         )
         customer = User(
             name="Cliente",
@@ -105,9 +112,10 @@ async def seed():
             email_verified=True,
             role=UserRoleEnum.CUSTOMER,
         )
-        db.add_all([parking_admin, partner_user, operator_user, customer])
+        db.add_all([system_admin, partner_user, operator_user, customer])
         await db.flush()
         await ensure_partner_profile(db, tenant.id, commit=False)
+        await ensure_descriptive_seed_users(db, commit=False)
         demo_tenants = await ensure_demo_partner_tenants(db, commit=False)
 
         parkings = [
@@ -267,8 +275,7 @@ async def seed():
                     user_id=customer.id,
                     vehicle_id=vehicle.id,
                     route_minutes=15,
-                    hold_expires_at=__import__("datetime").datetime.utcnow()
-                    + __import__("datetime").timedelta(minutes=15),
+                    hold_expires_at=datetime.utcnow() + timedelta(minutes=15),
                     estimated_total=40,
                     spot_type="uncovered",
                     pricing_plan="daily",
@@ -383,6 +390,7 @@ async def ensure_demo_partner_tenants(db, commit=True):
             "email": "operacao.pelourinho@parkhere.test",
             "profile_name": "ParkHere Pelourinho VIP",
             "user_email": "pelourinho@parkhere.test",
+            "operator_email": "operador.pelourinho@parkhere-salvador.test",
         },
         "comercio": {
             "name": "Comercio Parking Partners",
@@ -390,6 +398,7 @@ async def ensure_demo_partner_tenants(db, commit=True):
             "email": "operacao.comercio@parkhere.test",
             "profile_name": "ParkHere Comercio Express",
             "user_email": "comercio@parkhere.test",
+            "operator_email": "operador.comercio@parkhere-salvador.test",
         },
     }
     tenants = {}
@@ -426,12 +435,12 @@ async def ensure_demo_partner_tenants(db, commit=True):
                     phone="71999992222",
                     phone_verified=True,
                     email_verified=True,
-                    role=UserRoleEnum.PARKING_ADMIN,
+                    role=UserRoleEnum.PARTNER_MANAGER,
                 )
             )
         else:
             user.tenant_id = tenant.id
-            user.role = UserRoleEnum.PARKING_ADMIN
+            user.role = UserRoleEnum.PARTNER_MANAGER
             user.is_active = True
 
         result = await db.execute(
@@ -461,6 +470,16 @@ async def ensure_demo_partner_tenants(db, commit=True):
             profile.approval_status = "approved"
 
         await ensure_partner_payment_accounts(db, tenant_id=tenant.id, commit=False)
+        await _ensure_seed_user(
+            db,
+            tenant_id=tenant.id,
+            email=spec["operator_email"],
+            name=f"Operador {spec['profile_name']}",
+            first_name="Operador",
+            phone="71999996666",
+            role=UserRoleEnum.OPERATOR,
+            permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
+        )
 
     if commit:
         await db.commit()
@@ -486,18 +505,135 @@ async def ensure_partner_seed_user(db, commit=True):
             phone="71999991111",
             phone_verified=True,
             email_verified=True,
-            role=UserRoleEnum.PARKING_ADMIN,
+            role=UserRoleEnum.PARTNER_MANAGER,
         )
         db.add(user)
     else:
         user.tenant_id = tenant.id
-        user.role = UserRoleEnum.PARKING_ADMIN
+        user.role = UserRoleEnum.PARTNER_MANAGER
         user.phone_verified = True
         user.email_verified = True
         user.is_active = True
 
     if commit:
         await db.commit()
+
+
+async def ensure_system_admin_seed_user(db, commit=True):
+    result = await db.execute(select(User).where(User.email == "admin@parkhere.test"))
+    user = result.scalar_one_or_none()
+    if user is None:
+        db.add(
+            User(
+                tenant_id=None,
+                name="Admin Master ParkHere",
+                firt_name="Admin",
+                email="admin@parkhere.test",
+                password_hash=hash_password("123456"),
+                phone="71999990000",
+                phone_verified=True,
+                email_verified=True,
+                role=UserRoleEnum.SUPER_ADMIN,
+            )
+        )
+    else:
+        user.tenant_id = None
+        user.name = "Admin Master ParkHere"
+        user.firt_name = "Admin"
+        user.role = UserRoleEnum.SUPER_ADMIN
+        user.phone_verified = True
+        user.email_verified = True
+        user.is_active = True
+
+    if commit:
+        await db.commit()
+
+
+async def ensure_descriptive_seed_users(db, commit=True):
+    result = await db.execute(select(Tenant).where(Tenant.cnpj == "11222333000144"))
+    tenant = result.scalar_one_or_none()
+    if tenant is None:
+        return
+
+    await _ensure_seed_user(
+        db,
+        tenant_id=tenant.id,
+        email="gestor.central@parkhere-salvador.test",
+        name="Gestor Central ParkHere",
+        first_name="Gestor",
+        phone="71999994444",
+        role=UserRoleEnum.PARTNER_MANAGER,
+    )
+    await _ensure_seed_user(
+        db,
+        tenant_id=tenant.id,
+        email="operador.central@parkhere-salvador.test",
+        name="Operador Central ParkHere",
+        first_name="Operador",
+        phone="71999995555",
+        role=UserRoleEnum.OPERATOR,
+        permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
+    )
+
+    if commit:
+        await db.commit()
+
+
+async def cleanup_example_seed_users(db, commit=True):
+    await db.execute(
+        delete(User).where(
+            User.email.in_(
+                [
+                    "cliente.parceiro@estacionamento1.com",
+                    "user.operador@estacionamento1.com",
+                ]
+            )
+        )
+    )
+    if commit:
+        await db.commit()
+
+
+async def _ensure_seed_user(
+    db,
+    *,
+    tenant_id: str | None,
+    email: str,
+    name: str,
+    first_name: str,
+    phone: str,
+    role: UserRoleEnum,
+    permissions: str | None = None,
+):
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        db.add(
+            User(
+                tenant_id=tenant_id,
+                name=name,
+                firt_name=first_name,
+                email=email,
+                password_hash=hash_password("123456"),
+                phone=phone,
+                phone_verified=True,
+                email_verified=True,
+                role=role,
+                permissions=permissions,
+            )
+        )
+        return
+
+    user.tenant_id = tenant_id
+    user.name = name
+    user.firt_name = first_name
+    user.phone = phone
+    user.password_hash = hash_password("123456")
+    user.phone_verified = True
+    user.email_verified = True
+    user.role = role
+    user.permissions = permissions
+    user.is_active = True
 
 
 async def ensure_partner_operator_seed_user(db, commit=True):
@@ -519,13 +655,13 @@ async def ensure_partner_operator_seed_user(db, commit=True):
             phone_verified=True,
             email_verified=True,
             role=UserRoleEnum.OPERATOR,
-            permissions=__import__("json").dumps(DEFAULT_OPERATOR_PERMISSIONS),
+            permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
         )
         db.add(user)
     else:
         user.tenant_id = tenant.id
         user.role = UserRoleEnum.OPERATOR
-        user.permissions = __import__("json").dumps(DEFAULT_OPERATOR_PERMISSIONS)
+        user.permissions = json.dumps(DEFAULT_OPERATOR_PERMISSIONS)
         user.phone_verified = True
         user.email_verified = True
         user.is_active = True
@@ -574,6 +710,132 @@ async def ensure_partner_profile(db, tenant_id=None, commit=True):
         profile.website = "https://parkhere.test"
         profile.social_links = "https://instagram.com/parkhere.seed"
         profile.approval_status = "approved"
+
+    if commit:
+        await db.commit()
+
+
+async def ensure_customer_seed_assets(db, commit=True):
+    result = await db.execute(select(User).where(User.email == "cliente@parkhere.test"))
+    customer = result.scalar_one_or_none()
+    if customer is None:
+        return
+
+    result = await db.execute(select(Vehicle).where(Vehicle.id == SEED_VEHICLE_ID))
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        db.add(
+            Vehicle(
+                id=SEED_VEHICLE_ID,
+                user_id=customer.id,
+                nickname="Meu carro",
+                plate="PKH1A23",
+                brand="Toyota",
+                model="Corolla",
+                color="Prata",
+                vehicle_document="CRLV-2026-TESTE",
+                ownership_type="owner",
+                is_active=True,
+            )
+        )
+    else:
+        vehicle.user_id = customer.id
+        vehicle.is_active = True
+        vehicle.brand = "Toyota"
+        vehicle.model = "Corolla"
+
+    document_result = await db.execute(
+        select(DriverDocument).where(DriverDocument.user_id == customer.id)
+    )
+    if document_result.scalar_one_or_none() is None:
+        db.add(
+            DriverDocument(
+                user_id=customer.id,
+                document_type="CNH",
+                document_number="CNH123456789",
+                is_verified=True,
+            )
+        )
+
+    card_result = await db.execute(
+        select(WalletPaymentMethod).where(
+            WalletPaymentMethod.user_id == customer.id,
+            WalletPaymentMethod.method_type == "credit_card",
+        )
+    )
+    if card_result.scalar_one_or_none() is None:
+        db.add(
+            WalletPaymentMethod(
+                user_id=customer.id,
+                method_type="credit_card",
+                label="Visa final 4242",
+                last_four="4242",
+                is_active=True,
+            )
+        )
+
+    pix_result = await db.execute(
+        select(WalletPaymentMethod).where(
+            WalletPaymentMethod.user_id == customer.id,
+            WalletPaymentMethod.method_type == "pix",
+        )
+    )
+    if pix_result.scalar_one_or_none() is None:
+        db.add(
+            WalletPaymentMethod(
+                user_id=customer.id,
+                method_type="pix",
+                label="Pix cliente@parkhere.test",
+                pix_key="cliente@parkhere.test",
+                is_active=False,
+            )
+        )
+
+    if commit:
+        await db.commit()
+
+
+async def ensure_seed_reservations(db, commit=True):
+    customer_result = await db.execute(
+        select(User).where(User.email == "cliente@parkhere.test")
+    )
+    customer = customer_result.scalar_one_or_none()
+    parking_result = await db.execute(
+        select(Parking).where(Parking.name == "Estacionamento Central ParkHere")
+    )
+    parking = parking_result.scalar_one_or_none()
+    if customer is None or parking is None:
+        return
+
+    existing_result = await db.execute(
+        select(Reservation).where(
+            Reservation.user_id == customer.id,
+            Reservation.parking_id == parking.id,
+        )
+    )
+    if existing_result.scalars().first() is not None:
+        if commit:
+            await db.commit()
+        return
+
+    db.add(
+        Reservation(
+            parking_id=parking.id,
+            user_id=customer.id,
+            vehicle_id=SEED_VEHICLE_ID,
+            route_minutes=15,
+            hold_expires_at=datetime.utcnow() + timedelta(minutes=15),
+            estimated_total=40,
+            spot_type="uncovered",
+            pricing_plan="daily",
+            duration_hours=1,
+            base_amount=40,
+            services_amount=0,
+            platform_fee_amount=0,
+            final_total=40,
+            selected_services_snapshot="[]",
+        )
+    )
 
     if commit:
         await db.commit()

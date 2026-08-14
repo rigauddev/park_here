@@ -11,17 +11,13 @@ import 'checkout_qrcode_page.dart';
 class CheckoutPage extends ConsumerStatefulWidget {
   final ReservationModel reservation;
 
-  const CheckoutPage({
-    super.key,
-    required this.reservation,
-  });
+  const CheckoutPage({super.key, required this.reservation});
 
   @override
   ConsumerState<CheckoutPage> createState() => _CheckoutPageState();
 }
 
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
-
   // void initState() {
   //   super.initState();
 
@@ -97,21 +93,17 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     );
 
     if (confirmed == true) {
-      ref
-          .read(checkoutProvider.notifier)
-          .validate(widget.reservation);
+      ref.read(checkoutProvider.notifier).validate(widget.reservation);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(checkoutProvider);
-    
-    ref.listen<CheckoutState>(
-    checkoutProvider,
-    (previous, next) {
 
-      if (next.status == CheckoutStatus.requiresPayment && next.amount != null) {
+    ref.listen<CheckoutState>(checkoutProvider, (previous, next) {
+      if (next.status == CheckoutStatus.requiresPayment &&
+          next.amount != null) {
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -129,9 +121,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
       if (next.status == CheckoutStatus.generatingQr) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const CheckoutQRCodePage(),
-          ),
+          MaterialPageRoute(builder: (_) => const CheckoutQRCodePage()),
         );
 
         ref.read(checkoutProvider.notifier).complete();
@@ -142,24 +132,18 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           SnackBar(content: Text(next.error ?? "Erro inesperado")),
         );
       }
-    },
-  );
+    });
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Checkout"),
-      ),
+      appBar: AppBar(title: const Text("Checkout")),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-
             /// 🔹 Informações da reserva
             Card(
               child: ListTile(
                 title: Text("Plano: ${widget.reservation.plan.name}"),
-                subtitle: Text(
-                  "Check-in: ${widget.reservation.checkinTime}",
-                ),
+                subtitle: Text("Check-in: ${widget.reservation.checkinTime}"),
               ),
             ),
 

@@ -2,17 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final subscriptionProvider =
     AsyncNotifierProvider<SubscriptionNotifier, SubscriptionState>(
-  SubscriptionNotifier.new,
-);
+      SubscriptionNotifier.new,
+    );
 
 class SubscriptionState {
   final bool active;
   final DateTime? expiresAt;
 
-  const SubscriptionState({
-    required this.active,
-    this.expiresAt,
-  });
+  const SubscriptionState({required this.active, this.expiresAt});
 }
 
 class SubscriptionNotifier extends AsyncNotifier<SubscriptionState> {
@@ -27,12 +24,7 @@ class SubscriptionNotifier extends AsyncNotifier<SubscriptionState> {
 
     final expiration = DateTime.now().add(const Duration(days: 30));
 
-    state = AsyncData(
-      SubscriptionState(
-        active: true,
-        expiresAt: expiration,
-      ),
-    );
+    state = AsyncData(SubscriptionState(active: true, expiresAt: expiration));
   }
 
   /// ✅ Verifica se ainda está válida
@@ -45,8 +37,6 @@ class SubscriptionNotifier extends AsyncNotifier<SubscriptionState> {
 
   /// Reset
   void cancel() {
-    state = const AsyncData(
-      SubscriptionState(active: false),
-    );
+    state = const AsyncData(SubscriptionState(active: false));
   }
 }

@@ -12,6 +12,7 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
 
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(AuthState.initial()) {
+    ApiService.onUnauthorized = logout;
     checkAuthOnStartup();
   }
 
@@ -29,6 +30,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final accountType = accountTypeName == "partner"
         ? AuthAccountType.partner
         : AuthAccountType.customer;
+
+    if (tokens["access"] != null && _isExpired(tokenClaims["exp"])) {
+      await logout();
+      return;
+    }
 
     if (tokens["access"] != null) {
       state = state.copyWith(
@@ -213,7 +219,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return role == null || role == 'customer' ? 'customer' : 'partner';
   }
 
-  Map<String, String?> _decodeAccessClaims(String? token) {
+  bool _isExpired(dynamic exp) {
+    if (exp == null) return false;
+    final expiresAtSeconds = exp is int ? exp : int.tryParse(exp.toString());
+    if (expiresAtSeconds == null) return false;
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return expiresAtSeconds <= nowSeconds;
+  }
+
+  Map<String, dynamic> _decodeAccessClaims(String? token) {
     if (token == null) return {};
 
     try {
@@ -227,6 +241,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return {
         'role': data['role'] as String?,
         'tenant_id': data['tenant_id'] as String?,
+        'exp': data['exp'],
       };
     } catch (_) {
       return {};

@@ -34,3 +34,49 @@ final partnerReservationsProvider =
           PartnerReservationSummary.fromJson(item as Map<String, dynamic>),
       ];
     });
+
+Future<Map<String, dynamic>> createOperationalReservation({
+  required String token,
+  required String parkingId,
+  required String pricingPlan,
+  required int durationHours,
+}) async {
+  return ApiService().postAuthorized('/reservations/pre-checkin', {
+    'parking_id': parkingId,
+    'route_minutes': 1,
+    'spot_type': 'uncovered',
+    'pricing_plan': pricingPlan,
+    'duration_hours': durationHours,
+    'service_codes': <String>[],
+  }, token);
+}
+
+Future<Map<String, dynamic>> createOperationalPaymentIntent({
+  required String token,
+  required String reservationId,
+  required String method,
+}) async {
+  return ApiService().postAuthorized(
+    '/payments/reservations/$reservationId/intent',
+    {'method': method},
+    token,
+  );
+}
+
+Future<void> confirmOperationalPayment({
+  required String token,
+  required String paymentId,
+}) async {
+  await ApiService().postAuthorized('/payments/$paymentId/confirm', {}, token);
+}
+
+Future<void> checkinOperationalReservation({
+  required String token,
+  required String reservationId,
+}) async {
+  await ApiService().postAuthorized(
+    '/reservations/$reservationId/checkin',
+    {},
+    token,
+  );
+}

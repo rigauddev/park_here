@@ -12,14 +12,11 @@ class AuthGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-
     final auth = ref.watch(authProvider);
 
     if (auth.status == AuthStatus.initial ||
         auth.status == AuthStatus.loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (auth.status == AuthStatus.authenticated) {
