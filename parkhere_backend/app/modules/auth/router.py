@@ -69,10 +69,7 @@ async def verify_mfa(data: MFARequest, db: AsyncSession = Depends(get_db)):
     if not tokens:
         raise HTTPException(status_code=401, detail="Invalid or expired code")
 
-    return {
-        "access_token": tokens[0],
-        "refresh_token": tokens[1],
-    }
+    return tokens
 
 @router.post("/email/request-code")
 async def request_email_code(data: EmailCodeRequest):

@@ -36,6 +36,7 @@ def _to_response(parking: Parking) -> ParkingResponse:
             firstHourPrice=parking.first_hour_price,
             additionalHourPrice=parking.additional_hour_price,
             dailyPrice=parking.daily_price,
+            weeklyPrice=parking.weekly_price,
             monthlyPrice=parking.monthly_price,
         ),
         hasCarWash="car_wash" in services,
