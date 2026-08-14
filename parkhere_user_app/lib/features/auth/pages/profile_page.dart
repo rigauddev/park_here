@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../account/pages/account_setup_page.dart';
@@ -19,6 +22,7 @@ class ProfilePage extends ConsumerStatefulWidget {
 class _ProfilePageState extends ConsumerState<ProfilePage> {
   String phone = '(71) 98888-7777';
   _MfaPreference mfaPreference = _MfaPreference.email;
+  Uint8List? avatarBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +44,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     radius: 28,
                     backgroundColor: AppTheme.softCyan,
                     foregroundColor: AppTheme.primary,
-                    child: Icon(isPartner ? Icons.storefront : Icons.person),
+                    backgroundImage: avatarBytes != null
+                        ? MemoryImage(avatarBytes!)
+                        : null,
+                    child: avatarBytes == null
+                        ? Icon(isPartner ? Icons.storefront : Icons.person)
+                        : null,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -58,6 +67,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Alterar foto',
+                    onPressed: _pickAvatar,
+                    icon: const Icon(Icons.photo_camera_outlined),
                   ),
                 ],
               ),
@@ -244,6 +258,19 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   void _setMfaPreference(_MfaPreference? value) {
     if (value == null) return;
     setState(() => mfaPreference = value);
+  }
+
+  Future<void> _pickAvatar() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 600,
+      imageQuality: 85,
+    );
+    if (image == null) return;
+    final bytes = await image.readAsBytes();
+    if (!mounted) return;
+    setState(() => avatarBytes = bytes);
   }
 
   Future<void> _changePassword() async {

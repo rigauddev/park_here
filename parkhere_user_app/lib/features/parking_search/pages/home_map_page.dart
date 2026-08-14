@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/services/routes/route_service.dart';
 import '../../account/pages/vehicles_page.dart';
 import '../../account/providers/account_provider.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/route_preview_page.dart';
 import '../../reservation/providers/pre_reservation_provider.dart';
@@ -669,7 +670,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required double userLocationLng,
   }) async {
     final account = ref.read(accountProvider);
-    if (!account.hasActiveVehicle) {
+    final activeVehicle = account.activeVehicle;
+    if (activeVehicle == null) {
       final rootNavigator = Navigator.of(context, rootNavigator: true);
       final messenger = ScaffoldMessenger.of(context);
 
@@ -708,12 +710,38 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
     if (!mounted) return;
 
+    String? reservationId;
+    var serverTotal = total;
+    var platformFeeAmount = 0.0;
+
     try {
-      await ref.read(apiServiceProvider).post("/reservations/pre-checkin", {
-        "parking_id": parking.id,
-        "route_minutes": minutes,
-        "estimated_total": total,
-      });
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) {
+        throw Exception("Sessao expirada. Entre novamente.");
+      }
+
+      final response = await ref.read(apiServiceProvider).postAuthorized(
+        "/reservations/pre-checkin",
+        {
+          "parking_id": parking.id,
+          "route_minutes": minutes,
+          "estimated_total": total,
+          "vehicle_id": activeVehicle.id,
+          "spot_type": "uncovered",
+          "pricing_plan": plan.name,
+          "duration_hours": 1,
+          "service_codes": [
+            if (selected.carWash) "car_wash",
+            if (selected.tourGuide) "tour_guide",
+            if (selected.transport) "transport",
+          ],
+        },
+        token,
+      );
+      reservationId = response["id"] as String?;
+      serverTotal = (response["final_total"] as num?)?.toDouble() ?? total;
+      platformFeeAmount =
+          (response["platform_fee_amount"] as num?)?.toDouble() ?? 0;
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -739,7 +767,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             carWash: selected.carWash,
             tourGuide: selected.tourGuide,
             transport: selected.transport,
-            total: total,
+            total: serverTotal,
+            reservationId: reservationId,
+            platformFeeAmount: platformFeeAmount,
             userLocationLat: userLocationLat,
             userLocationLng: userLocationLng,
           ),

@@ -331,6 +331,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       MaterialPageRoute(
         builder: (_) => PaymentPage(
           amount: widget.preCheckin.total,
+          reservationId: widget.preCheckin.reservationId,
           payNow: true,
           onPaymentSuccess: () {
             _createReservation();

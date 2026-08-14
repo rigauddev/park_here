@@ -15,5 +15,9 @@ class Settings:
 
     MFA_EXPIRATION_MINUTES: int = os.getenv("MFA_EXPIRATION_MINUTES")
     MFA_SECRET_KEY: str = os.getenv("MFA_SECRET_KEY")
+    PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "mercado_pago")
+    MERCADO_PAGO_ACCESS_TOKEN: str = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
+    MERCADO_PAGO_PUBLIC_KEY: str = os.getenv("MERCADO_PAGO_PUBLIC_KEY")
+    MERCADO_PAGO_WEBHOOK_SECRET: str = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET")
 
 settings = Settings()
