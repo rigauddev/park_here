@@ -477,77 +477,60 @@ class _LanguageFlagButton extends StatelessWidget {
     final label = language == LoginLanguage.ptBr ? "PT-BR" : "EN";
     final flag = language == LoginLanguage.ptBr ? "🇧🇷" : "🇺🇸";
 
-    return Tooltip(
-      message: "Idioma / Language",
-      child: InkWell(
+    return PopupMenuButton<LoginLanguage>(
+      tooltip: "Idioma / Language",
+      initialValue: language,
+      onSelected: onChanged,
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: LoginLanguage.ptBr,
+          child: Row(
+            children: [
+              Text('🇧🇷', style: TextStyle(fontSize: 22)),
+              SizedBox(width: 8),
+              Text('Português Brasil'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: LoginLanguage.en,
+          child: Row(
+            children: [
+              Text('🇺🇸', style: TextStyle(fontSize: 22)),
+              SizedBox(width: 8),
+              Text('English'),
+            ],
+          ),
+        ),
+      ],
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(18),
-        onTap: () => _showLanguageSheet(context),
-        child: Material(
-          color: Colors.white.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(flag, style: const TextStyle(fontSize: 22)),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Color(0xFF102657),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.keyboard_arrow_down,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(flag, style: const TextStyle(fontSize: 22)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
                   color: Color(0xFF102657),
-                  size: 18,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.keyboard_arrow_down,
+                color: Color(0xFF102657),
+                size: 18,
+              ),
+            ],
           ),
         ),
       ),
     );
-  }
-
-  Future<void> _showLanguageSheet(BuildContext context) async {
-    final selected = await showModalBottomSheet<LoginLanguage>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Text('🇧🇷', style: TextStyle(fontSize: 28)),
-                  title: const Text('Português Brasil'),
-                  trailing: language == LoginLanguage.ptBr
-                      ? const Icon(Icons.check, color: Color(0xFF169FC4))
-                      : null,
-                  onTap: () => Navigator.pop(context, LoginLanguage.ptBr),
-                ),
-                ListTile(
-                  leading: const Text('🇺🇸', style: TextStyle(fontSize: 28)),
-                  title: const Text('English'),
-                  trailing: language == LoginLanguage.en
-                      ? const Icon(Icons.check, color: Color(0xFF169FC4))
-                      : null,
-                  onTap: () => Navigator.pop(context, LoginLanguage.en),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (selected != null) onChanged(selected);
   }
 }
 

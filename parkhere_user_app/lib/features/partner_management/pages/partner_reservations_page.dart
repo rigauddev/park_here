@@ -54,7 +54,7 @@ class _PartnerReservationCard extends StatelessWidget {
     final color = switch (reservation.status) {
       'checked_in' => AppTheme.primary,
       'pre_reserved' => Colors.orange,
-      'checked_out' => AppTheme.success,
+      'completed' => AppTheme.success,
       _ => AppTheme.textMuted,
     };
 
@@ -89,23 +89,102 @@ class _PartnerReservationCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Chip(
-                  label: Text(reservation.status),
-                  backgroundColor: color.withValues(alpha: 0.1),
-                  side: BorderSide.none,
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    Chip(
+                      label: Text(_statusLabel(reservation.status)),
+                      backgroundColor: color.withValues(alpha: 0.1),
+                      side: BorderSide.none,
+                    ),
+                    Chip(
+                      label: Text(_paymentLabel(reservation.paymentStatus)),
+                      backgroundColor: AppTheme.softCyan,
+                      side: BorderSide.none,
+                    ),
+                  ],
                 ),
               ],
             ),
             const SizedBox(height: 12),
             _Line('Estacionamento', reservation.parkingName),
-            _Line('Plano', reservation.pricingPlan),
-            _Line('Tipo de vaga', reservation.spotType),
-            _Line('Pagamento', reservation.paymentStatus),
-            _Line('Valor', 'R\$ ${reservation.finalTotal.toStringAsFixed(2)}'),
+            _Line('Plano', _planLabel(reservation.pricingPlan)),
+            _Line('Tipo de vaga', _spotTypeLabel(reservation.spotType)),
+            _Line('Base', 'R\$ ${reservation.baseAmount.toStringAsFixed(2)}'),
+            _Line(
+              'Servicos',
+              'R\$ ${reservation.servicesAmount.toStringAsFixed(2)}',
+            ),
+            _Line(
+              'Taxa app',
+              'R\$ ${reservation.platformFeeAmount.toStringAsFixed(2)}',
+            ),
+            _Line('Total', 'R\$ ${reservation.finalTotal.toStringAsFixed(2)}'),
+            if (reservation.selectedServices.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Servicos contratados',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final service in reservation.selectedServices)
+                    Chip(
+                      label: Text(
+                        '${service.name} · R\$ ${service.price.toStringAsFixed(2)}',
+                      ),
+                      backgroundColor: const Color(0xFFF7FBFD),
+                      side: const BorderSide(color: Color(0xFFD9E8F0)),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _statusLabel(String value) {
+    return switch (value) {
+      'pre_reserved' => 'Pre-reserva',
+      'confirmed' => 'Confirmada',
+      'checked_in' => 'Em permanencia',
+      'completed' => 'Finalizada',
+      _ => value,
+    };
+  }
+
+  String _paymentLabel(String value) {
+    return switch (value) {
+      'pending_checkin' => 'Pagamento no checkout',
+      'payment_pending' => 'Pagamento pendente',
+      'paid' => 'Pago',
+      _ => value,
+    };
+  }
+
+  String _planLabel(String value) {
+    return switch (value) {
+      'hourly' => 'Por hora',
+      'daily' => 'Diaria',
+      'weekly' => 'Semanal',
+      'monthly' => 'Mensal',
+      _ => value,
+    };
+  }
+
+  String _spotTypeLabel(String value) {
+    return switch (value) {
+      'covered' => 'Coberta',
+      'uncovered' => 'Descoberta',
+      _ => value,
+    };
   }
 }
 

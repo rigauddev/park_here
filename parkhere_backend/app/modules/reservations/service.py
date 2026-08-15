@@ -85,10 +85,19 @@ class ReservationService:
         reservation, parking = await _get_reservation_with_parking(db, reservation_id)
         _ensure_reservation_access(current_user, reservation, parking)
 
-        if reservation.status != "confirmed" or reservation.payment_status != "paid":
+        staff_can_checkin_for_checkout_payment = current_user.role in {
+            UserRoleEnum.PARTNER_MANAGER,
+            UserRoleEnum.PARKING_ADMIN,
+            UserRoleEnum.OPERATOR,
+        } and reservation.payment_status in {"pending_checkin", "payment_pending"}
+
+        if reservation.status not in {"pre_reserved", "confirmed"} or (
+            reservation.payment_status != "paid"
+            and not staff_can_checkin_for_checkout_payment
+        ):
             raise HTTPException(
                 status_code=409,
-                detail="Reservation must be paid and confirmed before check-in",
+                detail="Reservation must be ready before check-in",
             )
 
         reservation.status = "checked_in"

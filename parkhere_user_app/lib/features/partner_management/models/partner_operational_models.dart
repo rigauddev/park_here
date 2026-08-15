@@ -167,7 +167,11 @@ class PartnerReservationSummary {
   final String paymentStatus;
   final String spotType;
   final String pricingPlan;
+  final double baseAmount;
+  final double servicesAmount;
+  final double platformFeeAmount;
   final double finalTotal;
+  final List<PartnerReservationService> selectedServices;
   final DateTime createdAt;
   final DateTime holdExpiresAt;
 
@@ -181,7 +185,11 @@ class PartnerReservationSummary {
     required this.paymentStatus,
     required this.spotType,
     required this.pricingPlan,
+    required this.baseAmount,
+    required this.servicesAmount,
+    required this.platformFeeAmount,
     required this.finalTotal,
+    required this.selectedServices,
     required this.createdAt,
     required this.holdExpiresAt,
   });
@@ -197,7 +205,14 @@ class PartnerReservationSummary {
       paymentStatus: json['payment_status'] as String,
       spotType: json['spot_type'] as String,
       pricingPlan: json['pricing_plan'] as String,
+      baseAmount: (json['base_amount'] as num? ?? 0).toDouble(),
+      servicesAmount: (json['services_amount'] as num? ?? 0).toDouble(),
+      platformFeeAmount: (json['platform_fee_amount'] as num? ?? 0).toDouble(),
       finalTotal: (json['final_total'] as num).toDouble(),
+      selectedServices: [
+        for (final item in json['selected_services'] as List<dynamic>? ?? [])
+          PartnerReservationService.fromJson(item as Map<String, dynamic>),
+      ],
       createdAt: DateTime.parse(json['created_at'] as String),
       holdExpiresAt: DateTime.parse(json['hold_expires_at'] as String),
     );

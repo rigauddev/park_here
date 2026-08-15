@@ -204,7 +204,11 @@ async def list_partner_reservations(
             "pricing_plan": reservation.pricing_plan,
             "route_minutes": reservation.route_minutes,
             "hold_expires_at": reservation.hold_expires_at.isoformat(),
+            "base_amount": reservation.base_amount,
+            "services_amount": reservation.services_amount,
+            "platform_fee_amount": reservation.platform_fee_amount,
             "final_total": reservation.final_total,
+            "selected_services": _reservation_services(reservation),
             "created_at": reservation.created_at.isoformat(),
         }
         for reservation, parking, customer, vehicle in result.all()

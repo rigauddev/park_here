@@ -262,7 +262,10 @@ class _ParkingSlotTile extends ConsumerWidget {
   ) {
     final reservation = slot.reservation!;
     final canCheckin =
-        reservation.status == 'confirmed' &&
+        reservation.status == 'pre_reserved' ||
+        reservation.status == 'confirmed';
+    final canCheckout =
+        reservation.status == 'checked_in' &&
         reservation.paymentStatus == 'paid';
     showDialog<void>(
       context: context,
@@ -389,6 +392,25 @@ class _ParkingSlotTile extends ConsumerWidget {
               icon: const Icon(Icons.login),
               label: const Text('Check-in'),
             ),
+            FilledButton.icon(
+              onPressed: canCheckout
+                  ? () {
+                      Navigator.pop(context);
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => _CheckoutPhotosDialog(
+                          reservationId: reservation.id,
+                          onCompleted: () {
+                            ref.invalidate(partnerParkingMapProvider);
+                            ref.invalidate(partnerReservationsProvider);
+                          },
+                        ),
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.logout),
+              label: const Text('Checkout'),
+            ),
           ],
         );
       },
@@ -428,6 +450,7 @@ class _FreeSlotReservationDialogState
   _OperationalPricingPlan pricingPlan = _OperationalPricingPlan.hourly;
   _OperationalPayTiming payTiming = _OperationalPayTiming.checkout;
   String? pixQrCode;
+  String? pendingPixPaymentId;
   double? finalTotal;
   double? changeAmount;
   bool isSubmitting = false;
@@ -476,6 +499,7 @@ class _FreeSlotReservationDialogState
                           payTiming = _OperationalPayTiming.checkout;
                         }
                         pixQrCode = null;
+                        pendingPixPaymentId = null;
                         finalTotal = null;
                         changeAmount = null;
                       }),
@@ -513,6 +537,7 @@ class _FreeSlotReservationDialogState
                               payTiming = _OperationalPayTiming.checkout;
                             }
                             pixQrCode = null;
+                            pendingPixPaymentId = null;
                             finalTotal = null;
                             changeAmount = null;
                           });
@@ -540,6 +565,7 @@ class _FreeSlotReservationDialogState
                       : (values) => setState(() {
                           payTiming = values.first;
                           pixQrCode = null;
+                          pendingPixPaymentId = null;
                           finalTotal = null;
                           changeAmount = null;
                         }),
@@ -582,6 +608,7 @@ class _FreeSlotReservationDialogState
                           setState(() {
                             paymentMethod = value;
                             pixQrCode = null;
+                            pendingPixPaymentId = null;
                             finalTotal = null;
                             changeAmount = null;
                           });
@@ -672,7 +699,9 @@ class _FreeSlotReservationDialogState
                 )
               : const Icon(Icons.check),
           label: Text(
-            mode == _OperationalReservationMode.preReserve
+            pendingPixPaymentId != null
+                ? 'Confirmar Pix pago'
+                : mode == _OperationalReservationMode.preReserve
                 ? 'Criar pre-reserva'
                 : 'Criar reserva',
           ),
@@ -687,6 +716,21 @@ class _FreeSlotReservationDialogState
 
     setState(() => isSubmitting = true);
     try {
+      if (pendingPixPaymentId != null) {
+        await confirmOperationalPayment(
+          token: token,
+          paymentId: pendingPixPaymentId!,
+        );
+        ref.invalidate(partnerParkingMapProvider);
+        ref.invalidate(partnerReservationsProvider);
+        if (!mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pix confirmado e reserva paga.')),
+        );
+        return;
+      }
+
       final reservation = await createOperationalReservation(
         token: token,
         parkingId: widget.parkingId,
@@ -723,11 +767,9 @@ class _FreeSlotReservationDialogState
           setState(() {
             finalTotal = total;
             pixQrCode = payment['qr_code'] as String?;
+            pendingPixPaymentId = payment['id'] as String;
           });
-          await confirmOperationalPayment(
-            token: token,
-            paymentId: payment['id'] as String,
-          );
+          return;
         }
       }
 
@@ -808,6 +850,7 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
   _OperationalPaymentMethod paymentMethod = _OperationalPaymentMethod.cash;
   bool isSubmitting = false;
   String? pixQrCode;
+  String? pendingPixPaymentId;
   double? changeAmount;
 
   @override
@@ -855,6 +898,7 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
                         setState(() {
                           paymentMethod = value;
                           pixQrCode = null;
+                          pendingPixPaymentId = null;
                           changeAmount = null;
                         });
                       },
@@ -923,7 +967,13 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.point_of_sale),
-          label: const Text('Receber'),
+          label: Text(
+            pendingPixPaymentId != null
+                ? 'Confirmar Pix pago'
+                : paymentMethod == _OperationalPaymentMethod.pix
+                ? 'Gerar QR Pix'
+                : 'Receber',
+          ),
         ),
       ],
     );
@@ -935,6 +985,20 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
 
     setState(() => isSubmitting = true);
     try {
+      if (pendingPixPaymentId != null) {
+        await confirmOperationalPayment(
+          token: token,
+          paymentId: pendingPixPaymentId!,
+        );
+        widget.onCompleted();
+        if (!mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pix confirmado no caixa.')),
+        );
+        return;
+      }
+
       final payment = await createOperationalPaymentIntent(
         token: token,
         reservationId: widget.reservationId,
@@ -952,11 +1016,11 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
         );
         setState(() => changeAmount = received - total);
       } else {
-        setState(() => pixQrCode = payment['qr_code'] as String?);
-        await confirmOperationalPayment(
-          token: token,
-          paymentId: payment['id'] as String,
-        );
+        setState(() {
+          pixQrCode = payment['qr_code'] as String?;
+          pendingPixPaymentId = payment['id'] as String;
+        });
+        return;
       }
 
       widget.onCompleted();
@@ -1101,6 +1165,133 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao realizar check-in: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
+    }
+  }
+}
+
+class _CheckoutPhotosDialog extends ConsumerStatefulWidget {
+  final String reservationId;
+  final VoidCallback onCompleted;
+
+  const _CheckoutPhotosDialog({
+    required this.reservationId,
+    required this.onCompleted,
+  });
+
+  @override
+  ConsumerState<_CheckoutPhotosDialog> createState() =>
+      _CheckoutPhotosDialogState();
+}
+
+class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
+  final Map<String, XFile?> photos = {
+    'Frente': null,
+    'Traseira': null,
+    'Lateral esquerda': null,
+    'Lateral direita': null,
+  };
+  bool isSubmitting = false;
+
+  bool get hasAllPhotos => photos.values.every((photo) => photo != null);
+
+  @override
+  Widget build(BuildContext context) {
+    final canUseCamera =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+
+    return AlertDialog(
+      title: const Text('Checkout com fotos'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Capture frente, traseira e laterais do veiculo antes de liberar a vaga.',
+                style: TextStyle(color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 14),
+              for (final entry in photos.entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: OutlinedButton.icon(
+                    onPressed: canUseCamera && !isSubmitting
+                        ? () => _takePhoto(entry.key)
+                        : null,
+                    icon: Icon(
+                      entry.value == null
+                          ? Icons.photo_camera_outlined
+                          : Icons.check_circle,
+                    ),
+                    label: Text(entry.key),
+                  ),
+                ),
+              if (!canUseCamera)
+                const Text(
+                  'O checkout com fotos deve ser feito no celular.',
+                  style: TextStyle(color: Colors.red),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSubmitting ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: hasAllPhotos && !isSubmitting ? _confirmCheckout : null,
+          icon: isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.logout),
+          label: const Text('Confirmar checkout'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _takePhoto(String label) async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => photos[label] = picked);
+  }
+
+  Future<void> _confirmCheckout() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+
+    setState(() => isSubmitting = true);
+    try {
+      await checkoutOperationalReservation(
+        token: token,
+        reservationId: widget.reservationId,
+      );
+      widget.onCompleted();
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Checkout realizado.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao realizar checkout: $error')),
       );
     } finally {
       if (mounted) setState(() => isSubmitting = false);

@@ -80,3 +80,14 @@ Future<void> checkinOperationalReservation({
     token,
   );
 }
+
+Future<void> checkoutOperationalReservation({
+  required String token,
+  required String reservationId,
+}) async {
+  await ApiService().postAuthorized(
+    '/reservations/$reservationId/checkout',
+    {},
+    token,
+  );
+}

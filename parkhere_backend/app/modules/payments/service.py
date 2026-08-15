@@ -100,7 +100,8 @@ class PaymentService:
         transaction.status = "paid"
         transaction.provider_payment_id = transaction.provider_payment_id or f"mp_mock_{payment_id}"
         reservation.payment_status = "paid"
-        reservation.status = "confirmed"
+        if reservation.status != "checked_in":
+            reservation.status = "confirmed"
         await db.commit()
         await db.refresh(transaction)
         return to_response(transaction)

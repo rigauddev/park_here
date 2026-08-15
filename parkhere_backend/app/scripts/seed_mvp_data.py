@@ -807,35 +807,115 @@ async def ensure_seed_reservations(db, commit=True):
     if customer is None or parking is None:
         return
 
-    existing_result = await db.execute(
-        select(Reservation).where(
-            Reservation.user_id == customer.id,
-            Reservation.parking_id == parking.id,
-        )
+    service_snapshot = json.dumps(
+        [{"code": "car_wash", "name": "Lava-jato", "price": 30.0}]
     )
-    if existing_result.scalars().first() is not None:
-        if commit:
-            await db.commit()
-        return
+    scenarios = [
+        {
+            "marker": "seed_pre_reserved_pending",
+            "status": "pre_reserved",
+            "payment_status": "pending_checkin",
+            "pricing_plan": "hourly",
+            "duration_hours": 1,
+            "base_amount": 10,
+            "services_amount": 0,
+            "platform_fee_amount": 2,
+            "final_total": 12,
+            "checked_in_at": None,
+            "checked_out_at": None,
+            "services": "[]",
+        },
+        {
+            "marker": "seed_confirmed_paid_with_service",
+            "status": "confirmed",
+            "payment_status": "paid",
+            "pricing_plan": "daily",
+            "duration_hours": 1,
+            "base_amount": 40,
+            "services_amount": 30,
+            "platform_fee_amount": 5.5,
+            "final_total": 75.5,
+            "checked_in_at": None,
+            "checked_out_at": None,
+            "services": service_snapshot,
+        },
+        {
+            "marker": "seed_checked_in_pending_checkout_payment",
+            "status": "checked_in",
+            "payment_status": "pending_checkin",
+            "pricing_plan": "hourly",
+            "duration_hours": 2,
+            "base_amount": 15,
+            "services_amount": 0,
+            "platform_fee_amount": 2.25,
+            "final_total": 17.25,
+            "checked_in_at": datetime.utcnow() - timedelta(hours=1),
+            "checked_out_at": None,
+            "services": "[]",
+        },
+        {
+            "marker": "seed_checked_in_paid",
+            "status": "checked_in",
+            "payment_status": "paid",
+            "pricing_plan": "hourly",
+            "duration_hours": 3,
+            "base_amount": 20,
+            "services_amount": 0,
+            "platform_fee_amount": 2.5,
+            "final_total": 22.5,
+            "checked_in_at": datetime.utcnow() - timedelta(hours=2),
+            "checked_out_at": None,
+            "services": "[]",
+        },
+        {
+            "marker": "seed_completed_paid",
+            "status": "completed",
+            "payment_status": "paid",
+            "pricing_plan": "daily",
+            "duration_hours": 1,
+            "base_amount": 40,
+            "services_amount": 0,
+            "platform_fee_amount": 3.5,
+            "final_total": 43.5,
+            "checked_in_at": datetime.utcnow() - timedelta(hours=4),
+            "checked_out_at": datetime.utcnow() - timedelta(hours=1),
+            "services": "[]",
+        },
+    ]
 
-    db.add(
-        Reservation(
-            parking_id=parking.id,
-            user_id=customer.id,
-            vehicle_id=SEED_VEHICLE_ID,
-            route_minutes=15,
-            hold_expires_at=datetime.utcnow() + timedelta(minutes=15),
-            estimated_total=40,
-            spot_type="uncovered",
-            pricing_plan="daily",
-            duration_hours=1,
-            base_amount=40,
-            services_amount=0,
-            platform_fee_amount=0,
-            final_total=40,
-            selected_services_snapshot="[]",
+    for scenario in scenarios:
+        existing_result = await db.execute(
+            select(Reservation).where(
+                Reservation.parking_id == parking.id,
+                Reservation.notification_status == scenario["marker"],
+            )
         )
-    )
+        reservation = existing_result.scalar_one_or_none()
+        if reservation is None:
+            reservation = Reservation(
+                parking_id=parking.id,
+                user_id=customer.id,
+                vehicle_id=SEED_VEHICLE_ID,
+                notification_status=scenario["marker"],
+            )
+            db.add(reservation)
+
+        reservation.route_minutes = 15
+        reservation.hold_expires_at = datetime.utcnow() + timedelta(minutes=15)
+        reservation.estimated_total = scenario["final_total"]
+        reservation.spot_type = "uncovered"
+        reservation.pricing_plan = scenario["pricing_plan"]
+        reservation.duration_hours = scenario["duration_hours"]
+        reservation.base_amount = scenario["base_amount"]
+        reservation.services_amount = scenario["services_amount"]
+        reservation.platform_fee_amount = scenario["platform_fee_amount"]
+        reservation.final_total = scenario["final_total"]
+        reservation.selected_services_snapshot = scenario["services"]
+        reservation.platform_fee_snapshot = "[]"
+        reservation.status = scenario["status"]
+        reservation.payment_status = scenario["payment_status"]
+        reservation.checked_in_at = scenario["checked_in_at"]
+        reservation.checked_out_at = scenario["checked_out_at"]
 
     if commit:
         await db.commit()
