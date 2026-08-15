@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -10,13 +11,21 @@ class ApiUnauthorizedException implements Exception {
   String toString() => 'Sessao expirada. Entre novamente.';
 }
 
+class ApiConnectionException implements Exception {
+  const ApiConnectionException();
+
+  @override
+  String toString() => 'Nao foi possivel conectar com a API.';
+}
+
 class ApiService {
   static Future<void> Function()? onUnauthorized;
+  static const _timeout = Duration(seconds: 12);
 
   Future<List<dynamic>> get(String endpoint) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
-    final response = await http.get(url);
+    final response = await http.get(url).timeout(_timeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body);
@@ -28,7 +37,9 @@ class ApiService {
   Future<List<dynamic>> getAuthorized(String endpoint, String token) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
-    final response = await http.get(url, headers: _authorizedHeaders(token));
+    final response = await http
+        .get(url, headers: _authorizedHeaders(token))
+        .timeout(_timeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as List<dynamic>;
@@ -44,7 +55,9 @@ class ApiService {
   ) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
-    final response = await http.get(url, headers: _authorizedHeaders(token));
+    final response = await http
+        .get(url, headers: _authorizedHeaders(token))
+        .timeout(_timeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -60,11 +73,20 @@ class ApiService {
   ) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
+    late final http.Response response;
+    try {
+      response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(_timeout);
+    } on http.ClientException {
+      throw const ApiConnectionException();
+    } on TimeoutException {
+      throw const ApiConnectionException();
+    }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -81,11 +103,9 @@ class ApiService {
   ) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
-    final response = await http.post(
-      url,
-      headers: _authorizedHeaders(token),
-      body: jsonEncode(body),
-    );
+    final response = await http
+        .post(url, headers: _authorizedHeaders(token), body: jsonEncode(body))
+        .timeout(_timeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -108,11 +128,9 @@ class ApiService {
   ) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
-    final response = await http.put(
-      url,
-      headers: _authorizedHeaders(token),
-      body: jsonEncode(body),
-    );
+    final response = await http
+        .put(url, headers: _authorizedHeaders(token), body: jsonEncode(body))
+        .timeout(_timeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;

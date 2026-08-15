@@ -6,6 +6,14 @@ class ApiConstants {
     const defineUrl = String.fromEnvironment('API_URL');
     if (defineUrl.isNotEmpty) return defineUrl;
 
+    if (kIsWeb) {
+      final host = Uri.base.host;
+      if (host.isNotEmpty && host != '0.0.0.0') {
+        return 'http://$host:8000';
+      }
+      return 'http://localhost:8000';
+    }
+
     final envUrl = dotenv.env['API_URL'];
     if (envUrl != null && envUrl.isNotEmpty) return envUrl;
 

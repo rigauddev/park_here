@@ -78,6 +78,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         accountType: accountType,
         mfaToken: response["mfa_token"] as String?,
       );
+    } on ApiConnectionException {
+      state = state.copyWith(status: AuthStatus.unauthenticated);
+      throw Exception("Não foi possível conectar com a API");
     } catch (_) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
@@ -128,6 +131,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tenantId: tenantId,
         clearMfaToken: true,
       );
+    } on ApiConnectionException {
+      state = state.copyWith(status: AuthStatus.unauthenticated);
+      throw Exception("Não foi possível conectar com a API");
     } catch (_) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
