@@ -158,7 +158,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             isPortuguese: isPortuguese,
                             enabled: !isMfaStep,
                             onChanged: (mode) {
-                              setState(() => loginMode = mode);
+                              ref.read(authProvider.notifier).resetLoginFlow();
+                              setState(() {
+                                loginMode = mode;
+                                loginError = null;
+                                mfaController.clear();
+                              });
                             },
                           ),
                           const SizedBox(height: 22),
@@ -231,9 +236,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                           ? (isPortuguese
                                                 ? "Verificar código"
                                                 : "Verify code")
-                                          : (isPortuguese
-                                                ? "Entrar"
-                                                : "Sign in"),
+                                          : _loginButtonLabel(isPortuguese),
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
@@ -407,6 +410,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
 
     return rawMessage;
+  }
+
+  String _loginButtonLabel(bool isPortuguese) {
+    if (loginMode == LoginMode.partner) {
+      return isPortuguese ? "Entrar como parceiro" : "Sign in as partner";
+    }
+
+    return isPortuguese ? "Entrar como cliente" : "Sign in as customer";
   }
 }
 

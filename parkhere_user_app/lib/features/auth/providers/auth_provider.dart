@@ -140,6 +140,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  void resetLoginFlow() {
+    state = state.copyWith(
+      status: AuthStatus.unauthenticated,
+      clearMfaToken: true,
+    );
+  }
+
   Future<String> requestEmailValidationCode(String email) async {
     final response = await _api.post("/auth/email/request-code", {
       "email": email.trim().toLowerCase(),
