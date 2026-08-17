@@ -22,6 +22,8 @@ enum _MainArea {
   map,
   services,
   reservations,
+  vehicles,
+  wallet,
   management,
   users,
   financial,
@@ -99,12 +101,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           );
         },
         destinations: [
-          if (!isPartner)
-            const NavigationDestination(
-              icon: Icon(Icons.menu),
-              selectedIcon: Icon(Icons.menu_open),
-              label: 'Menu',
-            ),
           if (isPartner && isPartnerOwner)
             const NavigationDestination(
               icon: Icon(Icons.business_center_outlined),
@@ -174,6 +170,12 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.reservations:
         if (isPartner) return const PartnerReservationsPage();
         return const ReservationPage();
+      case _MainArea.vehicles:
+        if (isPartner) return const ProfilePage();
+        return const VehiclesPage();
+      case _MainArea.wallet:
+        if (isPartner) return const ProfilePage();
+        return const WalletPage();
       case _MainArea.management:
         return isPartnerOwner
             ? const PartnerManagementHomePage()
@@ -196,6 +198,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           return 0;
         case _MainArea.reservations:
           return 1;
+        case _MainArea.vehicles:
+        case _MainArea.wallet:
         case _MainArea.profile:
           return 2;
         default:
@@ -207,19 +211,22 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.menu:
         return isPartner ? 0 : 0;
       case _MainArea.map:
-        return isPartner ? 1 : 1;
+        return isPartner ? 1 : 0;
       case _MainArea.services:
-        return isPartner ? 1 : 2;
+        return isPartner ? 1 : 1;
       case _MainArea.reservations:
-        return isPartner ? 2 : 3;
+        return isPartner ? 2 : 2;
+      case _MainArea.vehicles:
+      case _MainArea.wallet:
+        return isPartner ? 4 : 2;
       case _MainArea.management:
-        return isPartner ? 0 : 3;
+        return isPartner ? 0 : 2;
       case _MainArea.users:
-        return isPartner ? 0 : 3;
+        return isPartner ? 0 : 2;
       case _MainArea.financial:
-        return isPartner ? 3 : 3;
+        return isPartner ? 3 : 2;
       case _MainArea.profile:
-        return isPartner ? 4 : 3;
+        return isPartner ? 4 : 2;
     }
   }
 
@@ -243,11 +250,11 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 
     switch (index) {
       case 0:
-        return isPartner ? _MainArea.management : _MainArea.menu;
+        return isPartner ? _MainArea.management : _MainArea.map;
       case 1:
-        return isPartner ? _MainArea.map : _MainArea.map;
+        return isPartner ? _MainArea.map : _MainArea.services;
       case 2:
-        return isPartner ? _MainArea.reservations : _MainArea.services;
+        return isPartner ? _MainArea.reservations : _MainArea.profile;
       case 3:
         return isPartner ? _MainArea.financial : _MainArea.profile;
       case 4:
@@ -306,18 +313,17 @@ class _WebMenu extends ConsumerWidget {
                     'Minha empresa',
                     _MainArea.management,
                   ),
-                if (!isPartner)
-                  _MenuItem(Icons.dashboard_outlined, 'Menu', _MainArea.menu),
                 _MenuItem(
                   isPartner ? Icons.local_parking_outlined : Icons.map_outlined,
                   isPartner ? 'Mapa de vagas' : 'Mapa',
                   _MainArea.map,
                 ),
-                _MenuItem(
-                  Icons.confirmation_number_outlined,
-                  isPartner ? 'Reservas recebidas' : 'Reservas',
-                  _MainArea.reservations,
-                ),
+                if (isPartner)
+                  _MenuItem(
+                    Icons.confirmation_number_outlined,
+                    'Reservas recebidas',
+                    _MainArea.reservations,
+                  ),
                 if (isPartner && isPartnerOwner)
                   _MenuItem(Icons.group_outlined, 'Usuarios', _MainArea.users),
                 if (isPartner && isPartnerOwner)
@@ -366,6 +372,24 @@ class _WebMenu extends ConsumerWidget {
               title: 'Conta',
               items: [
                 _MenuItem(Icons.person_outline, 'Perfil', _MainArea.profile),
+                if (!isPartner)
+                  _MenuItem(
+                    Icons.directions_car_outlined,
+                    'Veículos',
+                    _MainArea.vehicles,
+                  ),
+                if (!isPartner)
+                  _MenuItem(
+                    Icons.account_balance_wallet_outlined,
+                    'Minha carteira',
+                    _MainArea.wallet,
+                  ),
+                if (!isPartner)
+                  _MenuItem(
+                    Icons.confirmation_number_outlined,
+                    'Reservas',
+                    _MainArea.reservations,
+                  ),
               ],
               selectedArea: selectedArea,
               onSelected: onSelected,
@@ -421,35 +445,12 @@ class _MobileDrawer extends StatelessWidget {
                 title: const Text('Minha empresa'),
                 onTap: () => onSelected(_MainArea.management),
               ),
-            if (!isPartner) ...[
+            if (isPartner)
               ListTile(
-                leading: const Icon(Icons.directions_car_outlined),
-                title: const Text('Veículos'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const VehiclesPage()),
-                  );
-                },
+                leading: const Icon(Icons.confirmation_number_outlined),
+                title: const Text('Reservas recebidas'),
+                onTap: () => onSelected(_MainArea.reservations),
               ),
-              ListTile(
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: const Text('Carteira'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const WalletPage()),
-                  );
-                },
-              ),
-            ],
-            ListTile(
-              leading: const Icon(Icons.confirmation_number_outlined),
-              title: Text(isPartner ? 'Reservas recebidas' : 'Reservas'),
-              onTap: () => onSelected(_MainArea.reservations),
-            ),
             if (isPartner && isPartnerOwner)
               ListTile(
                 leading: const Icon(Icons.group_outlined),
@@ -468,7 +469,7 @@ class _MobileDrawer extends StatelessWidget {
                 title: const Text('Financeiro Pro'),
                 onTap: () => onSelected(_MainArea.financial),
               )
-            else ...[
+            else if (!isPartner) ...[
               ListTile(
                 leading: const Icon(Icons.local_parking),
                 title: const Text('Estacionamento'),
@@ -490,10 +491,34 @@ class _MobileDrawer extends StatelessWidget {
                 onTap: () => onSelected(_MainArea.services, 3),
               ),
             ],
-            ListTile(
+            ExpansionTile(
               leading: const Icon(Icons.person_outline),
               title: const Text('Perfil'),
-              onTap: () => onSelected(_MainArea.profile),
+              childrenPadding: const EdgeInsets.only(left: 12),
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.badge_outlined),
+                  title: const Text('Meus dados'),
+                  onTap: () => onSelected(_MainArea.profile),
+                ),
+                if (!isPartner) ...[
+                  ListTile(
+                    leading: const Icon(Icons.directions_car_outlined),
+                    title: const Text('Veículos'),
+                    onTap: () => onSelected(_MainArea.vehicles),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.account_balance_wallet_outlined),
+                    title: const Text('Minha carteira'),
+                    onTap: () => onSelected(_MainArea.wallet),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.confirmation_number_outlined),
+                    title: const Text('Reservas'),
+                    onTap: () => onSelected(_MainArea.reservations),
+                  ),
+                ],
+              ],
             ),
           ],
         ),

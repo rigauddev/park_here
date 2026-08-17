@@ -11,6 +11,7 @@ from app.modules.parkings.models import Parking, ParkingService
 from app.modules.platform_fees.service import PlatformFeeService
 from app.modules.reservations.models import Reservation
 from app.modules.reservations.schemas import (
+    CancelReservationRequest,
     PreCheckinReservationRequest,
     ReservationPlatformFeeSnapshot,
     ReservationResponse,
@@ -32,8 +33,9 @@ class ReservationPricing:
 
 
 class ReservationService:
-    VALID_SPOT_TYPES = {"uncovered", "covered"}
+    VALID_SPOT_TYPES = {"uncovered", "covered", "vip", "large", "bus", "pickup"}
     VALID_PLANS = {"hourly", "daily", "weekly", "monthly"}
+    FREE_CANCELLATION_MINUTES = 5
 
     @staticmethod
     async def create_pre_checkin(
@@ -47,15 +49,22 @@ class ReservationService:
         if parking.available_spots <= 0:
             raise HTTPException(status_code=409, detail="No available spots")
 
+        if data.spot_code:
+            await _ensure_spot_available(db, parking.id, data.spot_code)
+
         pricing = await _calculate_pricing(db, parking, data)
         parking.available_spots -= 1
+        arrival_estimate_at = _arrival_estimate(data)
 
         reservation = Reservation(
             parking_id=parking.id,
             user_id=current_user.id,
             vehicle_id=data.vehicle_id,
+            spot_code=data.spot_code,
+            arrival_estimate_at=arrival_estimate_at,
+            is_manual_arrival=data.is_manual_arrival,
             route_minutes=data.route_minutes,
-            hold_expires_at=datetime.utcnow() + timedelta(minutes=data.route_minutes),
+            hold_expires_at=arrival_estimate_at,
             estimated_total=pricing.final_total,
             spot_type=data.spot_type,
             pricing_plan=data.pricing_plan,
@@ -74,6 +83,48 @@ class ReservationService:
         await db.commit()
         await db.refresh(reservation)
 
+        return to_response(reservation)
+
+    @staticmethod
+    async def cancel(
+        db: AsyncSession,
+        reservation_id: str,
+        data: CancelReservationRequest,
+        current_user: User,
+    ) -> ReservationResponse:
+        reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+        _ensure_cancel_permission(current_user, reservation, parking)
+
+        if reservation.status in {"cancelled", "completed", "checked_out"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Reservation cannot be cancelled",
+            )
+
+        if reservation.status == "checked_in" and current_user.role not in {
+            UserRoleEnum.PARTNER_MANAGER,
+            UserRoleEnum.PARKING_ADMIN,
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail="Only partner administrator can cancel after check-in",
+            )
+
+        fee_amount = await _calculate_cancellation_fee(db, reservation)
+        credit_amount = max((reservation.final_total or 0) - fee_amount, 0)
+
+        reservation.status = "cancelled"
+        reservation.cancelled_at = datetime.utcnow()
+        reservation.cancelled_by_user_id = current_user.id
+        reservation.cancellation_reason = data.reason
+        reservation.cancellation_fee_amount = fee_amount
+        reservation.cancellation_credit_amount = credit_amount
+        if reservation.payment_status not in {"paid", "refunded"}:
+            reservation.payment_status = "cancelled"
+
+        parking.available_spots = min(parking.available_spots + 1, parking.total_spots)
+        await db.commit()
+        await db.refresh(reservation)
         return to_response(reservation)
 
     @staticmethod
@@ -217,6 +268,69 @@ def _ensure_reservation_access(
     raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
+def _ensure_cancel_permission(
+    current_user: User,
+    reservation: Reservation,
+    parking: Parking,
+) -> None:
+    if current_user.role == UserRoleEnum.CUSTOMER:
+        if reservation.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        return
+
+    if current_user.role in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.PARKING_ADMIN}:
+        if current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        return
+
+    if current_user.role == UserRoleEnum.OPERATOR:
+        if (
+            current_user.tenant_id != parking.tenant_id
+            or reservation.user_id != current_user.id
+        ):
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        if reservation.status == "checked_in":
+            raise HTTPException(
+                status_code=403,
+                detail="Operator cannot cancel checked-in reservation",
+            )
+        return
+
+    raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+
+async def _calculate_cancellation_fee(
+    db: AsyncSession,
+    reservation: Reservation,
+) -> float:
+    elapsed_minutes = (
+        datetime.utcnow() - reservation.created_at.replace(tzinfo=None)
+    ).total_seconds() / 60
+    if elapsed_minutes <= ReservationService.FREE_CANCELLATION_MINUTES:
+        return 0
+
+    lines = await PlatformFeeService.calculate_lines(
+        db,
+        {"cancellation": reservation.final_total or reservation.estimated_total or 0},
+    )
+    return sum(line.fee_amount for line in lines)
+
+
+def _arrival_estimate(data: PreCheckinReservationRequest) -> datetime:
+    if data.arrival_estimate_at:
+        try:
+            return datetime.fromisoformat(
+                data.arrival_estimate_at.replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid arrival estimate",
+            ) from exc
+
+    return datetime.utcnow() + timedelta(minutes=data.route_minutes)
+
+
 async def _calculate_pricing(
     db: AsyncSession,
     parking: Parking,
@@ -265,8 +379,27 @@ def _validate_request(data: PreCheckinReservationRequest, parking: Parking) -> N
     if data.route_minutes <= 0:
         raise HTTPException(status_code=422, detail="Route minutes must be greater than zero")
 
-    if data.spot_type == "covered" and parking.covered_spots <= 0:
+    if data.spot_code is not None and not data.spot_code.strip():
+        raise HTTPException(status_code=422, detail="Invalid spot code")
+
+    if data.spot_type in {"covered", "vip"} and parking.covered_spots <= 0:
         raise HTTPException(status_code=422, detail="Covered area is not available")
+
+
+async def _ensure_spot_available(
+    db: AsyncSession,
+    parking_id: str,
+    spot_code: str,
+) -> None:
+    result = await db.execute(
+        select(Reservation).where(
+            Reservation.parking_id == parking_id,
+            Reservation.spot_code == spot_code,
+            Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
+        )
+    )
+    if result.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Spot already reserved")
 
 
 def _base_amount(
@@ -275,7 +408,7 @@ def _base_amount(
     pricing_plan: str,
     duration_hours: int,
 ) -> float:
-    if spot_type == "covered":
+    if spot_type in {"covered", "vip"}:
         first_hour = parking.covered_first_hour_price
         additional_hour = parking.covered_additional_hour_price
         daily = parking.covered_daily_price
@@ -342,6 +475,15 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         checked_out_at=reservation.checked_out_at.isoformat()
         if reservation.checked_out_at
         else None,
+        spot_code=reservation.spot_code,
+        arrival_estimate_at=(
+            reservation.arrival_estimate_at.isoformat()
+            if reservation.arrival_estimate_at
+            else (
+                reservation.created_at + timedelta(minutes=reservation.route_minutes)
+            ).isoformat()
+        ),
+        is_manual_arrival=reservation.is_manual_arrival,
         route_minutes=reservation.route_minutes,
         hold_expires_at=reservation.hold_expires_at.isoformat(),
         estimated_total=reservation.estimated_total,
@@ -356,4 +498,9 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         platform_fees=platform_fees,
         payment_status=reservation.payment_status,
         notification_status=reservation.notification_status,
+        cancelled_at=reservation.cancelled_at.isoformat()
+        if reservation.cancelled_at
+        else None,
+        cancellation_fee_amount=reservation.cancellation_fee_amount,
+        cancellation_credit_amount=reservation.cancellation_credit_amount,
     )

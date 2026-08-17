@@ -42,6 +42,7 @@ class ParkingManagementService:
             tenant_id=tenant_id,
             name=data.name,
             address=data.address,
+            city=data.city,
             lat=data.lat,
             lng=data.lng,
             total_spots=data.total_spots,
@@ -99,6 +100,7 @@ class ParkingManagementService:
 
         parking.name = data.name
         parking.address = data.address
+        parking.city = data.city
         parking.lat = data.lat
         parking.lng = data.lng
         parking.total_spots = data.total_spots
@@ -206,6 +208,7 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
         tenant_id=parking.tenant_id,
         name=parking.name,
         address=parking.address,
+        city=parking.city,
         lat=parking.lat,
         lng=parking.lng,
         total_spots=parking.total_spots,

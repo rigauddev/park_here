@@ -158,6 +158,7 @@ Operador (`OPERATOR`):
 - Pertence ao estabelecimento do parceiro que o criou.
 - Acessa somente as telas operacionais liberadas por permissao.
 - Permissoes padrao: ver reservas, ver patio de vagas, criar reserva operacional, cancelar reserva criada por ele, receber pagamento, fazer check-in e checkout das reservas criadas por ele.
+- Operador so pode cancelar reserva/pre-reserva propria antes do check-in; reserva com check-in exige gestor do parceiro.
 - Pode receber pagamento e fazer check-in/checkout manual quando o fluxo operacional permitir.
 - Funcao caixa operacional permite receber dinheiro/Pix no mapa de vagas ou nos detalhes da reserva.
 - Modalidade por hora deve ficar para pagamento no checkout, pois o valor final depende do tempo real de permanencia.
@@ -186,6 +187,10 @@ MVP:
 
 - Exibir uma grade interativa 2D com vagas livres, pre-reservadas e ocupadas.
 - Ao tocar em uma vaga com reserva, mostrar status, pagamento, placa, veiculo e valor.
+- Ao tocar em uma vaga livre, abrir criacao de pre-reserva ou reserva operacional vinculada ao codigo da vaga.
+- Vagas devem mostrar tipo: descoberta, coberta, VIP, carro grande, onibus ou picape.
+- Reserva criada por operador/parceiro usa previsao manual de chegada informada no atendimento.
+- Cards financeiros do mapa devem ter tooltip explicando o indicador.
 - Gerar o mapa com base em reservas e capacidade do estacionamento enquanto ainda nao existe modelagem de vaga individual.
 
 Roadmap:
@@ -294,9 +299,10 @@ Variaveis previstas:
 ```json
 {
   "name": "ParkHere Centro",
-  "address": "Av. Sete de Setembro, Salvador",
-  "lat": -12.9704,
-  "lng": -38.5124,
+  "address": "Rua Conselheiro Ferraz, Centro, Valenca - BA",
+  "city": "Valenca",
+  "lat": -13.3703,
+  "lng": -39.0731,
   "total_spots": 60,
   "covered_spots": 24,
   "uncovered_spots": 36,

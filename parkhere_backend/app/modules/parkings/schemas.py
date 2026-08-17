@@ -31,6 +31,7 @@ class ParkingAreaPricing(BaseModel):
 class ParkingManagementRequest(BaseModel):
     name: str
     address: str
+    city: str = "Valenca"
     lat: float
     lng: float
     total_spots: int
@@ -53,6 +54,7 @@ class ParkingManagementResponse(BaseModel):
     tenant_id: str
     name: str
     address: str
+    city: str
     lat: float
     lng: float
     total_spots: int
@@ -74,6 +76,7 @@ class ParkingManagementResponse(BaseModel):
 class ParkingResponse(BaseModel):
     id: str
     name: str
+    city: str
     lat: float
     lng: float
     rating: float

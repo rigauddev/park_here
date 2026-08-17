@@ -12,7 +12,13 @@ class PartnerSlotReservation {
   final List<PartnerReservationService> selectedServices;
   final String? vehiclePlate;
   final String? vehicleLabel;
+  final int routeMinutes;
+  final DateTime createdAt;
+  final DateTime arrivalEstimateAt;
   final DateTime holdExpiresAt;
+  final bool isManualArrival;
+  final double cancellationFeeAmount;
+  final double cancellationCreditAmount;
 
   const PartnerSlotReservation({
     required this.id,
@@ -28,7 +34,13 @@ class PartnerSlotReservation {
     required this.selectedServices,
     required this.vehiclePlate,
     required this.vehicleLabel,
+    required this.routeMinutes,
+    required this.createdAt,
+    required this.arrivalEstimateAt,
     required this.holdExpiresAt,
+    required this.isManualArrival,
+    required this.cancellationFeeAmount,
+    required this.cancellationCreditAmount,
   });
 
   factory PartnerSlotReservation.fromJson(Map<String, dynamic> json) {
@@ -49,7 +61,15 @@ class PartnerSlotReservation {
       ],
       vehiclePlate: json['vehicle_plate'] as String?,
       vehicleLabel: json['vehicle_label'] as String?,
+      routeMinutes: json['route_minutes'] as int? ?? 0,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      arrivalEstimateAt: DateTime.parse(json['arrival_estimate_at'] as String),
       holdExpiresAt: DateTime.parse(json['hold_expires_at'] as String),
+      isManualArrival: json['is_manual_arrival'] as bool? ?? false,
+      cancellationFeeAmount: (json['cancellation_fee_amount'] as num? ?? 0)
+          .toDouble(),
+      cancellationCreditAmount:
+          (json['cancellation_credit_amount'] as num? ?? 0).toDouble(),
     );
   }
 }
@@ -76,11 +96,13 @@ class PartnerReservationService {
 
 class PartnerParkingSlot {
   final String code;
+  final String type;
   final String status;
   final PartnerSlotReservation? reservation;
 
   const PartnerParkingSlot({
     required this.code,
+    required this.type,
     required this.status,
     required this.reservation,
   });
@@ -89,6 +111,7 @@ class PartnerParkingSlot {
     final reservationJson = json['reservation'];
     return PartnerParkingSlot(
       code: json['code'] as String,
+      type: json['type'] as String? ?? 'uncovered',
       status: json['status'] as String,
       reservation: reservationJson is Map<String, dynamic>
           ? PartnerSlotReservation.fromJson(reservationJson)

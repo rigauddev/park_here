@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,12 +11,21 @@ router = APIRouter(prefix="/parkings", tags=["Parkings"])
 
 
 @router.get("", response_model=list[ParkingResponse])
-async def list_parkings(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
+async def list_parkings(
+    city: str | None = Query(default=None, min_length=2),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
         select(Parking)
         .options(selectinload(Parking.services))
         .where(Parking.is_active.is_(True))
-        .order_by(Parking.rating.desc())
+    )
+    if city:
+        normalized_city = city.strip().lower()
+        query = query.where(func.lower(Parking.city).contains(normalized_city))
+
+    result = await db.execute(
+        query.order_by(Parking.rating.desc())
     )
 
     return [_to_response(parking) for parking in result.scalars().all()]
@@ -28,6 +37,7 @@ def _to_response(parking: Parking) -> ParkingResponse:
     return ParkingResponse(
         id=parking.id,
         name=parking.name,
+        city=parking.city,
         lat=parking.lat,
         lng=parking.lng,
         rating=parking.rating,

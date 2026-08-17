@@ -38,16 +38,32 @@ final partnerReservationsProvider =
 Future<Map<String, dynamic>> createOperationalReservation({
   required String token,
   required String parkingId,
+  required String spotCode,
+  required String spotType,
   required String pricingPlan,
   required int durationHours,
+  required DateTime arrivalEstimateAt,
 }) async {
   return ApiService().postAuthorized('/reservations/pre-checkin', {
     'parking_id': parkingId,
     'route_minutes': 1,
-    'spot_type': 'uncovered',
+    'spot_code': spotCode,
+    'spot_type': spotType,
+    'arrival_estimate_at': arrivalEstimateAt.toIso8601String(),
+    'is_manual_arrival': true,
     'pricing_plan': pricingPlan,
     'duration_hours': durationHours,
     'service_codes': <String>[],
+  }, token);
+}
+
+Future<void> cancelOperationalReservation({
+  required String token,
+  required String reservationId,
+  required String reason,
+}) async {
+  await ApiService().postAuthorized('/reservations/$reservationId/cancel', {
+    'reason': reason,
   }, token);
 }
 

@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -149,19 +150,22 @@ async def get_partner_parking_map(
 
     parking_ids = [parking.id for parking in parkings]
     reservations_result = await db.execute(
-        select(Reservation, Vehicle)
+        select(Reservation, Vehicle, User)
         .join(Parking, Parking.id == Reservation.parking_id)
         .outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id)
+        .outerjoin(User, User.id == Reservation.user_id)
         .where(Parking.tenant_id == current_user.tenant_id)
         .where(Reservation.parking_id.in_(parking_ids))
         .where(Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]))
         .order_by(Reservation.created_at.desc())
     )
 
-    reservations_by_parking: dict[str, list[tuple[Reservation, Vehicle | None]]] = {}
-    for reservation, vehicle in reservations_result.all():
+    reservations_by_parking: dict[
+        str, list[tuple[Reservation, Vehicle | None, User | None]]
+    ] = {}
+    for reservation, vehicle, customer in reservations_result.all():
         reservations_by_parking.setdefault(reservation.parking_id, []).append(
-            (reservation, vehicle)
+            (reservation, vehicle, customer)
         )
 
     return {
@@ -476,8 +480,17 @@ async def _ensure_parking_profile(db: AsyncSession, user: User):
 
 def _parking_layout_payload(
     parking: ParkingManagementResponse,
-    reservations: list[tuple[Reservation, Vehicle | None]],
+    reservations: list[tuple[Reservation, Vehicle | None, User | None]],
 ):
+    active_by_slot: dict[str, tuple[Reservation, Vehicle | None, User | None]] = {}
+    fallback_reservations: list[tuple[Reservation, Vehicle | None, User | None]] = []
+    for item in reservations:
+        reservation = item[0]
+        if reservation.spot_code:
+            active_by_slot[reservation.spot_code] = item
+        else:
+            fallback_reservations.append(item)
+
     reserved = [item for item in reservations if item[0].status != "checked_in"]
     occupied = [item for item in reservations if item[0].status == "checked_in"]
     pre_reserved_amount = sum(
@@ -516,53 +529,60 @@ def _parking_layout_payload(
             if item[0].status == "checked_in"
         ),
     }
-    occupied_count = len(occupied)
-    reserved_count = len(reserved)
-    free_count = max(parking.total_spots - occupied_count - reserved_count, 0)
     slots = []
+    fallback_index = 0
 
-    for index, (reservation, vehicle) in enumerate(occupied, start=1):
-        slots.append(_slot_payload(index, "occupied", reservation, vehicle))
+    for index in range(1, parking.total_spots + 1):
+        code = f"V{index:03d}"
+        assigned = active_by_slot.get(code)
+        if assigned is None and fallback_index < len(fallback_reservations):
+            assigned = fallback_reservations[fallback_index]
+            fallback_index += 1
 
-    offset = len(slots)
-    for index, (reservation, vehicle) in enumerate(reserved, start=offset + 1):
-        slots.append(_slot_payload(index, "pre_reserved", reservation, vehicle))
+        slot_type = _slot_type(index, parking)
+        if assigned is None:
+            slots.append(
+                {
+                    "code": code,
+                    "type": slot_type,
+                    "status": "free",
+                    "reservation": None,
+                }
+            )
+            continue
 
-    offset = len(slots)
-    for index in range(offset + 1, offset + free_count + 1):
-        slots.append(
-            {
-                "code": f"V{index:03d}",
-                "status": "free",
-                "reservation": None,
-            }
-        )
+        reservation, vehicle, customer = assigned
+        status = "occupied" if reservation.status == "checked_in" else "pre_reserved"
+        slots.append(_slot_payload(code, slot_type, status, reservation, vehicle, customer))
 
     return {
         "id": parking.id,
         "name": parking.name,
         "total_spots": parking.total_spots,
-        "available_spots": free_count,
-        "pre_reserved_spots": reserved_count,
-        "occupied_spots": occupied_count,
+        "available_spots": sum(1 for slot in slots if slot["status"] == "free"),
+        "pre_reserved_spots": len(reserved),
+        "occupied_spots": len(occupied),
         "pre_reserved_amount": pre_reserved_amount,
         "confirmed_amount": confirmed_amount,
         "checked_in_amount": checked_in_amount,
         "pending_payment_amount": pending_payment_amount,
         "paid_amount": paid_amount,
         "services_amount_by_status": services_amount_by_status,
-        "slots": slots[: parking.total_spots],
+        "slots": slots,
     }
 
 
 def _slot_payload(
-    index: int,
+    code: str,
+    slot_type: str,
     status: str,
     reservation: Reservation,
     vehicle: Vehicle | None,
+    customer: User | None,
 ):
     return {
-        "code": f"V{index:03d}",
+        "code": reservation.spot_code or code,
+        "type": slot_type,
         "status": status,
         "reservation": {
             "id": reservation.id,
@@ -576,11 +596,39 @@ def _slot_payload(
             "platform_fee_amount": reservation.platform_fee_amount,
             "final_total": reservation.final_total,
             "selected_services": _reservation_services(reservation),
+            "customer_name": customer.name if customer else "Cliente nao informado",
+            "customer_phone": customer.phone if customer else None,
             "vehicle_plate": vehicle.plate if vehicle else None,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
+            "route_minutes": reservation.route_minutes,
+            "created_at": reservation.created_at.isoformat(),
+            "arrival_estimate_at": (
+                reservation.arrival_estimate_at
+                or reservation.created_at + timedelta(minutes=reservation.route_minutes)
+            ).isoformat(),
+            "is_manual_arrival": reservation.is_manual_arrival,
             "hold_expires_at": reservation.hold_expires_at.isoformat(),
+            "cancelled_at": reservation.cancelled_at.isoformat()
+            if reservation.cancelled_at
+            else None,
+            "cancellation_fee_amount": reservation.cancellation_fee_amount,
+            "cancellation_credit_amount": reservation.cancellation_credit_amount,
         },
     }
+
+
+def _slot_type(index: int, parking: ParkingManagementResponse) -> str:
+    if parking.has_vip_spots and index <= min(2, parking.total_spots):
+        return "vip"
+    if parking.covered_spots and index <= parking.covered_spots:
+        return "covered"
+    if index % 17 == 0:
+        return "bus"
+    if index % 11 == 0:
+        return "large"
+    if index % 7 == 0:
+        return "pickup"
+    return "uncovered"
 
 
 def _reservation_services(reservation: Reservation) -> list[dict]:

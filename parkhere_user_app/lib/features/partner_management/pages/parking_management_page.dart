@@ -198,6 +198,7 @@ class _ParkingManagementFormPageState
     extends ConsumerState<ParkingManagementFormPage> {
   final nameController = TextEditingController();
   final addressController = TextEditingController();
+  final cityController = TextEditingController();
   final latController = TextEditingController();
   final lngController = TextEditingController();
   final totalController = TextEditingController();
@@ -235,8 +236,9 @@ class _ParkingManagementFormPageState
     super.initState();
     final parking = widget.parking;
     if (parking == null) {
-      latController.text = '-12.9704';
-      lngController.text = '-38.5124';
+      cityController.text = 'Valenca';
+      latController.text = '-13.3703';
+      lngController.text = '-39.0731';
       coveredController.text = '0';
       uncoveredController.text = '0';
       availableController.text = '0';
@@ -245,6 +247,7 @@ class _ParkingManagementFormPageState
 
     nameController.text = parking.name;
     addressController.text = parking.address;
+    cityController.text = parking.city;
     latController.text = parking.lat.toString();
     lngController.text = parking.lng.toString();
     totalController.text = parking.totalSpots.toString();
@@ -279,6 +282,7 @@ class _ParkingManagementFormPageState
     for (final controller in [
       nameController,
       addressController,
+      cityController,
       latController,
       lngController,
       totalController,
@@ -321,6 +325,7 @@ class _ParkingManagementFormPageState
             children: [
               _field(nameController, 'Nome'),
               _field(addressController, 'Endereço'),
+              _field(cityController, 'Cidade'),
               Row(
                 children: [
                   Expanded(child: _field(latController, 'Latitude')),
@@ -500,7 +505,10 @@ class _ParkingManagementFormPageState
       child: TextField(
         controller: controller,
         keyboardType:
-            label == 'Nome' || label == 'Endereço' || label == 'Nome do serviço'
+            label == 'Nome' ||
+                label == 'Endereço' ||
+                label == 'Cidade' ||
+                label == 'Nome do serviço'
             ? TextInputType.text
             : const TextInputType.numberWithOptions(decimal: true),
         decoration: InputDecoration(labelText: label),
@@ -566,6 +574,7 @@ class _ParkingManagementFormPageState
       id: widget.parking?.id,
       name: _required(nameController, 'Nome'),
       address: _required(addressController, 'Endereço'),
+      city: _required(cityController, 'Cidade'),
       lat: _double(latController, 'Latitude'),
       lng: _double(lngController, 'Longitude'),
       totalSpots: total,

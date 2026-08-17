@@ -3,6 +3,7 @@ import 'parking_pricing.dart';
 class ParkingModel {
   final String id;
   final String name;
+  final String city;
   final double lat;
   final double lng;
   final double rating;
@@ -25,6 +26,7 @@ class ParkingModel {
   ParkingModel({
     required this.id,
     required this.name,
+    required this.city,
     required this.lat,
     required this.lng,
     required this.rating,
@@ -44,18 +46,19 @@ class ParkingModel {
     return ParkingModel(
       id: json["id"],
       name: json["name"],
-      lat: json["lat"],
-      lng: json["lng"],
-      rating: json["rating"],
+      city: json["city"] as String? ?? "Valenca",
+      lat: (json["lat"] as num).toDouble(),
+      lng: (json["lng"] as num).toDouble(),
+      rating: (json["rating"] as num).toDouble(),
       availableSpots: json["availableSpots"],
       hasCoveredArea: json["hasCoveredArea"],
       hasVipSpots: json["hasVipSpots"],
       hasCarWash: json["hasCarWash"],
       hasTourGuide: json["hasTourGuide"],
       hasTransportService: json["hasTransportService"],
-      carWashPrice: json["carWashPrice"],
-      tourGuidePrice: json["tourGuidePrice"],
-      transportPrice: json["transportPrice"],
+      carWashPrice: (json["carWashPrice"] as num).toDouble(),
+      tourGuidePrice: (json["tourGuidePrice"] as num).toDouble(),
+      transportPrice: (json["transportPrice"] as num).toDouble(),
       pricing: ParkingPricing.fromJson(json["pricing"]),
     );
   }

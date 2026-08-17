@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
 
@@ -44,13 +45,13 @@ class PartnerReservationsPage extends ConsumerWidget {
   }
 }
 
-class _PartnerReservationCard extends StatelessWidget {
+class _PartnerReservationCard extends ConsumerWidget {
   final PartnerReservationSummary reservation;
 
   const _PartnerReservationCard({required this.reservation});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final color = switch (reservation.status) {
       'checked_in' => AppTheme.primary,
       'pre_reserved' => Colors.orange,
@@ -144,8 +145,35 @@ class _PartnerReservationCard extends StatelessWidget {
                 ],
               ),
             ],
+            if (reservation.status != 'completed' &&
+                reservation.status != 'cancelled') ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                  onPressed: () => _openCancelDialog(context, ref),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Cancelar'),
+                ),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _openCancelDialog(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _ReservationCancelDialog(
+        reservationId: reservation.id,
+        checkedIn: reservation.status == 'checked_in',
+        onCompleted: () {
+          ref.invalidate(partnerReservationsProvider);
+          ref.invalidate(partnerParkingMapProvider);
+        },
       ),
     );
   }
@@ -183,8 +211,114 @@ class _PartnerReservationCard extends StatelessWidget {
     return switch (value) {
       'covered' => 'Coberta',
       'uncovered' => 'Descoberta',
+      'vip' => 'VIP',
+      'large' => 'Carro grande',
+      'bus' => 'Onibus',
+      'pickup' => 'Picape',
       _ => value,
     };
+  }
+}
+
+class _ReservationCancelDialog extends ConsumerStatefulWidget {
+  final String reservationId;
+  final bool checkedIn;
+  final VoidCallback onCompleted;
+
+  const _ReservationCancelDialog({
+    required this.reservationId,
+    required this.checkedIn,
+    required this.onCompleted,
+  });
+
+  @override
+  ConsumerState<_ReservationCancelDialog> createState() =>
+      _ReservationCancelDialogState();
+}
+
+class _ReservationCancelDialogState
+    extends ConsumerState<_ReservationCancelDialog> {
+  final reasonController = TextEditingController();
+  bool isSubmitting = false;
+
+  @override
+  void dispose() {
+    reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Cancelar reserva'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.checkedIn
+                ? 'Reserva com check-in so pode ser cancelada pelo gestor do parceiro.'
+                : 'Cancelamento em ate 5 minutos nao gera custo. Depois, aplica taxa administrativa configurada pelo gestor do app.',
+            style: const TextStyle(color: AppTheme.textMuted),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: reasonController,
+            enabled: !isSubmitting,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Motivo do cancelamento',
+              alignLabelWithHint: true,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSubmitting ? null : () => Navigator.pop(context),
+          child: const Text('Voltar'),
+        ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: isSubmitting ? null : _cancel,
+          icon: isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.cancel_outlined),
+          label: const Text('Confirmar cancelamento'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _cancel() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+
+    setState(() => isSubmitting = true);
+    try {
+      await cancelOperationalReservation(
+        token: token,
+        reservationId: widget.reservationId,
+        reason: reasonController.text.trim(),
+      );
+      widget.onCompleted();
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Reserva cancelada.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao cancelar reserva: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
+    }
   }
 }
 

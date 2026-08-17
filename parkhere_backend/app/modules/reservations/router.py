@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.reservations.schemas import (
+    CancelReservationRequest,
     PreCheckinReservationRequest,
     ReservationResponse,
 )
@@ -38,3 +39,13 @@ async def checkout_reservation(
     current_user: User = Depends(get_current_user),
 ):
     return await ReservationService.checkout(db, reservation_id, current_user)
+
+
+@router.post("/{reservation_id}/cancel", response_model=ReservationResponse)
+async def cancel_reservation(
+    reservation_id: str,
+    data: CancelReservationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await ReservationService.cancel(db, reservation_id, data, current_user)

@@ -100,42 +100,55 @@ class _ParkingLayoutPanel extends StatelessWidget {
                     label: 'Pre-reservas',
                     value: layout.preReservedAmount,
                     color: Colors.orange,
+                    tooltip:
+                        'Soma das pre-reservas aguardando confirmacao ou chegada.',
                   ),
                   _MoneySummaryCard(
                     icon: Icons.verified_outlined,
                     label: 'Reservas confirmadas',
                     value: layout.confirmedAmount,
                     color: AppTheme.success,
+                    tooltip:
+                        'Soma das reservas confirmadas, com vaga bloqueada.',
                   ),
                   _MoneySummaryCard(
                     icon: Icons.login,
                     label: 'Em permanencia',
                     value: layout.checkedInAmount,
                     color: AppTheme.primary,
+                    tooltip:
+                        'Valores de reservas com check-in realizado e veiculo no patio.',
                   ),
                   _MoneySummaryCard(
                     icon: Icons.point_of_sale,
                     label: 'Recebido no caixa',
                     value: layout.paidAmount,
                     color: const Color(0xFF00897B),
+                    tooltip:
+                        'Total ja registrado como pago para este estabelecimento.',
                   ),
                   _MoneySummaryCard(
                     icon: Icons.pending_actions,
                     label: 'A receber',
                     value: layout.pendingPaymentAmount,
                     color: Colors.red,
+                    tooltip:
+                        'Total pendente de pagamento no check-in ou checkout.',
                   ),
                   _MoneySummaryCard(
                     icon: Icons.local_car_wash,
                     label: 'Servicos pre-reserva',
                     value: layout.servicesAmountByStatus['pre_reserved'] ?? 0,
                     color: Colors.orange,
+                    tooltip: 'Soma dos servicos adicionais em pre-reservas.',
                   ),
                   _MoneySummaryCard(
                     icon: Icons.miscellaneous_services,
                     label: 'Servicos confirmados',
                     value: layout.servicesAmountByStatus['confirmed'] ?? 0,
                     color: AppTheme.success,
+                    tooltip:
+                        'Soma dos servicos adicionais em reservas confirmadas.',
                   ),
                 ],
               ),
@@ -204,6 +217,7 @@ class _ParkingSlotTile extends ConsumerWidget {
       'pre_reserved' => Colors.orange,
       _ => AppTheme.success,
     };
+    final slotTypeLabel = _slotTypeLabel(slot.type);
 
     return InkWell(
       onTap: slot.reservation == null
@@ -237,10 +251,40 @@ class _ParkingSlotTile extends ConsumerWidget {
               slot.code,
               style: TextStyle(color: color, fontWeight: FontWeight.w800),
             ),
+            Text(
+              slotTypeLabel,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (slot.reservation != null &&
+                slot.reservation!.status != 'checked_in') ...[
+              const SizedBox(height: 2),
+              Text(
+                _arrivalPreview(slot.reservation!),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _arrivalPreview(PartnerSlotReservation reservation) {
+    final arrival = reservation.arrivalEstimateAt.toLocal();
+    final hour = arrival.hour.toString().padLeft(2, '0');
+    final minute = arrival.minute.toString().padLeft(2, '0');
+    if (reservation.isManualArrival) return 'Chega ${hour}h$minute';
+    return '${reservation.routeMinutes} min · ${hour}h$minute';
   }
 
   void _showCreateReservation(
@@ -250,8 +294,11 @@ class _ParkingSlotTile extends ConsumerWidget {
   ) {
     showDialog<void>(
       context: context,
-      builder: (_) =>
-          _FreeSlotReservationDialog(parkingId: parkingId, slotCode: slot.code),
+      builder: (_) => _FreeSlotReservationDialog(
+        parkingId: parkingId,
+        slotCode: slot.code,
+        slotType: slot.type,
+      ),
     );
   }
 
@@ -267,6 +314,11 @@ class _ParkingSlotTile extends ConsumerWidget {
     final canCheckout =
         reservation.status == 'checked_in' &&
         reservation.paymentStatus == 'paid';
+    final auth = ref.read(authProvider);
+    final canCancel =
+        reservation.status != 'checked_in' ||
+        auth.role == 'partner_manager' ||
+        auth.role == 'parking_admin';
     showDialog<void>(
       context: context,
       builder: (context) {
@@ -308,7 +360,11 @@ class _ParkingSlotTile extends ConsumerWidget {
                     'Veiculo',
                     reservation.vehicleLabel ?? 'Nao informado',
                   ),
-                  _DetailLine('Vaga', reservation.spotType),
+                  _DetailLine('Previsao chegada', _arrivalDetail(reservation)),
+                  _DetailLine(
+                    'Vaga',
+                    '${slot.code} · ${_slotTypeLabel(slot.type)}',
+                  ),
                   _DetailLine('Periodo', _periodLabel(reservation)),
                   _DetailLine(
                     'Base',
@@ -352,6 +408,27 @@ class _ParkingSlotTile extends ConsumerWidget {
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.close),
               label: const Text('Fechar'),
+            ),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: canCancel
+                  ? () {
+                      Navigator.pop(context);
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => _CancelReservationDialog(
+                          reservationId: reservation.id,
+                          checkedIn: reservation.status == 'checked_in',
+                          onCompleted: () {
+                            ref.invalidate(partnerParkingMapProvider);
+                            ref.invalidate(partnerReservationsProvider);
+                          },
+                        ),
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text('Cancelar'),
             ),
             OutlinedButton.icon(
               onPressed: reservation.paymentStatus == 'paid'
@@ -426,15 +503,38 @@ class _ParkingSlotTile extends ConsumerWidget {
     };
     return plan;
   }
+
+  String _arrivalDetail(PartnerSlotReservation reservation) {
+    final arrival = reservation.arrivalEstimateAt.toLocal();
+    final hour = arrival.hour.toString().padLeft(2, '0');
+    final minute = arrival.minute.toString().padLeft(2, '0');
+    if (reservation.isManualArrival) {
+      return 'Informada manualmente · ${hour}h$minute';
+    }
+    return '${reservation.routeMinutes} minutos · ${hour}h$minute';
+  }
+
+  String _slotTypeLabel(String type) {
+    return switch (type) {
+      'covered' => 'Coberta',
+      'vip' => 'VIP',
+      'large' => 'Carro grande',
+      'bus' => 'Onibus',
+      'pickup' => 'Picape',
+      _ => 'Descoberta',
+    };
+  }
 }
 
 class _FreeSlotReservationDialog extends ConsumerStatefulWidget {
   final String parkingId;
   final String slotCode;
+  final String slotType;
 
   const _FreeSlotReservationDialog({
     required this.parkingId,
     required this.slotCode,
+    required this.slotType,
   });
 
   @override
@@ -445,10 +545,12 @@ class _FreeSlotReservationDialog extends ConsumerStatefulWidget {
 class _FreeSlotReservationDialogState
     extends ConsumerState<_FreeSlotReservationDialog> {
   final cashReceivedController = TextEditingController();
+  final arrivalTimeController = TextEditingController();
   _OperationalReservationMode mode = _OperationalReservationMode.preReserve;
   _OperationalPaymentMethod paymentMethod = _OperationalPaymentMethod.cash;
   _OperationalPricingPlan pricingPlan = _OperationalPricingPlan.hourly;
   _OperationalPayTiming payTiming = _OperationalPayTiming.checkout;
+  TimeOfDay arrivalTime = TimeOfDay.now();
   String? pixQrCode;
   String? pendingPixPaymentId;
   double? finalTotal;
@@ -456,8 +558,17 @@ class _FreeSlotReservationDialogState
   bool isSubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    final now = TimeOfDay.now();
+    arrivalTime = now;
+    arrivalTimeController.text = _formatTime(now);
+  }
+
+  @override
   void dispose() {
     cashReceivedController.dispose();
+    arrivalTimeController.dispose();
     super.dispose();
   }
 
@@ -475,6 +586,29 @@ class _FreeSlotReservationDialogState
               const Text(
                 'Crie uma pre-reserva sem pagamento ou uma reserva confirmada com pagamento.',
                 style: TextStyle(color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 10),
+              _DetailLine('Tipo de vaga', _slotTypeLabel(widget.slotType)),
+              TextField(
+                controller: arrivalTimeController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'Previsao manual de chegada',
+                  prefixIcon: Icon(Icons.schedule),
+                ),
+                onTap: isSubmitting
+                    ? null
+                    : () async {
+                        final selected = await showTimePicker(
+                          context: context,
+                          initialTime: arrivalTime,
+                        );
+                        if (selected == null) return;
+                        setState(() {
+                          arrivalTime = selected;
+                          arrivalTimeController.text = _formatTime(selected);
+                        });
+                      },
               ),
               const SizedBox(height: 14),
               SegmentedButton<_OperationalReservationMode>(
@@ -734,10 +868,13 @@ class _FreeSlotReservationDialogState
       final reservation = await createOperationalReservation(
         token: token,
         parkingId: widget.parkingId,
+        spotCode: widget.slotCode,
+        spotType: widget.slotType,
         pricingPlan: mode == _OperationalReservationMode.paidReservation
             ? pricingPlan.apiValue
             : _OperationalPricingPlan.hourly.apiValue,
         durationHours: 1,
+        arrivalEstimateAt: _arrivalDateTime(),
       );
       final reservationId = reservation['id'] as String;
 
@@ -802,6 +939,27 @@ class _FreeSlotReservationDialogState
     final normalized = value.trim().replaceAll('.', '').replaceAll(',', '.');
     return double.tryParse(normalized) ?? 0;
   }
+
+  DateTime _arrivalDateTime() {
+    final now = DateTime.now();
+    var arrival = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      arrivalTime.hour,
+      arrivalTime.minute,
+    );
+    if (arrival.isBefore(now)) {
+      arrival = arrival.add(const Duration(days: 1));
+    }
+    return arrival;
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '${hour}h$minute';
+  }
 }
 
 enum _OperationalReservationMode { preReserve, paidReservation }
@@ -828,6 +986,111 @@ enum _OperationalPricingPlan {
 }
 
 enum _OperationalPayTiming { now, checkout }
+
+class _CancelReservationDialog extends ConsumerStatefulWidget {
+  final String reservationId;
+  final bool checkedIn;
+  final VoidCallback onCompleted;
+
+  const _CancelReservationDialog({
+    required this.reservationId,
+    required this.checkedIn,
+    required this.onCompleted,
+  });
+
+  @override
+  ConsumerState<_CancelReservationDialog> createState() =>
+      _CancelReservationDialogState();
+}
+
+class _CancelReservationDialogState
+    extends ConsumerState<_CancelReservationDialog> {
+  final reasonController = TextEditingController();
+  bool isSubmitting = false;
+
+  @override
+  void dispose() {
+    reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Cancelar reserva'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.checkedIn
+                  ? 'Esta reserva ja teve check-in. Somente o gestor do parceiro pode cancelar.'
+                  : 'Cancelamento em ate 5 minutos nao gera custo. Depois disso, aplica taxa administrativa configurada pelo gestor do app.',
+              style: const TextStyle(color: AppTheme.textMuted),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              enabled: !isSubmitting,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Motivo do cancelamento',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSubmitting ? null : () => Navigator.pop(context),
+          child: const Text('Voltar'),
+        ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: isSubmitting ? null : _cancel,
+          icon: isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.cancel_outlined),
+          label: const Text('Confirmar cancelamento'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _cancel() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+
+    setState(() => isSubmitting = true);
+    try {
+      await cancelOperationalReservation(
+        token: token,
+        reservationId: widget.reservationId,
+        reason: reasonController.text.trim(),
+      );
+      widget.onCompleted();
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Reserva cancelada.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao cancelar reserva: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
+    }
+  }
+}
 
 class _CashierPaymentDialog extends ConsumerStatefulWidget {
   final String reservationId;
@@ -1304,51 +1567,78 @@ class _MoneySummaryCard extends StatelessWidget {
   final String label;
   final double value;
   final Color color;
+  final String tooltip;
 
   const _MoneySummaryCard({
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
+    required this.tooltip,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: MediaQuery.sizeOf(context).width >= 900
-          ? 220
-          : MediaQuery.sizeOf(context).width - 52,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.24)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(color: AppTheme.textMuted)),
-                const SizedBox(height: 2),
-                Text(
-                  'R\$ ${value.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
+    return Tooltip(
+      message: tooltip,
+      triggerMode: TooltipTriggerMode.tap,
+      child: Container(
+        width: MediaQuery.sizeOf(context).width >= 900
+            ? 220
+            : MediaQuery.sizeOf(context).width - 52,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.24)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: const TextStyle(color: AppTheme.textMuted),
+                        ),
+                      ),
+                      Icon(Icons.info_outline, color: color, size: 16),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    'R\$ ${value.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+String _slotTypeLabel(String type) {
+  return switch (type) {
+    'covered' => 'Coberta',
+    'vip' => 'VIP',
+    'large' => 'Carro grande',
+    'bus' => 'Onibus',
+    'pickup' => 'Picape',
+    _ => 'Descoberta',
+  };
 }
 
 class _DetailLine extends StatelessWidget {

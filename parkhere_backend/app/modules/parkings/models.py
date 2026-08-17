@@ -10,6 +10,7 @@ class Parking(BaseModel):
     tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False)
     name = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
+    city = Column(String(120), nullable=False, default="Valenca")
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
     rating = Column(Float, default=5.0)

@@ -18,7 +18,10 @@
 - Criar endpoints de precificacao e servicos adicionais.
 - Criar fluxo backend de pre-reserva, reserva, expiracao e cancelamento.
 - Pre-reserva deve expirar por `tempo de trajeto + tolerancia do parceiro`.
+- Pre-reserva deve salvar/exibir estimativa de rota: minutos de trajeto e hora prevista de chegada para cliente e parceiro.
 - Reserva confirmada por pagamento bloqueia a vaga sem limite de chegada alem do horario de funcionamento e regras do estabelecimento.
+- Criar busca por cidade no mapa e priorizar estacionamentos proximos usando geolocalizacao autorizada.
+- Criar fluxo de agendamento de reserva com data/hora futura, limite de antecedencia e politica de cancelamento por parceiro.
 - Criar fluxo backend de check-in/checkout manual.
 - Integrar app Flutter aos endpoints reais.
 - Persistir pagamentos com status simulado ou sandbox.
@@ -122,6 +125,7 @@
 - Painel ou app operacional para portaria.
 - Criar mapa operacional 2D de vagas com status livre, pre-reservado e ocupado.
 - Ao clicar em vaga ocupada/pre-reservada, mostrar detalhes da solicitacao.
+- Mostrar reservas agendadas e previsao de chegada no mapa operacional do estacionamento.
 - Ao clicar em vaga livre, operador pode criar reserva operacional e iniciar check-in pelo celular.
 - Operador pode criar pre-reserva sem pagamento ou reserva confirmada com pagamento operacional.
 - Pagamento operacional MVP: dinheiro com valor recebido/troco e Pix com QR code; cartao/maquininha fica para V2.
@@ -140,6 +144,10 @@
 - Permissoes configuraveis por operador do parceiro.
 - Operador do parceiro pertence ao tenant do parceiro que o criou.
 - Operador do parceiro pode ver reservas, patio de vagas, criar reserva, cancelar reserva criada por ele, receber pagamento e fazer check-in/checkout manual das reservas criadas por ele, sem acesso a configuracoes financeiras.
+- Reserva operacional criada no mapa deve gravar `spot_code`, tipo de vaga e previsao manual de chegada para nao deslocar a reserva para outra vaga.
+- Mapa de vagas deve exibir tooltips nos indicadores financeiros e identificar vaga descoberta, coberta, VIP, carro grande, onibus e picape.
+- Cancelamento MVP: gratuito ate 5 minutos; depois aplica taxa administrativa ParkHere cadastrada pelo gestor do app.
+- Reserva com check-in so pode ser cancelada pelo gestor do parceiro; operador so cancela reservas proprias antes do check-in.
 - Criar politicas de cancelamento por parceiro: prazo sem taxa, taxa fixa/percentual, tolerancia de atraso e no-show.
 - Criar alertas de atraso para reserva pre-confirmada.
 - Integrar confirmacao de reserva com pagamento Mercado Pago, Pix/cartao e split marketplace.

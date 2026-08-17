@@ -107,36 +107,33 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
             Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 96,
-                ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
+                  constraints: const BoxConstraints(maxWidth: 390),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.95),
-                      borderRadius: BorderRadius.circular(28),
+                      borderRadius: BorderRadius.circular(24),
                       boxShadow: const [
                         BoxShadow(
-                          blurRadius: 34,
-                          offset: Offset(0, 18),
+                          blurRadius: 28,
+                          offset: Offset(0, 14),
                           color: Color(0x33000000),
                         ),
                       ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(26),
+                      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const _ParkingLogoMark(),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 8),
                           const Text(
                             "ParkHere",
                             style: TextStyle(
-                              fontSize: 30,
+                              fontSize: 26,
                               fontWeight: FontWeight.w800,
                               color: Color(0xFF102657),
                             ),
@@ -152,7 +149,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(height: 22),
+                          const SizedBox(height: 16),
                           _AccessModeSelector(
                             loginMode: displayedLoginMode,
                             isPortuguese: isPortuguese,
@@ -166,14 +163,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               });
                             },
                           ),
-                          const SizedBox(height: 22),
+                          const SizedBox(height: 16),
                           if (authState.status != AuthStatus.mfaRequired) ...[
                             _textField(
                               controller: emailController,
                               label: isPortuguese ? "E-mail" : "Email",
                               icon: Icons.mail_outline,
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 10),
                             _textField(
                               controller: passwordController,
                               label: isPortuguese ? "Senha" : "Password",
@@ -217,12 +214,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               icon: Icons.verified_user_outlined,
                             ),
                           ],
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.all(14),
                                 backgroundColor: const Color(0xFF102657),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
@@ -244,7 +241,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                     ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 6),
                           TextButton(
                             onPressed:
                                 authState.status == AuthStatus.mfaRequired
@@ -731,8 +728,8 @@ class _ParkingLogoMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 86,
-      height: 86,
+      width: 68,
+      height: 68,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
         gradient: LinearGradient(
@@ -742,11 +739,11 @@ class _ParkingLogoMark extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: const [
-          Icon(Icons.local_parking, size: 50, color: Colors.white),
+          Icon(Icons.local_parking, size: 40, color: Colors.white),
           Positioned(
-            right: 17,
-            bottom: 18,
-            child: Icon(Icons.location_on, size: 22, color: Color(0xFF102657)),
+            right: 12,
+            bottom: 13,
+            child: Icon(Icons.location_on, size: 18, color: Color(0xFF102657)),
           ),
         ],
       ),

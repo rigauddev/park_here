@@ -59,7 +59,7 @@ async def seed():
             return
 
         tenant = Tenant(
-            name="ParkHere Salvador Centro",
+            name="ParkHere Valenca Centro",
             cnpj="11222333000144",
             email="operacao@parkhere.test",
             plan=PlanEnum.PRO,
@@ -122,9 +122,10 @@ async def seed():
             Parking(
                 tenant_id=tenant.id,
                 name="Estacionamento Central ParkHere",
-                address="Av. Sete de Setembro, Salvador",
-                lat=-12.9704,
-                lng=-38.5124,
+                address="Rua Conselheiro Ferraz, Centro, Valenca - BA",
+                city="Valenca",
+                lat=-13.3703,
+                lng=-39.0731,
                 rating=4.9,
                 total_spots=60,
                 available_spots=18,
@@ -154,10 +155,11 @@ async def seed():
             ),
             Parking(
                 tenant_id=demo_tenants["pelourinho"].id,
-                name="ParkHere Pelourinho VIP",
-                address="Rua Chile, Salvador",
-                lat=-12.9712,
-                lng=-38.5150,
+                name="ParkHere Valenca VIP",
+                address="Av. ACM, Centro, Valenca - BA",
+                city="Valenca",
+                lat=-13.3668,
+                lng=-39.0705,
                 rating=4.7,
                 total_spots=35,
                 available_spots=7,
@@ -187,10 +189,11 @@ async def seed():
             ),
             Parking(
                 tenant_id=demo_tenants["comercio"].id,
-                name="ParkHere Comercio Express",
-                address="Av. Estados Unidos, Salvador",
-                lat=-12.9688,
-                lng=-38.5096,
+                name="ParkHere Valenca Comercio Express",
+                address="Rua Governador Goncalves, Valenca - BA",
+                city="Valenca",
+                lat=-13.3727,
+                lng=-39.0762,
                 rating=4.4,
                 total_spots=42,
                 available_spots=11,
@@ -218,6 +221,108 @@ async def seed():
                 wants_automatic_access=False,
                 has_automatic_access=False,
             ),
+            Parking(
+                tenant_id=demo_tenants["salvador"].id,
+                name="ParkHere Salvador Barra",
+                address="Av. Oceanica, Barra, Salvador - BA",
+                city="Salvador",
+                lat=-13.0091,
+                lng=-38.5327,
+                rating=4.6,
+                total_spots=55,
+                available_spots=16,
+                covered_spots=20,
+                uncovered_spots=35,
+                first_hour_price=14,
+                additional_hour_price=7,
+                daily_price=58,
+                weekly_price=260,
+                monthly_price=440,
+                covered_first_hour_price=18,
+                covered_additional_hour_price=9,
+                covered_daily_price=72,
+                covered_weekly_price=320,
+                covered_monthly_price=540,
+                uncovered_first_hour_price=14,
+                uncovered_additional_hour_price=7,
+                uncovered_daily_price=58,
+                uncovered_weekly_price=260,
+                uncovered_monthly_price=440,
+                has_covered_area=True,
+                has_vip_spots=True,
+                has_24h_gate=True,
+                has_security_system=True,
+                wants_automatic_access=False,
+                has_automatic_access=False,
+            ),
+            Parking(
+                tenant_id=demo_tenants["sao_paulo"].id,
+                name="ParkHere Sao Paulo Paulista",
+                address="Av. Paulista, Bela Vista, Sao Paulo - SP",
+                city="Sao Paulo",
+                lat=-23.5614,
+                lng=-46.6559,
+                rating=4.8,
+                total_spots=120,
+                available_spots=34,
+                covered_spots=80,
+                uncovered_spots=40,
+                first_hour_price=22,
+                additional_hour_price=12,
+                daily_price=95,
+                weekly_price=430,
+                monthly_price=760,
+                covered_first_hour_price=28,
+                covered_additional_hour_price=14,
+                covered_daily_price=115,
+                covered_weekly_price=520,
+                covered_monthly_price=920,
+                uncovered_first_hour_price=22,
+                uncovered_additional_hour_price=12,
+                uncovered_daily_price=95,
+                uncovered_weekly_price=430,
+                uncovered_monthly_price=760,
+                has_covered_area=True,
+                has_vip_spots=True,
+                has_24h_gate=True,
+                has_security_system=True,
+                wants_automatic_access=True,
+                has_automatic_access=False,
+            ),
+            Parking(
+                tenant_id=demo_tenants["curitiba"].id,
+                name="ParkHere Curitiba Batel",
+                address="Av. do Batel, Batel, Curitiba - PR",
+                city="Curitiba",
+                lat=-25.4421,
+                lng=-49.2876,
+                rating=4.7,
+                total_spots=70,
+                available_spots=22,
+                covered_spots=45,
+                uncovered_spots=25,
+                first_hour_price=16,
+                additional_hour_price=8,
+                daily_price=65,
+                weekly_price=290,
+                monthly_price=510,
+                covered_first_hour_price=20,
+                covered_additional_hour_price=10,
+                covered_daily_price=78,
+                covered_weekly_price=350,
+                covered_monthly_price=620,
+                uncovered_first_hour_price=16,
+                uncovered_additional_hour_price=8,
+                uncovered_daily_price=65,
+                uncovered_weekly_price=290,
+                uncovered_monthly_price=510,
+                has_covered_area=True,
+                has_vip_spots=False,
+                has_24h_gate=True,
+                has_security_system=True,
+                wants_automatic_access=False,
+                has_automatic_access=False,
+            ),
         ]
         db.add_all(parkings)
         await db.flush()
@@ -230,6 +335,12 @@ async def seed():
                 ParkingService(parking_id=parkings[1].id, code="tour_guide", name="Guia turistico", price=100),
                 ParkingService(parking_id=parkings[1].id, code="transport", name="Transporte", price=50),
                 ParkingService(parking_id=parkings[2].id, code="transport", name="Transporte rapido", price=25),
+                ParkingService(parking_id=parkings[3].id, code="car_wash", name="Lavagem express", price=40),
+                ParkingService(parking_id=parkings[3].id, code="tour_guide", name="Guia Barra", price=80),
+                ParkingService(parking_id=parkings[4].id, code="car_wash", name="Lavagem premium", price=65),
+                ParkingService(parking_id=parkings[4].id, code="transport", name="Transfer urbano", price=45),
+                ParkingService(parking_id=parkings[5].id, code="car_wash", name="Lavagem ecológica", price=48),
+                ParkingService(parking_id=parkings[5].id, code="transport", name="Transporte executivo", price=55),
             ]
         )
 
@@ -305,11 +416,18 @@ async def refresh_existing_seed(db):
         select(Tenant).where(Tenant.cnpj == "11222333000144")
     )
     main_tenant = main_tenant_result.scalar_one_or_none()
+    if main_tenant is not None:
+        main_tenant.name = "ParkHere Valenca Centro"
+        main_tenant.email = "operacao.valenca@parkhere.test"
     demo_tenants = await ensure_demo_partner_tenants(db, commit=False)
 
     parking_specs = {
         "Estacionamento Central ParkHere": {
             "tenant_id": main_tenant.id if main_tenant else None,
+            "address": "Rua Conselheiro Ferraz, Centro, Valenca - BA",
+            "city": "Valenca",
+            "lat": -13.3703,
+            "lng": -39.0731,
             "covered_spots": 24,
             "uncovered_spots": 36,
             "weekly_price": 180,
@@ -329,7 +447,12 @@ async def refresh_existing_seed(db):
             "has_automatic_access": False,
         },
         "ParkHere Pelourinho VIP": {
+            "name": "ParkHere Valenca VIP",
             "tenant_id": demo_tenants["pelourinho"].id,
+            "address": "Av. ACM, Centro, Valenca - BA",
+            "city": "Valenca",
+            "lat": -13.3668,
+            "lng": -39.0705,
             "covered_spots": 20,
             "uncovered_spots": 15,
             "weekly_price": 330,
@@ -349,7 +472,12 @@ async def refresh_existing_seed(db):
             "has_automatic_access": False,
         },
         "ParkHere Comercio Express": {
+            "name": "ParkHere Valenca Comercio Express",
             "tenant_id": demo_tenants["comercio"].id,
+            "address": "Rua Governador Goncalves, Valenca - BA",
+            "city": "Valenca",
+            "lat": -13.3727,
+            "lng": -39.0762,
             "covered_spots": 0,
             "uncovered_spots": 42,
             "weekly_price": 150,
@@ -368,37 +496,239 @@ async def refresh_existing_seed(db):
             "wants_automatic_access": False,
             "has_automatic_access": False,
         },
+        "ParkHere Salvador Barra": {
+            "tenant_id": demo_tenants["salvador"].id,
+            "address": "Av. Oceanica, Barra, Salvador - BA",
+            "city": "Salvador",
+            "lat": -13.0091,
+            "lng": -38.5327,
+            "rating": 4.6,
+            "total_spots": 55,
+            "available_spots": 16,
+            "covered_spots": 20,
+            "uncovered_spots": 35,
+            "first_hour_price": 14,
+            "additional_hour_price": 7,
+            "daily_price": 58,
+            "weekly_price": 260,
+            "monthly_price": 440,
+            "covered_first_hour_price": 18,
+            "covered_additional_hour_price": 9,
+            "covered_daily_price": 72,
+            "covered_weekly_price": 320,
+            "covered_monthly_price": 540,
+            "uncovered_first_hour_price": 14,
+            "uncovered_additional_hour_price": 7,
+            "uncovered_daily_price": 58,
+            "uncovered_weekly_price": 260,
+            "uncovered_monthly_price": 440,
+            "has_vip_spots": True,
+            "has_24h_gate": True,
+            "has_security_system": True,
+            "wants_automatic_access": False,
+            "has_automatic_access": False,
+        },
+        "ParkHere Sao Paulo Paulista": {
+            "tenant_id": demo_tenants["sao_paulo"].id,
+            "address": "Av. Paulista, Bela Vista, Sao Paulo - SP",
+            "city": "Sao Paulo",
+            "lat": -23.5614,
+            "lng": -46.6559,
+            "rating": 4.8,
+            "total_spots": 120,
+            "available_spots": 34,
+            "covered_spots": 80,
+            "uncovered_spots": 40,
+            "first_hour_price": 22,
+            "additional_hour_price": 12,
+            "daily_price": 95,
+            "weekly_price": 430,
+            "monthly_price": 760,
+            "covered_first_hour_price": 28,
+            "covered_additional_hour_price": 14,
+            "covered_daily_price": 115,
+            "covered_weekly_price": 520,
+            "covered_monthly_price": 920,
+            "uncovered_first_hour_price": 22,
+            "uncovered_additional_hour_price": 12,
+            "uncovered_daily_price": 95,
+            "uncovered_weekly_price": 430,
+            "uncovered_monthly_price": 760,
+            "has_vip_spots": True,
+            "has_24h_gate": True,
+            "has_security_system": True,
+            "wants_automatic_access": True,
+            "has_automatic_access": False,
+        },
+        "ParkHere Curitiba Batel": {
+            "tenant_id": demo_tenants["curitiba"].id,
+            "address": "Av. do Batel, Batel, Curitiba - PR",
+            "city": "Curitiba",
+            "lat": -25.4421,
+            "lng": -49.2876,
+            "rating": 4.7,
+            "total_spots": 70,
+            "available_spots": 22,
+            "covered_spots": 45,
+            "uncovered_spots": 25,
+            "first_hour_price": 16,
+            "additional_hour_price": 8,
+            "daily_price": 65,
+            "weekly_price": 290,
+            "monthly_price": 510,
+            "covered_first_hour_price": 20,
+            "covered_additional_hour_price": 10,
+            "covered_daily_price": 78,
+            "covered_weekly_price": 350,
+            "covered_monthly_price": 620,
+            "uncovered_first_hour_price": 16,
+            "uncovered_additional_hour_price": 8,
+            "uncovered_daily_price": 65,
+            "uncovered_weekly_price": 290,
+            "uncovered_monthly_price": 510,
+            "has_vip_spots": False,
+            "has_24h_gate": True,
+            "has_security_system": True,
+            "wants_automatic_access": False,
+            "has_automatic_access": False,
+        },
     }
+    parking_specs["ParkHere Valenca VIP"] = parking_specs["ParkHere Pelourinho VIP"]
+    parking_specs["ParkHere Valenca Comercio Express"] = parking_specs[
+        "ParkHere Comercio Express"
+    ]
 
-    result = await db.execute(
-        select(Parking).where(Parking.name.in_(parking_specs.keys()))
-    )
-    for parking in result.scalars().all():
-        for field, value in parking_specs[parking.name].items():
+    result = await db.execute(select(Parking).where(Parking.name.in_(parking_specs.keys())))
+    existing = {parking.name: parking for parking in result.scalars().all()}
+
+    for parking_name, spec in parking_specs.items():
+        if parking_name in {"ParkHere Pelourinho VIP", "ParkHere Comercio Express"}:
+            continue
+
+        parking = existing.get(parking_name)
+        if parking is None:
+            parking = Parking(name=parking_name, tenant_id=spec["tenant_id"])
+            db.add(parking)
+
+        for field, value in spec.items():
             if value is not None:
                 setattr(parking, field, value)
         parking.has_covered_area = parking.covered_spots > 0
 
+    for old_name in ["ParkHere Pelourinho VIP", "ParkHere Comercio Express"]:
+        parking = existing.get(old_name)
+        if parking is None:
+            continue
+        spec = parking_specs[old_name]
+        for field, value in spec.items():
+            if value is not None:
+                setattr(parking, field, value)
+        parking.has_covered_area = parking.covered_spots > 0
+
+    await db.flush()
+    await ensure_seed_parking_services(db, commit=False)
+
     await db.commit()
+
+
+async def ensure_seed_parking_services(db, commit=True):
+    service_specs = {
+        "Estacionamento Central ParkHere": [
+            {"code": "car_wash", "name": "Lava-jato", "price": 30},
+            {"code": "tour_guide", "name": "Guia turistico", "price": 50},
+        ],
+        "ParkHere Valenca VIP": [
+            {"code": "car_wash", "name": "Lava-jato premium", "price": 50},
+            {"code": "tour_guide", "name": "Guia turistico", "price": 100},
+            {"code": "transport", "name": "Transporte", "price": 50},
+        ],
+        "ParkHere Valenca Comercio Express": [
+            {"code": "transport", "name": "Transporte rapido", "price": 25},
+        ],
+        "ParkHere Salvador Barra": [
+            {"code": "car_wash", "name": "Lavagem express", "price": 40},
+            {"code": "tour_guide", "name": "Guia Barra", "price": 80},
+        ],
+        "ParkHere Sao Paulo Paulista": [
+            {"code": "car_wash", "name": "Lavagem premium", "price": 65},
+            {"code": "transport", "name": "Transfer urbano", "price": 45},
+        ],
+        "ParkHere Curitiba Batel": [
+            {"code": "car_wash", "name": "Lavagem ecologica", "price": 48},
+            {"code": "transport", "name": "Transporte executivo", "price": 55},
+        ],
+    }
+
+    result = await db.execute(
+        select(Parking).where(Parking.name.in_(service_specs.keys()))
+    )
+    parkings = {parking.name: parking for parking in result.scalars().all()}
+
+    for parking_name, services in service_specs.items():
+        parking = parkings.get(parking_name)
+        if parking is None:
+            continue
+
+        existing_result = await db.execute(
+            select(ParkingService).where(ParkingService.parking_id == parking.id)
+        )
+        existing = {service.code: service for service in existing_result.scalars().all()}
+
+        for spec in services:
+            service = existing.get(spec["code"])
+            if service is None:
+                service = ParkingService(parking_id=parking.id, code=spec["code"])
+                db.add(service)
+
+            service.name = spec["name"]
+            service.price = spec["price"]
+            service.is_active = True
+
+    if commit:
+        await db.commit()
 
 
 async def ensure_demo_partner_tenants(db, commit=True):
     specs = {
         "pelourinho": {
-            "name": "Pelourinho Parking Partners",
+            "name": "Valenca Centro Parking Partners",
             "cnpj": "22333444000155",
-            "email": "operacao.pelourinho@parkhere.test",
-            "profile_name": "ParkHere Pelourinho VIP",
-            "user_email": "pelourinho@parkhere.test",
-            "operator_email": "operador.pelourinho@parkhere-salvador.test",
+            "email": "operacao.centro.valenca@parkhere.test",
+            "profile_name": "ParkHere Valenca VIP",
+            "user_email": "gestor.valenca.vip@parkhere.test",
+            "operator_email": "operador.valenca.vip@parkhere.test",
         },
         "comercio": {
-            "name": "Comercio Parking Partners",
+            "name": "Valenca Comercio Parking Partners",
             "cnpj": "33444555000166",
-            "email": "operacao.comercio@parkhere.test",
-            "profile_name": "ParkHere Comercio Express",
-            "user_email": "comercio@parkhere.test",
-            "operator_email": "operador.comercio@parkhere-salvador.test",
+            "email": "operacao.comercio.valenca@parkhere.test",
+            "profile_name": "ParkHere Valenca Comercio Express",
+            "user_email": "gestor.valenca.comercio@parkhere.test",
+            "operator_email": "operador.valenca.comercio@parkhere.test",
+        },
+        "salvador": {
+            "name": "Salvador Barra Parking Partners",
+            "cnpj": "44555666000177",
+            "email": "operacao.barra.salvador@parkhere.test",
+            "profile_name": "ParkHere Salvador Barra",
+            "user_email": "gestor.salvador.barra@parkhere.test",
+            "operator_email": "operador.salvador.barra@parkhere.test",
+        },
+        "sao_paulo": {
+            "name": "Sao Paulo Paulista Parking Partners",
+            "cnpj": "55666777000188",
+            "email": "operacao.paulista.saopaulo@parkhere.test",
+            "profile_name": "ParkHere Sao Paulo Paulista",
+            "user_email": "gestor.saopaulo.paulista@parkhere.test",
+            "operator_email": "operador.saopaulo.paulista@parkhere.test",
+        },
+        "curitiba": {
+            "name": "Curitiba Batel Parking Partners",
+            "cnpj": "66777888000199",
+            "email": "operacao.batel.curitiba@parkhere.test",
+            "profile_name": "ParkHere Curitiba Batel",
+            "user_email": "gestor.curitiba.batel@parkhere.test",
+            "operator_email": "operador.curitiba.batel@parkhere.test",
         },
     }
     tenants = {}
@@ -558,7 +888,7 @@ async def ensure_descriptive_seed_users(db, commit=True):
     await _ensure_seed_user(
         db,
         tenant_id=tenant.id,
-        email="gestor.central@parkhere-salvador.test",
+        email="gestor.central@parkhere-valenca.test",
         name="Gestor Central ParkHere",
         first_name="Gestor",
         phone="71999994444",
@@ -567,7 +897,7 @@ async def ensure_descriptive_seed_users(db, commit=True):
     await _ensure_seed_user(
         db,
         tenant_id=tenant.id,
-        email="operador.central@parkhere-salvador.test",
+        email="operador.central@parkhere-valenca.test",
         name="Operador Central ParkHere",
         first_name="Operador",
         phone="71999995555",
@@ -586,6 +916,8 @@ async def cleanup_example_seed_users(db, commit=True):
                 [
                     "cliente.parceiro@estacionamento1.com",
                     "user.operador@estacionamento1.com",
+                    "gestor.central@parkhere-salvador.test",
+                    "operador.central@parkhere-salvador.test",
                 ]
             )
         )
@@ -686,7 +1018,7 @@ async def ensure_partner_profile(db, tenant_id=None, commit=True):
         profile = PartnerProfile(
             tenant_id=tenant_id,
             service_type="parking",
-            company_name="ParkHere Salvador Centro",
+            company_name="ParkHere Valenca Centro",
             cnpj="11222333000144",
             registration_status="active",
             responsible_name="Parceiro Estacionamento",
@@ -700,7 +1032,7 @@ async def ensure_partner_profile(db, tenant_id=None, commit=True):
         db.add(profile)
     else:
         profile.service_type = "parking"
-        profile.company_name = "ParkHere Salvador Centro"
+        profile.company_name = "ParkHere Valenca Centro"
         profile.cnpj = "11222333000144"
         profile.registration_status = "active"
         profile.responsible_name = "Parceiro Estacionamento"
@@ -824,6 +1156,10 @@ async def ensure_seed_reservations(db, commit=True):
             "checked_in_at": None,
             "checked_out_at": None,
             "services": "[]",
+            "spot_code": "V003",
+            "spot_type": "uncovered",
+            "route_minutes": 18,
+            "is_manual_arrival": False,
         },
         {
             "marker": "seed_confirmed_paid_with_service",
@@ -838,6 +1174,10 @@ async def ensure_seed_reservations(db, commit=True):
             "checked_in_at": None,
             "checked_out_at": None,
             "services": service_snapshot,
+            "spot_code": "V004",
+            "spot_type": "covered",
+            "route_minutes": 1,
+            "is_manual_arrival": True,
         },
         {
             "marker": "seed_checked_in_pending_checkout_payment",
@@ -852,6 +1192,10 @@ async def ensure_seed_reservations(db, commit=True):
             "checked_in_at": datetime.utcnow() - timedelta(hours=1),
             "checked_out_at": None,
             "services": "[]",
+            "spot_code": "V005",
+            "spot_type": "large",
+            "route_minutes": 1,
+            "is_manual_arrival": True,
         },
         {
             "marker": "seed_checked_in_paid",
@@ -866,6 +1210,10 @@ async def ensure_seed_reservations(db, commit=True):
             "checked_in_at": datetime.utcnow() - timedelta(hours=2),
             "checked_out_at": None,
             "services": "[]",
+            "spot_code": "V006",
+            "spot_type": "vip",
+            "route_minutes": 1,
+            "is_manual_arrival": True,
         },
         {
             "marker": "seed_completed_paid",
@@ -880,6 +1228,10 @@ async def ensure_seed_reservations(db, commit=True):
             "checked_in_at": datetime.utcnow() - timedelta(hours=4),
             "checked_out_at": datetime.utcnow() - timedelta(hours=1),
             "services": "[]",
+            "spot_code": "V007",
+            "spot_type": "pickup",
+            "route_minutes": 1,
+            "is_manual_arrival": True,
         },
     ]
 
@@ -900,10 +1252,15 @@ async def ensure_seed_reservations(db, commit=True):
             )
             db.add(reservation)
 
-        reservation.route_minutes = 15
-        reservation.hold_expires_at = datetime.utcnow() + timedelta(minutes=15)
+        reservation.route_minutes = scenario["route_minutes"]
+        reservation.arrival_estimate_at = datetime.utcnow() + timedelta(
+            minutes=scenario["route_minutes"]
+        )
+        reservation.hold_expires_at = reservation.arrival_estimate_at
         reservation.estimated_total = scenario["final_total"]
-        reservation.spot_type = "uncovered"
+        reservation.spot_code = scenario["spot_code"]
+        reservation.spot_type = scenario["spot_type"]
+        reservation.is_manual_arrival = scenario["is_manual_arrival"]
         reservation.pricing_plan = scenario["pricing_plan"]
         reservation.duration_hours = scenario["duration_hours"]
         reservation.base_amount = scenario["base_amount"]
@@ -916,6 +1273,11 @@ async def ensure_seed_reservations(db, commit=True):
         reservation.payment_status = scenario["payment_status"]
         reservation.checked_in_at = scenario["checked_in_at"]
         reservation.checked_out_at = scenario["checked_out_at"]
+        reservation.cancelled_at = None
+        reservation.cancelled_by_user_id = None
+        reservation.cancellation_reason = None
+        reservation.cancellation_fee_amount = 0
+        reservation.cancellation_credit_amount = 0
 
     if commit:
         await db.commit()
@@ -957,6 +1319,13 @@ async def ensure_platform_fees(db, commit=True):
             "percentage": 10,
             "min_fee": 0,
             "max_fee": None,
+        },
+        "cancellation": {
+            "fee_mode": "hybrid",
+            "fixed_amount": 1.00,
+            "percentage": 3,
+            "min_fee": 1.00,
+            "max_fee": 10,
         },
     }
 
