@@ -126,7 +126,13 @@ class _ManagedParkingCard extends StatelessWidget {
                 ),
                 _InfoChip('${parking.coveredSpots} cobertas'),
                 _InfoChip('${parking.uncoveredSpots} descobertas'),
-                if (parking.hasVipSpots) const _InfoChip('VIP'),
+                if (parking.vipSpots > 0) _InfoChip('${parking.vipSpots} VIP'),
+                if (parking.largeSpots > 0)
+                  _InfoChip('${parking.largeSpots} carro grande'),
+                if (parking.busSpots > 0)
+                  _InfoChip('${parking.busSpots} ônibus'),
+                if (parking.pickupSpots > 0)
+                  _InfoChip('${parking.pickupSpots} picape'),
                 _InfoChip(parking.isActive ? 'Ativo' : 'Inativo'),
               ],
             ),
@@ -205,6 +211,10 @@ class _ParkingManagementFormPageState
   final availableController = TextEditingController();
   final coveredController = TextEditingController();
   final uncoveredController = TextEditingController();
+  final vipController = TextEditingController();
+  final largeController = TextEditingController();
+  final busController = TextEditingController();
+  final pickupController = TextEditingController();
 
   final uncoveredFirstController = TextEditingController();
   final uncoveredAdditionalController = TextEditingController();
@@ -221,7 +231,6 @@ class _ParkingManagementFormPageState
   final serviceNameController = TextEditingController();
   final servicePriceController = TextEditingController();
 
-  bool hasVipSpots = false;
   bool has24hGate = false;
   bool hasSecuritySystem = false;
   bool wantsAutomaticAccess = false;
@@ -242,6 +251,10 @@ class _ParkingManagementFormPageState
       coveredController.text = '0';
       uncoveredController.text = '0';
       availableController.text = '0';
+      vipController.text = '0';
+      largeController.text = '0';
+      busController.text = '0';
+      pickupController.text = '0';
       return;
     }
 
@@ -254,7 +267,10 @@ class _ParkingManagementFormPageState
     availableController.text = parking.availableSpots.toString();
     coveredController.text = parking.coveredSpots.toString();
     uncoveredController.text = parking.uncoveredSpots.toString();
-    hasVipSpots = parking.hasVipSpots;
+    vipController.text = parking.vipSpots.toString();
+    largeController.text = parking.largeSpots.toString();
+    busController.text = parking.busSpots.toString();
+    pickupController.text = parking.pickupSpots.toString();
     has24hGate = parking.has24hGate;
     hasSecuritySystem = parking.hasSecuritySystem;
     wantsAutomaticAccess = parking.wantsAutomaticAccess;
@@ -289,6 +305,10 @@ class _ParkingManagementFormPageState
       availableController,
       coveredController,
       uncoveredController,
+      vipController,
+      largeController,
+      busController,
+      pickupController,
       uncoveredFirstController,
       uncoveredAdditionalController,
       uncoveredDailyController,
@@ -361,11 +381,28 @@ class _ParkingManagementFormPageState
                   Expanded(child: _field(uncoveredController, 'Descobertas')),
                 ],
               ),
-              SwitchListTile(
-                value: hasVipSpots,
-                onChanged: (value) => setState(() => hasVipSpots = value),
-                title: const Text('Possui vagas VIP'),
-                contentPadding: EdgeInsets.zero,
+              const SizedBox(height: 4),
+              Text(
+                'Tipos especiais de vaga',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(child: _field(vipController, 'VIP')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field(largeController, 'Carro grande')),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(child: _field(busController, 'Ônibus')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field(pickupController, 'Picape')),
+                ],
               ),
               SwitchListTile(
                 value: has24hGate,
@@ -565,9 +602,17 @@ class _ParkingManagementFormPageState
     final covered = _int(coveredController, 'Cobertas');
     final uncovered = _int(uncoveredController, 'Descobertas');
     final available = _int(availableController, 'Disponíveis');
+    final vip = _int(vipController, 'VIP');
+    final large = _int(largeController, 'Carro grande');
+    final bus = _int(busController, 'Ônibus');
+    final pickup = _int(pickupController, 'Picape');
 
     if (covered + uncovered != total) {
       throw Exception('Cobertas + descobertas deve ser igual ao total.');
+    }
+
+    if (vip + large + bus + pickup > total) {
+      throw Exception('Tipos especiais não podem passar o total de vagas.');
     }
 
     return ManagedParkingModel(
@@ -581,7 +626,11 @@ class _ParkingManagementFormPageState
       availableSpots: available,
       coveredSpots: covered,
       uncoveredSpots: uncovered,
-      hasVipSpots: hasVipSpots,
+      vipSpots: vip,
+      largeSpots: large,
+      busSpots: bus,
+      pickupSpots: pickup,
+      hasVipSpots: vip > 0,
       has24hGate: has24hGate,
       hasSecuritySystem: hasSecuritySystem,
       wantsAutomaticAccess: wantsAutomaticAccess,

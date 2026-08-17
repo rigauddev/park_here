@@ -99,6 +99,7 @@ class _ParkingLayoutPanel extends StatelessWidget {
                     icon: Icons.schedule,
                     label: 'Pre-reservas',
                     value: layout.preReservedAmount,
+                    count: layout.preReservedSpots,
                     color: Colors.orange,
                     tooltip:
                         'Soma das pre-reservas aguardando confirmacao ou chegada.',
@@ -115,6 +116,7 @@ class _ParkingLayoutPanel extends StatelessWidget {
                     icon: Icons.login,
                     label: 'Em permanencia',
                     value: layout.checkedInAmount,
+                    count: layout.occupiedSpots,
                     color: AppTheme.primary,
                     tooltip:
                         'Valores de reservas com check-in realizado e veiculo no patio.',
@@ -134,6 +136,15 @@ class _ParkingLayoutPanel extends StatelessWidget {
                     color: Colors.red,
                     tooltip:
                         'Total pendente de pagamento no check-in ou checkout.',
+                  ),
+                  _MoneySummaryCard(
+                    icon: Icons.cancel_outlined,
+                    label: 'Canceladas',
+                    value: layout.cancelledAmount,
+                    count: layout.cancelledSpots,
+                    color: Theme.of(context).colorScheme.error,
+                    tooltip:
+                        'Quantidade e valor bruto das reservas canceladas neste estacionamento.',
                   ),
                   _MoneySummaryCard(
                     icon: Icons.local_car_wash,
@@ -189,7 +200,7 @@ class _ParkingLayoutPanel extends StatelessWidget {
                       : 4,
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
-                  mainAxisExtent: 74,
+                  mainAxisExtent: 96,
                 ),
                 itemBuilder: (context, index) {
                   final slot = layout.slots[index];
@@ -1566,6 +1577,7 @@ class _MoneySummaryCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final double value;
+  final int? count;
   final Color color;
   final String tooltip;
 
@@ -1573,58 +1585,78 @@ class _MoneySummaryCard extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.count,
     required this.color,
     required this.tooltip,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      triggerMode: TooltipTriggerMode.tap,
-      child: Container(
-        width: MediaQuery.sizeOf(context).width >= 900
-            ? 220
-            : MediaQuery.sizeOf(context).width - 52,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.24)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          label,
-                          style: const TextStyle(color: AppTheme.textMuted),
-                        ),
+    return Container(
+      width: MediaQuery.sizeOf(context).width >= 900
+          ? 220
+          : MediaQuery.sizeOf(context).width - 52,
+      height: 104,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppTheme.textMuted),
                       ),
-                      Icon(Icons.info_outline, color: color, size: 16),
-                    ],
+                    ),
+                    Tooltip(
+                      message: tooltip,
+                      triggerMode: TooltipTriggerMode.tap,
+                      child: Icon(Icons.info_outline, color: color, size: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'R\$ ${value.toStringAsFixed(2)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
                   ),
+                ),
+                if (count != null) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'R\$ ${value.toStringAsFixed(2)}',
+                    '$count reservas',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: AppTheme.primary,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
+                      color: AppTheme.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

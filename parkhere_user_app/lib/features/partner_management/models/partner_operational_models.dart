@@ -127,9 +127,11 @@ class PartnerParkingLayout {
   final int availableSpots;
   final int preReservedSpots;
   final int occupiedSpots;
+  final int cancelledSpots;
   final double preReservedAmount;
   final double confirmedAmount;
   final double checkedInAmount;
+  final double cancelledAmount;
   final double pendingPaymentAmount;
   final double paidAmount;
   final Map<String, double> servicesAmountByStatus;
@@ -142,9 +144,11 @@ class PartnerParkingLayout {
     required this.availableSpots,
     required this.preReservedSpots,
     required this.occupiedSpots,
+    required this.cancelledSpots,
     required this.preReservedAmount,
     required this.confirmedAmount,
     required this.checkedInAmount,
+    required this.cancelledAmount,
     required this.pendingPaymentAmount,
     required this.paidAmount,
     required this.servicesAmountByStatus,
@@ -159,9 +163,11 @@ class PartnerParkingLayout {
       availableSpots: json['available_spots'] as int,
       preReservedSpots: json['pre_reserved_spots'] as int,
       occupiedSpots: json['occupied_spots'] as int,
+      cancelledSpots: json['cancelled_spots'] as int? ?? 0,
       preReservedAmount: (json['pre_reserved_amount'] as num? ?? 0).toDouble(),
       confirmedAmount: (json['confirmed_amount'] as num? ?? 0).toDouble(),
       checkedInAmount: (json['checked_in_amount'] as num? ?? 0).toDouble(),
+      cancelledAmount: (json['cancelled_amount'] as num? ?? 0).toDouble(),
       pendingPaymentAmount: (json['pending_payment_amount'] as num? ?? 0)
           .toDouble(),
       paidAmount: (json['paid_amount'] as num? ?? 0).toDouble(),

@@ -75,6 +75,10 @@ class ManagedParkingModel {
   final int availableSpots;
   final int coveredSpots;
   final int uncoveredSpots;
+  final int vipSpots;
+  final int largeSpots;
+  final int busSpots;
+  final int pickupSpots;
   final bool hasVipSpots;
   final bool has24hGate;
   final bool hasSecuritySystem;
@@ -96,6 +100,10 @@ class ManagedParkingModel {
     required this.availableSpots,
     required this.coveredSpots,
     required this.uncoveredSpots,
+    required this.vipSpots,
+    required this.largeSpots,
+    required this.busSpots,
+    required this.pickupSpots,
     required this.hasVipSpots,
     required this.has24hGate,
     required this.hasSecuritySystem,
@@ -119,6 +127,10 @@ class ManagedParkingModel {
       availableSpots: json['available_spots'] as int,
       coveredSpots: json['covered_spots'] as int,
       uncoveredSpots: json['uncovered_spots'] as int,
+      vipSpots: json['vip_spots'] as int? ?? 0,
+      largeSpots: json['large_spots'] as int? ?? 0,
+      busSpots: json['bus_spots'] as int? ?? 0,
+      pickupSpots: json['pickup_spots'] as int? ?? 0,
       hasVipSpots: json['has_vip_spots'] as bool? ?? false,
       has24hGate: json['has_24h_gate'] as bool? ?? false,
       hasSecuritySystem: json['has_security_system'] as bool? ?? false,
@@ -149,6 +161,10 @@ class ManagedParkingModel {
       'available_spots': availableSpots,
       'covered_spots': coveredSpots,
       'uncovered_spots': uncoveredSpots,
+      'vip_spots': vipSpots,
+      'large_spots': largeSpots,
+      'bus_spots': busSpots,
+      'pickup_spots': pickupSpots,
       'has_vip_spots': hasVipSpots,
       'has_24h_gate': has24hGate,
       'has_security_system': hasSecuritySystem,

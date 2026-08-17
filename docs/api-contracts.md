@@ -70,6 +70,10 @@ Request:
   "available_spots": 42,
   "covered_spots": 24,
   "uncovered_spots": 56,
+  "vip_spots": 3,
+  "large_spots": 4,
+  "bus_spots": 1,
+  "pickup_spots": 4,
   "has_vip_spots": true,
   "has_24h_gate": true,
   "has_security_system": true,
@@ -107,6 +111,9 @@ Regras:
 
 - Endpoint exige usuario parceiro do mesmo `tenant_id`.
 - `covered_spots + uncovered_spots` deve bater com `total_spots` no app e no backend.
+- `vip_spots`, `large_spots`, `bus_spots` e `pickup_spots` sao configurados pelo parceiro no cadastro do estacionamento.
+- A soma dos tipos especiais nao pode passar `total_spots`.
+- O mapa operacional usa essas quantidades para classificar as vagas; nao deve criar tipos especiais por regra fixa do numero da vaga.
 - `city` e obrigatorio para busca multi-cidade.
 
 ## Mapa Operacional Do Parceiro
@@ -121,6 +128,21 @@ Response:
   "parking_name": "Estacionamento Central ParkHere",
   "total_spots": 80,
   "available_spots": 42,
+  "pre_reserved_spots": 8,
+  "occupied_spots": 3,
+  "cancelled_spots": 2,
+  "pre_reserved_amount": 84.0,
+  "confirmed_amount": 126.0,
+  "checked_in_amount": 90.0,
+  "cancelled_amount": 28.0,
+  "pending_payment_amount": 112.0,
+  "paid_amount": 188.0,
+  "services_amount_by_status": {
+    "pre_reserved": 35.0,
+    "confirmed": 70.0,
+    "checked_in": 0.0,
+    "cancelled": 0.0
+  },
   "slots": [
     {
       "code": "V003",
@@ -142,11 +164,7 @@ Response:
       }
     }
   ],
-  "cards": {
-    "pre_reserved_total": 84.0,
-    "confirmed_total": 126.0,
-    "services_total": 70.0
-  }
+  "cards": "deprecated; usar campos agregados de valor e quantidade no nivel do estacionamento"
 }
 ```
 
@@ -155,6 +173,7 @@ Regras:
 - Parceiro e operador veem apenas reservas do proprio estabelecimento/tenant.
 - O card da vaga deve mostrar a previsao em formato curto, por exemplo `14 min · 10h36`.
 - Reserva operacional deve permanecer vinculada ao `spot_code` selecionado no mapa de vagas.
+- Reserva cancelada entra nos indicadores de cancelamento, mas nao bloqueia vaga no mapa.
 - Detalhes da vaga devem mostrar cliente, veiculo, periodo, pagamento, servicos e acoes operacionais permitidas.
 
 ## Pre-Reserva E Reserva

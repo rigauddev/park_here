@@ -37,6 +37,10 @@ class ParkingManagementRequest(BaseModel):
     total_spots: int
     covered_spots: int = 0
     uncovered_spots: int = 0
+    vip_spots: int = 0
+    large_spots: int = 0
+    bus_spots: int = 0
+    pickup_spots: int = 0
     available_spots: int | None = None
     has_vip_spots: bool = False
     has_24h_gate: bool = False
@@ -61,6 +65,10 @@ class ParkingManagementResponse(BaseModel):
     available_spots: int
     covered_spots: int
     uncovered_spots: int
+    vip_spots: int
+    large_spots: int
+    bus_spots: int
+    pickup_spots: int
     has_covered_area: bool
     has_vip_spots: bool
     has_24h_gate: bool

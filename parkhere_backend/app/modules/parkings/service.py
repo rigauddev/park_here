@@ -51,6 +51,10 @@ class ParkingManagementService:
             else data.total_spots,
             covered_spots=data.covered_spots,
             uncovered_spots=data.uncovered_spots,
+            vip_spots=data.vip_spots,
+            large_spots=data.large_spots,
+            bus_spots=data.bus_spots,
+            pickup_spots=data.pickup_spots,
             first_hour_price=uncovered.first_hour_price,
             additional_hour_price=uncovered.additional_hour_price,
             daily_price=uncovered.daily_price,
@@ -67,7 +71,7 @@ class ParkingManagementService:
             uncovered_weekly_price=uncovered.weekly_price,
             uncovered_monthly_price=uncovered.monthly_price,
             has_covered_area=data.covered_spots > 0,
-            has_vip_spots=data.has_vip_spots,
+            has_vip_spots=data.has_vip_spots or data.vip_spots > 0,
             has_24h_gate=data.has_24h_gate,
             has_security_system=data.has_security_system,
             wants_automatic_access=data.wants_automatic_access,
@@ -110,6 +114,10 @@ class ParkingManagementService:
             parking.available_spots = data.available_spots
         parking.covered_spots = data.covered_spots
         parking.uncovered_spots = data.uncovered_spots
+        parking.vip_spots = data.vip_spots
+        parking.large_spots = data.large_spots
+        parking.bus_spots = data.bus_spots
+        parking.pickup_spots = data.pickup_spots
         parking.first_hour_price = uncovered.first_hour_price
         parking.additional_hour_price = uncovered.additional_hour_price
         parking.daily_price = uncovered.daily_price
@@ -126,7 +134,7 @@ class ParkingManagementService:
         parking.uncovered_weekly_price = uncovered.weekly_price
         parking.uncovered_monthly_price = uncovered.monthly_price
         parking.has_covered_area = data.covered_spots > 0
-        parking.has_vip_spots = data.has_vip_spots
+        parking.has_vip_spots = data.has_vip_spots or data.vip_spots > 0
         parking.has_24h_gate = data.has_24h_gate
         parking.has_security_system = data.has_security_system
         parking.wants_automatic_access = data.wants_automatic_access
@@ -173,10 +181,27 @@ def _validate_capacity(data: ParkingManagementRequest) -> None:
     if data.covered_spots < 0 or data.uncovered_spots < 0:
         raise HTTPException(status_code=422, detail="Spot quantities cannot be negative")
 
+    if (
+        data.vip_spots < 0
+        or data.large_spots < 0
+        or data.bus_spots < 0
+        or data.pickup_spots < 0
+    ):
+        raise HTTPException(status_code=422, detail="Special spot quantities cannot be negative")
+
     if data.covered_spots + data.uncovered_spots != data.total_spots:
         raise HTTPException(
             status_code=422,
             detail="Covered plus uncovered spots must match total spots",
+        )
+
+    special_total = (
+        data.vip_spots + data.large_spots + data.bus_spots + data.pickup_spots
+    )
+    if special_total > data.total_spots:
+        raise HTTPException(
+            status_code=422,
+            detail="Special spot quantities cannot exceed total spots",
         )
 
     if data.available_spots is not None and (
@@ -215,6 +240,10 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
         available_spots=parking.available_spots,
         covered_spots=parking.covered_spots,
         uncovered_spots=parking.uncovered_spots,
+        vip_spots=parking.vip_spots,
+        large_spots=parking.large_spots,
+        bus_spots=parking.bus_spots,
+        pickup_spots=parking.pickup_spots,
         has_covered_area=parking.has_covered_area,
         has_vip_spots=parking.has_vip_spots,
         has_24h_gate=parking.has_24h_gate,

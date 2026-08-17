@@ -156,7 +156,11 @@ async def get_partner_parking_map(
         .outerjoin(User, User.id == Reservation.user_id)
         .where(Parking.tenant_id == current_user.tenant_id)
         .where(Reservation.parking_id.in_(parking_ids))
-        .where(Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]))
+        .where(
+            Reservation.status.in_(
+                ["pre_reserved", "confirmed", "checked_in", "cancelled"]
+            )
+        )
         .order_by(Reservation.created_at.desc())
     )
 
@@ -482,52 +486,70 @@ def _parking_layout_payload(
     parking: ParkingManagementResponse,
     reservations: list[tuple[Reservation, Vehicle | None, User | None]],
 ):
+    active_reservations = [
+        item
+        for item in reservations
+        if item[0].status in {"pre_reserved", "confirmed", "checked_in"}
+    ]
+    cancelled = [item for item in reservations if item[0].status == "cancelled"]
     active_by_slot: dict[str, tuple[Reservation, Vehicle | None, User | None]] = {}
     fallback_reservations: list[tuple[Reservation, Vehicle | None, User | None]] = []
-    for item in reservations:
+    for item in active_reservations:
         reservation = item[0]
         if reservation.spot_code:
             active_by_slot[reservation.spot_code] = item
         else:
             fallback_reservations.append(item)
 
-    reserved = [item for item in reservations if item[0].status != "checked_in"]
-    occupied = [item for item in reservations if item[0].status == "checked_in"]
+    reserved = [
+        item for item in active_reservations if item[0].status != "checked_in"
+    ]
+    occupied = [
+        item for item in active_reservations if item[0].status == "checked_in"
+    ]
     pre_reserved_amount = sum(
-        item[0].final_total for item in reservations if item[0].status == "pre_reserved"
+        item[0].final_total
+        for item in active_reservations
+        if item[0].status == "pre_reserved"
     )
     confirmed_amount = sum(
-        item[0].final_total for item in reservations if item[0].status == "confirmed"
+        item[0].final_total
+        for item in active_reservations
+        if item[0].status == "confirmed"
     )
     checked_in_amount = sum(
-        item[0].final_total for item in reservations if item[0].status == "checked_in"
+        item[0].final_total
+        for item in active_reservations
+        if item[0].status == "checked_in"
     )
+    cancelled_amount = sum(item[0].final_total for item in cancelled)
     pending_payment_amount = sum(
         item[0].final_total
-        for item in reservations
+        for item in active_reservations
         if item[0].payment_status != "paid"
     )
     paid_amount = sum(
         item[0].final_total
-        for item in reservations
+        for item in active_reservations
         if item[0].payment_status == "paid"
     )
     services_amount_by_status = {
         "pre_reserved": sum(
             item[0].services_amount
-            for item in reservations
+            for item in active_reservations
             if item[0].status == "pre_reserved"
         ),
         "confirmed": sum(
             item[0].services_amount
-            for item in reservations
+            for item in active_reservations
             if item[0].status == "confirmed"
         ),
         "checked_in": sum(
             item[0].services_amount
-            for item in reservations
+            for item in active_reservations
             if item[0].status == "checked_in"
         ),
+        "cancelled": sum(item[0].services_amount for item in cancelled),
     }
     slots = []
     fallback_index = 0
@@ -562,9 +584,11 @@ def _parking_layout_payload(
         "available_spots": sum(1 for slot in slots if slot["status"] == "free"),
         "pre_reserved_spots": len(reserved),
         "occupied_spots": len(occupied),
+        "cancelled_spots": len(cancelled),
         "pre_reserved_amount": pre_reserved_amount,
         "confirmed_amount": confirmed_amount,
         "checked_in_amount": checked_in_amount,
+        "cancelled_amount": cancelled_amount,
         "pending_payment_amount": pending_payment_amount,
         "paid_amount": paid_amount,
         "services_amount_by_status": services_amount_by_status,
@@ -618,16 +642,21 @@ def _slot_payload(
 
 
 def _slot_type(index: int, parking: ParkingManagementResponse) -> str:
-    if parking.has_vip_spots and index <= min(2, parking.total_spots):
+    vip_limit = parking.vip_spots
+    bus_limit = vip_limit + parking.bus_spots
+    large_limit = bus_limit + parking.large_spots
+    pickup_limit = large_limit + parking.pickup_spots
+
+    if index <= vip_limit:
         return "vip"
+    if index <= bus_limit:
+        return "bus"
+    if index <= large_limit:
+        return "large"
+    if index <= pickup_limit:
+        return "pickup"
     if parking.covered_spots and index <= parking.covered_spots:
         return "covered"
-    if index % 17 == 0:
-        return "bus"
-    if index % 11 == 0:
-        return "large"
-    if index % 7 == 0:
-        return "pickup"
     return "uncovered"
 
 

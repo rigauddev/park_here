@@ -118,6 +118,9 @@ Primeiro bloco implementavel da fase de gestao:
 - Parceiro informa quantidade total de vagas.
 - Parceiro separa vagas cobertas e descobertas.
 - Soma de vagas cobertas e descobertas deve ser igual ao total.
+- Parceiro define a quantidade de vagas especiais: VIP, carro grande, onibus e picape.
+- A soma das vagas especiais nao pode ser maior que a quantidade total de vagas.
+- O mapa de vagas deve classificar as vagas a partir dessa configuracao do estacionamento.
 - Vagas disponiveis nao podem ser negativas nem maiores que o total.
 - Parceiro cadastra tarifas para area descoberta: primeira hora, hora adicional, diaria, semanal e mensal.
 - Parceiro cadastra tarifas para area coberta: primeira hora, hora adicional, diaria, semanal e mensal.
@@ -188,9 +191,10 @@ MVP:
 - Exibir uma grade interativa 2D com vagas livres, pre-reservadas e ocupadas.
 - Ao tocar em uma vaga com reserva, mostrar status, pagamento, placa, veiculo e valor.
 - Ao tocar em uma vaga livre, abrir criacao de pre-reserva ou reserva operacional vinculada ao codigo da vaga.
-- Vagas devem mostrar tipo: descoberta, coberta, VIP, carro grande, onibus ou picape.
+- Vagas devem mostrar tipo: descoberta, coberta, VIP, carro grande, onibus ou picape, conforme configuracao cadastrada pelo parceiro.
 - Reserva criada por operador/parceiro usa previsao manual de chegada informada no atendimento.
-- Cards financeiros do mapa devem ter tooltip explicando o indicador.
+- Cards financeiros do mapa devem ter tooltip explicando o indicador, aberto apenas pelo icone de informacao.
+- Mapa deve exibir indicador de reservas canceladas com quantidade e valor, sem ocupar vagas.
 - Gerar o mapa com base em reservas e capacidade do estacionamento enquanto ainda nao existe modelagem de vaga individual.
 
 Roadmap:
