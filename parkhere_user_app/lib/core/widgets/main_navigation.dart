@@ -16,6 +16,7 @@ import '../../features/partner_management/pages/partner_users_page.dart';
 import '../../features/reservation/pages/reservation_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../theme/app_theme.dart';
+import '../../features/partner_management/pages/partner_fee_statement_page.dart';
 
 enum _MainArea {
   menu,
@@ -27,6 +28,7 @@ enum _MainArea {
   management,
   users,
   financial,
+  fees,
   profile,
 }
 
@@ -40,6 +42,7 @@ class MainNavigation extends ConsumerStatefulWidget {
 class _MainNavigationState extends ConsumerState<MainNavigation> {
   late _MainArea _selectedArea;
   int _servicesInitialIndex = 0;
+  bool _menuExpanded = true;
 
   @override
   void initState() {
@@ -56,13 +59,38 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     if (isPartner && !isPartnerOwner && _selectedArea == _MainArea.financial) {
       _selectedArea = _MainArea.map;
     }
-    final page = _pageFor(_selectedArea, isPartner, isPartnerOwner);
+    final page = Navigator(
+      key: ValueKey('${_selectedArea.name}:$_servicesInitialIndex'),
+      onGenerateRoute: (_) => MaterialPageRoute<void>(
+        builder: (_) => _pageFor(_selectedArea, isPartner, isPartnerOwner),
+      ),
+    );
+    final topBar = AppBar(
+      title: const Text('ParkHere'),
+      actions: [
+        if (!isWebLayout && _menuExpanded)
+          Builder(
+            builder: (context) => IconButton(
+              tooltip: 'Navegação',
+              icon: const Icon(Icons.dashboard_outlined),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+      ],
+      leading: IconButton(
+        tooltip: _menuExpanded ? 'Ocultar menu' : 'Mostrar menu',
+        icon: Icon(_menuExpanded ? Icons.menu_open : Icons.menu),
+        onPressed: () => setState(() => _menuExpanded = !_menuExpanded),
+      ),
+    );
 
     if (isWebLayout) {
       return Scaffold(
+        appBar: topBar,
         body: Row(
           children: [
             _WebMenu(
+              expanded: _menuExpanded,
               selectedArea: _selectedArea,
               isPartner: isPartner,
               isPartnerOwner: isPartnerOwner,
@@ -76,6 +104,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     }
 
     return Scaffold(
+      appBar: topBar,
       drawer: _MobileDrawer(
         isPartner: isPartner,
         isPartnerOwner: isPartnerOwner,
@@ -84,7 +113,19 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           _selectArea(area, serviceTabIndex);
         },
       ),
-      body: page,
+      body: Row(
+        children: [
+          if (!_menuExpanded)
+            _WebMenu(
+              expanded: false,
+              selectedArea: _selectedArea,
+              isPartner: isPartner,
+              isPartnerOwner: isPartnerOwner,
+              onSelected: _selectArea,
+            ),
+          Expanded(child: page),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _mobileIndexFor(
           _selectedArea,
@@ -182,6 +223,10 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             : const PartnerParkingMapPage();
       case _MainArea.users:
         return isPartnerOwner ? const PartnerUsersPage() : const ProfilePage();
+      case _MainArea.fees:
+        return isPartnerOwner
+            ? const PartnerFeeStatementPage()
+            : const ProfilePage();
       case _MainArea.financial:
         return isPartnerOwner
             ? const PartnerFinancialLockedPage()
@@ -223,6 +268,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return isPartner ? 0 : 2;
       case _MainArea.users:
         return isPartner ? 0 : 2;
+      case _MainArea.fees:
       case _MainArea.financial:
         return isPartner ? 3 : 2;
       case _MainArea.profile:
@@ -281,12 +327,14 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 }
 
 class _WebMenu extends ConsumerWidget {
+  final bool expanded;
   final _MainArea selectedArea;
   final bool isPartner;
   final bool isPartnerOwner;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _WebMenu({
+    this.expanded = true,
     required this.selectedArea,
     required this.isPartner,
     required this.isPartnerOwner,
@@ -296,15 +344,17 @@ class _WebMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      width: 280,
+      width: expanded ? 280 : 72,
       color: Colors.white,
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(expanded ? 16 : 4),
           children: [
-            Text('ParkHere', style: Theme.of(context).textTheme.titleLarge),
+            if (expanded)
+              Text('ParkHere', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 18),
             _MenuCategory(
+              expanded: expanded,
               title: 'Navegação',
               items: [
                 if (isPartner && isPartnerOwner)
@@ -325,6 +375,12 @@ class _WebMenu extends ConsumerWidget {
                     _MainArea.reservations,
                   ),
                 if (isPartner && isPartnerOwner)
+                  _MenuItem(
+                    Icons.receipt_long,
+                    'Taxas e compensações',
+                    _MainArea.fees,
+                  ),
+                if (isPartner && isPartnerOwner)
                   _MenuItem(Icons.group_outlined, 'Usuarios', _MainArea.users),
                 if (isPartner && isPartnerOwner)
                   _MenuItem(
@@ -338,6 +394,7 @@ class _WebMenu extends ConsumerWidget {
             ),
             if (!isPartner)
               _MenuCategory(
+                expanded: expanded,
                 title: 'Serviços',
                 items: [
                   _MenuItem(
@@ -369,6 +426,7 @@ class _WebMenu extends ConsumerWidget {
                 onSelected: onSelected,
               ),
             _MenuCategory(
+              expanded: expanded,
               title: 'Conta',
               items: [
                 _MenuItem(Icons.person_outline, 'Perfil', _MainArea.profile),
@@ -394,14 +452,21 @@ class _WebMenu extends ConsumerWidget {
               selectedArea: selectedArea,
               onSelected: onSelected,
             ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Sair', style: TextStyle(color: Colors.red)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            if (!expanded)
+              IconButton(
+                tooltip: 'Sair',
+                onPressed: () => _logout(context, ref),
+                icon: const Icon(Icons.logout),
               ),
-              onTap: () => _logout(context, ref),
-            ),
+            if (expanded)
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text('Sair', style: TextStyle(color: Colors.red)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                onTap: () => _logout(context, ref),
+              ),
           ],
         ),
       ),
@@ -411,8 +476,7 @@ class _WebMenu extends ConsumerWidget {
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
     await ref.read(authProvider.notifier).logout();
     if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginPage()),
       (_) => false,
     );
@@ -462,6 +526,12 @@ class _MobileDrawer extends StatelessWidget {
                 leading: const Icon(Icons.local_parking_outlined),
                 title: const Text('Mapa de vagas'),
                 onTap: () => onSelected(_MainArea.map),
+              ),
+            if (isPartner && isPartnerOwner)
+              ListTile(
+                leading: const Icon(Icons.receipt_long),
+                title: const Text('Taxas e compensações'),
+                onTap: () => onSelected(_MainArea.fees),
               ),
             if (isPartner && isPartnerOwner)
               ListTile(
@@ -528,12 +598,14 @@ class _MobileDrawer extends StatelessWidget {
 }
 
 class _MenuCategory extends StatelessWidget {
+  final bool expanded;
   final String title;
   final List<_MenuItem> items;
   final _MainArea selectedArea;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _MenuCategory({
+    this.expanded = true,
     required this.title,
     required this.items,
     required this.selectedArea,
@@ -547,27 +619,36 @@ class _MenuCategory extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 12, bottom: 6),
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: AppTheme.textMuted,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, bottom: 6),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.textMuted,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
               ),
             ),
-          ),
           for (final item in items)
-            ListTile(
-              selected: selectedArea == item.area,
-              leading: Icon(item.icon),
-              title: Text(item.label),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            if (!expanded)
+              IconButton(
+                tooltip: item.label,
+                isSelected: selectedArea == item.area,
+                onPressed: () => onSelected(item.area, item.serviceTabIndex),
+                icon: Icon(item.icon),
+              )
+            else
+              ListTile(
+                selected: selectedArea == item.area,
+                leading: Icon(item.icon),
+                title: Text(item.label),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                onTap: () => onSelected(item.area, item.serviceTabIndex),
               ),
-              onTap: () => onSelected(item.area, item.serviceTabIndex),
-            ),
         ],
       ),
     );

@@ -31,7 +31,7 @@ class ApiService {
       return jsonDecode(response.body);
     }
 
-    throw Exception("Erro na API: ${response.statusCode}");
+    throw Exception(_errorMessage(response));
   }
 
   Future<List<dynamic>> getAuthorized(String endpoint, String token) async {
@@ -46,7 +46,7 @@ class ApiService {
     }
 
     await _handleUnauthorized(response);
-    throw Exception("Erro na API: ${response.statusCode}");
+    throw Exception(_errorMessage(response));
   }
 
   Future<Map<String, dynamic>> getAuthorizedMap(
@@ -64,7 +64,7 @@ class ApiService {
     }
 
     await _handleUnauthorized(response);
-    throw Exception("Erro na API: ${response.statusCode}");
+    throw Exception(_errorMessage(response));
   }
 
   Future<Map<String, dynamic>> post(
@@ -93,7 +93,7 @@ class ApiService {
     }
 
     await _handleUnauthorized(response);
-    throw Exception("Erro na API: ${response.statusCode}");
+    throw Exception(_errorMessage(response));
   }
 
   Future<Map<String, dynamic>> postAuthorized(
@@ -112,7 +112,33 @@ class ApiService {
     }
 
     await _handleUnauthorized(response);
-    throw Exception("Erro na API: ${response.statusCode}");
+    throw Exception(_errorMessage(response));
+  }
+
+  String _errorMessage(http.Response response) {
+    try {
+      final detail =
+          (jsonDecode(response.body) as Map<String, dynamic>)['detail'];
+      if (detail is String) {
+        return const {
+              'Pre-reservation expired':
+                  'A pré-reserva expirou. Crie uma nova reserva.',
+              'Spot already reserved':
+                  'Esta vaga acabou de ser reservada. Escolha outra.',
+              'Cash received must cover the total':
+                  'O valor recebido deve cobrir o total.',
+              'Arrival must not be in the past':
+                  'A previsão de chegada não pode estar no passado.',
+            }[detail] ??
+            detail;
+      }
+      if (detail is Map && detail['message'] is String) {
+        return detail['message'] as String;
+      }
+    } catch (_) {
+      // Non-JSON responses keep the HTTP status without exposing the raw body.
+    }
+    return 'Erro na API: ${response.statusCode}';
   }
 
   Future<void> _handleUnauthorized(http.Response response) async {
@@ -136,7 +162,7 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
-    throw Exception("Erro na API: ${response.statusCode}");
+    throw Exception(_errorMessage(response));
   }
 
   Map<String, String> _authorizedHeaders(String token) {

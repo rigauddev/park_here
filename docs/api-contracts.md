@@ -66,6 +66,7 @@ Request:
   "city": "Valenca",
   "lat": -13.3703,
   "lng": -39.0731,
+  "arrival_tolerance_minutes": 15,
   "total_spots": 80,
   "available_spots": 42,
   "covered_spots": 24,
@@ -115,6 +116,7 @@ Regras:
 - A soma dos tipos especiais nao pode passar `total_spots`.
 - O mapa operacional usa essas quantidades para classificar as vagas; nao deve criar tipos especiais por regra fixa do numero da vaga.
 - `city` e obrigatorio para busca multi-cidade.
+- `arrival_tolerance_minutes` define por quanto tempo a vaga fica bloqueada apos a previsao de chegada.
 
 ## Mapa Operacional Do Parceiro
 
@@ -176,6 +178,7 @@ Response:
 Regras:
 
 - Parceiro e operador veem apenas reservas do proprio estabelecimento/tenant.
+- Reservas de cliente avulso criadas no patio retornam `customer_name="Cliente avulso"`, `vehicle_plate` e `customer_phone` preenchidos pelos campos de portaria.
 - O card da vaga deve mostrar a previsao em formato curto, por exemplo `14 min · 10h36`.
 - Reserva operacional deve permanecer vinculada ao `spot_code` selecionado no mapa de vagas.
 - Reserva cancelada entra nos indicadores de cancelamento, mas nao bloqueia vaga no mapa.
@@ -196,6 +199,9 @@ Request:
   "spot_code": "V003",
   "spot_type": "uncovered",
   "arrival_estimate_at": "2026-08-17T10:36:00",
+  "arrival_now": false,
+  "walk_in_plate": null,
+  "walk_in_phone": null,
   "is_manual_arrival": false,
   "pricing_plan": "hourly",
   "duration_hours": 2,
@@ -209,6 +215,8 @@ Response:
 ```json
 {
   "reservation_id": "reservation-id",
+  "walk_in_plate": null,
+  "walk_in_phone": null,
   "status": "pre_reserved",
   "payment_status": "pending",
   "spot_code": "V003",
@@ -226,8 +234,11 @@ Response:
 Regras:
 
 - Backend recalcula valores e nao confia em total enviado pelo app.
-- Para reserva criada por operador/parceiro, `arrival_estimate_at` pode ser manual e `is_manual_arrival=true`.
-- Expiracao da pre-reserva usa `route_minutes + tolerancia do parceiro`.
+- Cliente deve informar `vehicle_id`; parceiro/operador deve informar `walk_in_plate` e `walk_in_phone`.
+- Para reserva criada por operador/parceiro, `arrival_now=true` grava o horario atual no servidor; se for agendada, `arrival_estimate_at` deve vir com timezone ou sera tratado como horario local de `America/Bahia`.
+- Expiracao da pre-reserva usa `arrival_estimate_at + arrival_tolerance_minutes`.
+- Ao nao informar `spot_code`, o backend escolhe uma vaga livre compativel com `spot_type`.
+- Duas reservas simultaneas para a mesma vaga geram uma confirmacao e uma falha `409`.
 - Reserva agendada futura deve validar horario de funcionamento, antecedencia maxima e politica de cancelamento antes da confirmacao.
 - Politica de cancelamento deve explicitar prazo sem taxa, taxa do estacionamento, taxa ParkHere e regra de credito em carteira.
 
@@ -267,6 +278,16 @@ Request:
 }
 ```
 
+Para registrar pagamento em dinheiro no caixa:
+
+```json
+{
+  "method": "cash",
+  "purpose": "reservation",
+  "cash_received": 20.0
+}
+```
+
 Para pagar excedente de permanencia no checkout:
 
 ```json
@@ -282,13 +303,16 @@ Response:
 {
   "id": "payment-id",
   "reservation_id": "reservation-id",
-  "provider": "mercado_pago",
+  "provider": "mock",
+  "is_simulated": true,
   "method": "pix",
   "purpose": "checkout_excess",
   "status": "pending",
   "gross_amount": 5.0,
   "platform_fee_amount": 0.0,
   "partner_amount": 5.0,
+  "withheld_fee_amount": 0.0,
+  "cash_received": null,
   "provider_fee_estimate": 0.0,
   "checkout_url": "https://www.mercadopago.com.br/checkout/v1/mock?ref=checkout_excess:reservation-id",
   "qr_code": "000201...",
@@ -312,6 +336,10 @@ Regras:
 
 - `purpose=reservation` cobra o valor original da reserva.
 - `purpose=checkout_excess` cobra somente o excedente calculado para plano por hora.
+- `method=cash` so pode ser criado por parceiro/operador do mesmo tenant e exige `cash_received >= gross_amount`.
+- Pagamento em dinheiro confirmado cria debito `partner_fee_debts` com a taxa ParkHere daquela reserva.
+- Pagamento online futuro abate debitos pendentes do repasse do parceiro e retorna `withheld_fee_amount`.
+- Confirmacao mock e idempotente: repetir `/payments/{payment_id}/confirm` nao duplica debito nem liquidacao.
 - Checkout por hora permite tolerancia de 15 minutos apos o tempo contratado.
 - Se houver excedente sem pagamento, `POST /reservations/{reservation_id}/checkout` retorna `402` e mantem checkout bloqueado.
 - A confirmacao de pagamento do excedente grava `checkout_excess_paid_at` e libera nova tentativa de checkout.
@@ -344,7 +372,7 @@ Nao ha migration nova nesta rodada; snapshots de reservas anteriores sao preserv
 ### POST /payments/reservations/{reservation_id}/intent
 
 Request: `{"method":"pix","purpose":"reservation"}`.
-`method`: `pix`, `credit_card`, `debit_card`; `purpose`: `reservation`, `checkout_excess`.
+`method`: `pix`, `credit_card`, `debit_card`, `cash`; `purpose`: `reservation`, `checkout_excess`.
 Resposta mantem todos os campos existentes e adiciona `is_simulated` booleano.
 No ambiente de simulacao: `provider="mock"`, `is_simulated=true`, `status="pending"`.
 O QR/checkout desse modo sao ficticios e nao devem ser usados para transferencias.

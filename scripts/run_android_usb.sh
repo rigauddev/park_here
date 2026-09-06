@@ -9,7 +9,7 @@ if command -v adb >/dev/null 2>&1; then
   adb_bin="$(command -v adb)"
 fi
 if [[ ! -x "$adb_bin" ]]; then
-  echo 'ADB não encontrado. Configure ANDROID_HOME com o caminho do Android SDK.' >&2
+  echo 'ADB nao encontrado. Configure ANDROID_HOME com o caminho do Android SDK.' >&2
   exit 1
 fi
 

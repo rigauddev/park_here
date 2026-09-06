@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/widgets/main_navigation.dart';
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
 import 'forgot_password_page.dart';
@@ -51,15 +50,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ? LoginMode.partner
               : LoginMode.customer)
         : loginMode;
-
-    ref.listen<AuthState>(authProvider, (previous, next) {
-      if (next.status == AuthStatus.authenticated) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const MainNavigation()),
-        );
-      }
-    });
 
     return Scaffold(
       resizeToAvoidBottomInset: false,

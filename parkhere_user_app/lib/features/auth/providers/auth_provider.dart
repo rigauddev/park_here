@@ -58,7 +58,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String password, {
     AuthAccountType accountType = AuthAccountType.customer,
   }) async {
-    state = state.copyWith(status: AuthStatus.loading);
+    state = state.copyWith(
+      status: AuthStatus.loading,
+      accountType: accountType,
+    );
 
     final normalizedEmail = email.toLowerCase();
     final accountTypeName = accountType == AuthAccountType.customer

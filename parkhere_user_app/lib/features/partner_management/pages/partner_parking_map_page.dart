@@ -673,6 +673,10 @@ class _FreeSlotReservationDialogState
     extends ConsumerState<_FreeSlotReservationDialog> {
   final cashReceivedController = TextEditingController();
   final arrivalTimeController = TextEditingController();
+  final plateController = TextEditingController();
+  final ownerPhoneController = TextEditingController();
+  bool arrivalNow = true;
+  String? createdReservationId;
   _OperationalReservationMode mode = _OperationalReservationMode.preReserve;
   _OperationalPaymentMethod paymentMethod = _OperationalPaymentMethod.cash;
   _OperationalPricingPlan pricingPlan = _OperationalPricingPlan.hourly;
@@ -696,6 +700,8 @@ class _FreeSlotReservationDialogState
   void dispose() {
     cashReceivedController.dispose();
     arrivalTimeController.dispose();
+    plateController.dispose();
+    ownerPhoneController.dispose();
     super.dispose();
   }
 
@@ -717,26 +723,56 @@ class _FreeSlotReservationDialogState
               const SizedBox(height: 10),
               _DetailLine('Tipo de vaga', _slotTypeLabel(widget.slotType)),
               TextField(
-                controller: arrivalTimeController,
-                readOnly: true,
+                controller: plateController,
+                enabled: !isSubmitting && createdReservationId == null,
+                textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(
-                  labelText: 'Previsao manual de chegada',
-                  prefixIcon: Icon(Icons.schedule),
+                  labelText: 'Placa do veículo',
+                  prefixIcon: Icon(Icons.directions_car),
                 ),
-                onTap: isSubmitting
-                    ? null
-                    : () async {
-                        final selected = await showTimePicker(
-                          context: context,
-                          initialTime: arrivalTime,
-                        );
-                        if (selected == null) return;
-                        setState(() {
-                          arrivalTime = selected;
-                          arrivalTimeController.text = _formatTime(selected);
-                        });
-                      },
               ),
+              TextField(
+                controller: ownerPhoneController,
+                enabled: !isSubmitting && createdReservationId == null,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Telefone do proprietário com DDD',
+                  prefixIcon: Icon(Icons.phone),
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Cliente já está no estacionamento'),
+                subtitle: const Text(
+                  'O horário atual será registrado ao confirmar.',
+                ),
+                value: arrivalNow,
+                onChanged: isSubmitting || createdReservationId != null
+                    ? null
+                    : (value) => setState(() => arrivalNow = value),
+              ),
+              if (!arrivalNow)
+                TextField(
+                  controller: arrivalTimeController,
+                  readOnly: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Previsao manual de chegada',
+                    prefixIcon: Icon(Icons.schedule),
+                  ),
+                  onTap: isSubmitting
+                      ? null
+                      : () async {
+                          final selected = await showTimePicker(
+                            context: context,
+                            initialTime: arrivalTime,
+                          );
+                          if (selected == null) return;
+                          setState(() {
+                            arrivalTime = selected;
+                            arrivalTimeController.text = _formatTime(selected);
+                          });
+                        },
+                ),
               const SizedBox(height: 14),
               SegmentedButton<_OperationalReservationMode>(
                 segments: const [
@@ -995,17 +1031,37 @@ class _FreeSlotReservationDialogState
         return;
       }
 
-      final reservation = await createOperationalReservation(
-        token: token,
-        parkingId: widget.parkingId,
-        spotCode: widget.slotCode,
-        spotType: widget.slotType,
-        pricingPlan: mode == _OperationalReservationMode.paidReservation
-            ? pricingPlan.apiValue
-            : _OperationalPricingPlan.hourly.apiValue,
-        durationHours: 1,
-        arrivalEstimateAt: _arrivalDateTime(),
-      );
+      final plate = plateController.text
+          .replaceAll(RegExp(r'[\s-]'), '')
+          .toUpperCase();
+      final phone = ownerPhoneController.text.replaceAll(RegExp(r'\D'), '');
+      if (!RegExp(r'^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$').hasMatch(plate)) {
+        throw Exception('Informe uma placa válida.');
+      }
+      if (phone.length < 10 || phone.length > 13) {
+        throw Exception('Informe o telefone do proprietário com DDD.');
+      }
+      final reservation = createdReservationId == null
+          ? await createOperationalReservation(
+              token: token,
+              parkingId: widget.parkingId,
+              spotCode: widget.slotCode,
+              spotType: widget.slotType,
+              pricingPlan: mode == _OperationalReservationMode.paidReservation
+                  ? pricingPlan.apiValue
+                  : _OperationalPricingPlan.hourly.apiValue,
+              durationHours: 1,
+              arrivalEstimateAt: arrivalNow
+                  ? DateTime.now()
+                  : _arrivalDateTime(),
+              arrivalNow: arrivalNow,
+              plate: plate,
+              ownerPhone: phone,
+            )
+          : {'id': createdReservationId};
+      createdReservationId = reservation['id'] as String;
+      ref.invalidate(partnerParkingMapProvider);
+      ref.invalidate(partnerReservationsProvider);
       final reservationId = reservation['id'] as String;
 
       if (mode == _OperationalReservationMode.paidReservation &&
@@ -1014,6 +1070,9 @@ class _FreeSlotReservationDialogState
           token: token,
           reservationId: reservationId,
           method: paymentMethod.apiValue,
+          cashReceived: paymentMethod == _OperationalPaymentMethod.cash
+              ? _parseMoney(cashReceivedController.text)
+              : null,
         );
         final total = (payment['gross_amount'] as num).toDouble();
 
@@ -1090,7 +1149,7 @@ enum _OperationalReservationMode { preReserve, paidReservation }
 enum _OperationalPaymentMethod {
   cash('cash'),
   pix('pix'),
-  card('card');
+  card('credit_card');
 
   final String apiValue;
 
@@ -1406,6 +1465,9 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
         reservationId: widget.reservationId,
         method: paymentMethod.apiValue,
         purpose: widget.purpose,
+        cashReceived: paymentMethod == _OperationalPaymentMethod.cash
+            ? _parseMoney(cashReceivedController.text)
+            : null,
       );
       final total = (payment['gross_amount'] as num).toDouble();
       if (paymentMethod == _OperationalPaymentMethod.cash) {

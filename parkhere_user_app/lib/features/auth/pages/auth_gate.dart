@@ -6,6 +6,7 @@ import '../models/auth_state.dart';
 
 import '../providers/auth_provider.dart';
 import 'login_page.dart';
+import '../../../core/widgets/app_loading.dart';
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -16,7 +17,9 @@ class AuthGate extends ConsumerWidget {
 
     if (auth.status == AuthStatus.initial ||
         auth.status == AuthStatus.loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        body: AppLoading(partner: auth.accountType == AuthAccountType.partner),
+      );
     }
 
     if (auth.status == AuthStatus.authenticated) {

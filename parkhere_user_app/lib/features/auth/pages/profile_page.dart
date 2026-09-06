@@ -113,7 +113,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const ReservationPage()),
+                        MaterialPageRoute(
+                          builder: (_) => const ReservationPage(),
+                        ),
                       );
                     },
                   ),
@@ -121,12 +123,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ListTile(
                     leading: const Icon(Icons.local_car_wash_outlined),
                     title: const Text('Serviços'),
-                    subtitle: const Text('Filtros por estacionamento e serviços'),
+                    subtitle: const Text(
+                      'Filtros por estacionamento e serviços',
+                    ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const ReservationPage()),
+                        MaterialPageRoute(
+                          builder: (_) => const ReservationPage(),
+                        ),
                       );
                     },
                   ),
@@ -134,7 +140,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ListTile(
                     leading: const Icon(Icons.directions_car_filled_outlined),
                     title: const Text('Veículos'),
-                    subtitle: const Text('Gerenciar placa, modelo e veiculo ativo'),
+                    subtitle: const Text(
+                      'Gerenciar placa, modelo e veiculo ativo',
+                    ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       Navigator.push(
@@ -232,8 +240,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               onPressed: () async {
                 await ref.read(authProvider.notifier).logout();
                 if (!context.mounted) return;
-                Navigator.pushAndRemoveUntil(
-                  context,
+                Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const LoginPage()),
                   (_) => false,
                 );

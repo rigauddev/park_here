@@ -40,6 +40,7 @@ class ParkingManagementService:
 
         parking = Parking(
             tenant_id=tenant_id,
+            arrival_tolerance_minutes=data.arrival_tolerance_minutes,
             name=data.name,
             address=data.address,
             city=data.city,
@@ -102,6 +103,7 @@ class ParkingManagementService:
         uncovered = data.uncovered_pricing
         covered = data.covered_pricing or ParkingAreaPricing()
 
+        parking.arrival_tolerance_minutes = data.arrival_tolerance_minutes
         parking.name = data.name
         parking.address = data.address
         parking.city = data.city
@@ -231,6 +233,7 @@ def _sync_services(
 def _to_management_response(parking: Parking) -> ParkingManagementResponse:
     return ParkingManagementResponse(
         id=parking.id,
+        arrival_tolerance_minutes=parking.arrival_tolerance_minutes,
         tenant_id=parking.tenant_id,
         name=parking.name,
         address=parking.address,

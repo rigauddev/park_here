@@ -209,6 +209,7 @@ class _ParkingManagementFormPageState
   final lngController = TextEditingController();
   final totalController = TextEditingController();
   final availableController = TextEditingController();
+  final arrivalToleranceController = TextEditingController();
   final coveredController = TextEditingController();
   final uncoveredController = TextEditingController();
   final vipController = TextEditingController();
@@ -251,6 +252,7 @@ class _ParkingManagementFormPageState
       coveredController.text = '0';
       uncoveredController.text = '0';
       availableController.text = '0';
+      arrivalToleranceController.text = '15';
       vipController.text = '0';
       largeController.text = '0';
       busController.text = '0';
@@ -265,6 +267,8 @@ class _ParkingManagementFormPageState
     lngController.text = parking.lng.toString();
     totalController.text = parking.totalSpots.toString();
     availableController.text = parking.availableSpots.toString();
+    arrivalToleranceController.text = parking.arrivalToleranceMinutes
+        .toString();
     coveredController.text = parking.coveredSpots.toString();
     uncoveredController.text = parking.uncoveredSpots.toString();
     vipController.text = parking.vipSpots.toString();
@@ -303,6 +307,7 @@ class _ParkingManagementFormPageState
       lngController,
       totalController,
       availableController,
+      arrivalToleranceController,
       coveredController,
       uncoveredController,
       vipController,
@@ -374,6 +379,7 @@ class _ParkingManagementFormPageState
                   Expanded(child: _field(availableController, 'Disponíveis')),
                 ],
               ),
+              _field(arrivalToleranceController, 'Tolerância de chegada (min)'),
               Row(
                 children: [
                   Expanded(child: _field(coveredController, 'Cobertas')),
@@ -607,6 +613,10 @@ class _ParkingManagementFormPageState
     final covered = _int(coveredController, 'Cobertas');
     final uncovered = _int(uncoveredController, 'Descobertas');
     final available = _int(availableController, 'Disponíveis');
+    final arrivalTolerance = _int(
+      arrivalToleranceController,
+      'Tolerância de chegada',
+    );
     final vip = _int(vipController, 'VIP');
     final large = _int(largeController, 'Carro grande');
     final bus = _int(busController, 'Ônibus');
@@ -624,6 +634,10 @@ class _ParkingManagementFormPageState
       throw Exception('Tipos especiais não podem passar o total de vagas.');
     }
 
+    if (arrivalTolerance < 1 || arrivalTolerance > 120) {
+      throw Exception('Tolerância deve ficar entre 1 e 120 minutos.');
+    }
+
     return ManagedParkingModel(
       id: widget.parking?.id,
       name: _required(nameController, 'Nome'),
@@ -632,6 +646,7 @@ class _ParkingManagementFormPageState
       lat: _double(latController, 'Latitude'),
       lng: _double(lngController, 'Longitude'),
       totalSpots: total,
+      arrivalToleranceMinutes: arrivalTolerance,
       availableSpots: available,
       coveredSpots: covered,
       uncoveredSpots: uncovered,

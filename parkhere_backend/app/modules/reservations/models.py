@@ -9,6 +9,8 @@ class Reservation(BaseModel):
 
     parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    walk_in_plate = Column(String(7), nullable=True)
+    walk_in_phone = Column(String(20), nullable=True)
     vehicle_id = Column(String(36), ForeignKey("vehicles.id"), nullable=True)
     status = Column(String(40), nullable=False, default="pre_reserved")
     checked_in_at = Column(DateTime(timezone=True), nullable=True)

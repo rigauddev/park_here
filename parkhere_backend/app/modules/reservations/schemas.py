@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class ReservationServiceSnapshot(BaseModel):
@@ -24,10 +26,36 @@ class PreCheckinReservationRequest(BaseModel):
     spot_code: str | None = None
     arrival_estimate_at: str | None = None
     is_manual_arrival: bool = False
+    arrival_now: bool = False
+    walk_in_plate: str | None = None
+    walk_in_phone: str | None = None
     spot_type: str = "uncovered"
     pricing_plan: str = "hourly"
     duration_hours: int = 1
     service_codes: list[str] = Field(default_factory=list)
+
+
+    @field_validator("walk_in_plate")
+    @classmethod
+    def validate_plate(cls, value):
+        if value is None:
+            return value
+        value = re.sub(r"[\s-]", "", value).upper()
+        if not re.fullmatch(r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}", value):
+            raise ValueError("Informe uma placa brasileira valida")
+        return value
+
+    @field_validator("walk_in_phone")
+    @classmethod
+    def validate_phone(cls, value):
+        if value is None:
+            return value
+        value = re.sub(r"\D", "", value)
+        if len(value) in {12, 13} and value.startswith("55"):
+            value = value[2:]
+        if len(value) not in {10, 11}:
+            raise ValueError("Informe telefone com DDD")
+        return value
 
 
 class CancelReservationRequest(BaseModel):
@@ -35,6 +63,8 @@ class CancelReservationRequest(BaseModel):
 
 
 class ReservationResponse(BaseModel):
+    walk_in_plate: str | None = None
+    walk_in_phone: str | None = None
     id: str
     parking_id: str
     status: str

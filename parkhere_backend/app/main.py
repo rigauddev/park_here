@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.modules.auth.router import router as auth_router
@@ -9,13 +10,13 @@ from app.modules.reservations.router import router as reservations_router
 from app.modules.users.user_router import router as user_router
 
 app = FastAPI(
-    title="ParkFinder SaaS API",
+    title="ParkHere SaaS API",
     version="1.0.0"
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,6 +29,11 @@ app.include_router(parkings_router)
 app.include_router(partners_router)
 app.include_router(reservations_router)
 app.include_router(payments_router)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":

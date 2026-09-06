@@ -65,6 +65,7 @@ class ManagedParkingServiceModel {
 }
 
 class ManagedParkingModel {
+  final int arrivalToleranceMinutes;
   final String? id;
   final String name;
   final String address;
@@ -90,6 +91,7 @@ class ManagedParkingModel {
   final List<ManagedParkingServiceModel> services;
 
   const ManagedParkingModel({
+    this.arrivalToleranceMinutes = 15,
     this.id,
     required this.name,
     required this.address,
@@ -117,6 +119,7 @@ class ManagedParkingModel {
 
   factory ManagedParkingModel.fromJson(Map<String, dynamic> json) {
     return ManagedParkingModel(
+      arrivalToleranceMinutes: json['arrival_tolerance_minutes'] as int? ?? 15,
       id: json['id'] as String?,
       name: json['name'] as String,
       address: json['address'] as String,
@@ -157,6 +160,7 @@ class ManagedParkingModel {
       'city': city,
       'lat': lat,
       'lng': lng,
+      'arrival_tolerance_minutes': arrivalToleranceMinutes,
       'total_spots': totalSpots,
       'available_spots': availableSpots,
       'covered_spots': coveredSpots,

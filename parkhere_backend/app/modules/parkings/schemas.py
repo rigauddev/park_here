@@ -34,6 +34,7 @@ class ParkingAreaPricing(BaseModel):
 
 
 class ParkingManagementRequest(BaseModel):
+    arrival_tolerance_minutes: int = Field(default=15, ge=1, le=120)
     name: str
     address: str
     city: str = "Valenca"
@@ -68,6 +69,7 @@ class ParkingManagementRequest(BaseModel):
 
 
 class ParkingManagementResponse(BaseModel):
+    arrival_tolerance_minutes: int = 15
     id: str
     tenant_id: str
     name: str

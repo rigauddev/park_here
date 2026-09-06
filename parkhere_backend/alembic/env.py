@@ -4,15 +4,21 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.core.database import Base
+from app.core.config import settings
+from sqlalchemy.engine import make_url
 from app.modules.customer_assets.models import DriverDocument, Vehicle, WalletPaymentMethod
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.partners.models import PartnerProfile
 from app.modules.reservations.models import Reservation
+from app.modules.payments.models import PartnerPaymentAccount, PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.users.models.user_model import User
 
 
 config = context.config
+if settings.DATABASE_URL:
+    migration_url = make_url(settings.DATABASE_URL).set(drivername="mysql+pymysql")
+    config.set_main_option("sqlalchemy.url", migration_url.render_as_string(hide_password=False).replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

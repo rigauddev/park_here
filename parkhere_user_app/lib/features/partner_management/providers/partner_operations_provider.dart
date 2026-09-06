@@ -43,13 +43,19 @@ Future<Map<String, dynamic>> createOperationalReservation({
   required String pricingPlan,
   required int durationHours,
   required DateTime arrivalEstimateAt,
+  required bool arrivalNow,
+  required String plate,
+  required String ownerPhone,
 }) async {
   return ApiService().postAuthorized('/reservations/pre-checkin', {
     'parking_id': parkingId,
     'route_minutes': 1,
     'spot_code': spotCode,
     'spot_type': spotType,
-    'arrival_estimate_at': arrivalEstimateAt.toIso8601String(),
+    'arrival_estimate_at': arrivalEstimateAt.toUtc().toIso8601String(),
+    'arrival_now': arrivalNow,
+    'walk_in_plate': plate,
+    'walk_in_phone': ownerPhone,
     'is_manual_arrival': true,
     'pricing_plan': pricingPlan,
     'duration_hours': durationHours,
@@ -72,12 +78,14 @@ Future<Map<String, dynamic>> createOperationalPaymentIntent({
   required String reservationId,
   required String method,
   String purpose = 'reservation',
+  double? cashReceived,
 }) async {
-  final payment = await ApiService().postAuthorized(
-    '/payments/reservations/$reservationId/intent',
-    {'method': method, 'purpose': purpose},
-    token,
-  );
+  final payment = await ApiService()
+      .postAuthorized('/payments/reservations/$reservationId/intent', {
+        'method': method,
+        'purpose': purpose,
+        if (cashReceived != null) 'cash_received': cashReceived,
+      }, token);
   if (payment['is_simulated'] != true) {
     throw Exception('Pagamento aguarda confirmação do provedor.');
   }

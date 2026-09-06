@@ -80,7 +80,7 @@ class MercadoPagoClientTests(unittest.IsolatedAsyncioTestCase):
 
 class PaymentConfirmationTests(unittest.IsolatedAsyncioTestCase):
     async def assert_confirmation_rejected(self, *, provider='mock', status='cancelled', owner='customer', expected=409):
-        transaction = SimpleNamespace(reservation_id='r1', provider=provider, status='pending')
+        transaction = SimpleNamespace(reservation_id='r1', provider=provider, status='pending', method='pix')
         db = AsyncMock()
         db.execute.return_value = Mock(scalar_one_or_none=Mock(return_value=transaction))
         reservation = SimpleNamespace(user_id=owner, parking_id='p1', status=status)

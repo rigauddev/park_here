@@ -22,7 +22,8 @@ from app.modules.parkings.schemas import (
 )
 from app.modules.parkings.service import ParkingManagementService
 from app.modules.partners.models import PartnerProfile
-from app.modules.payments.models import PartnerPaymentAccount
+from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
+from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
 from app.modules.reservations.models import Reservation
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
@@ -145,6 +146,10 @@ async def get_partner_parking_map(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    owned = (await db.scalars(select(Parking).where(Parking.tenant_id == current_user.tenant_id).order_by(Parking.id).with_for_update())).all()
+    for parking in owned:
+        await expire_parking_reservations(db, parking)
+    await db.commit()
     parkings = await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
     if not parkings:
         return {"parkings": []}
@@ -203,8 +208,8 @@ async def list_partner_reservations(
         {
             "id": reservation.id,
             "parking_name": parking.name,
-            "customer_name": customer.name if customer else "Cliente nao informado",
-            "vehicle_plate": vehicle.plate if vehicle else None,
+            "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),
+            "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "status": reservation.status,
             "payment_status": reservation.payment_status,
@@ -212,13 +217,13 @@ async def list_partner_reservations(
             "spot_type": reservation.spot_type,
             "pricing_plan": reservation.pricing_plan,
             "route_minutes": reservation.route_minutes,
-            "hold_expires_at": reservation.hold_expires_at.isoformat(),
+            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
             "base_amount": reservation.base_amount,
             "services_amount": reservation.services_amount,
             "platform_fee_amount": reservation.platform_fee_amount,
             "final_total": reservation.final_total,
             "selected_services": _reservation_services(reservation),
-            "created_at": reservation.created_at.isoformat(),
+            "created_at": reservation.created_at.isoformat() + "Z",
         }
         for reservation, parking, customer, vehicle in result.all()
     ]
@@ -401,7 +406,7 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
         role=user.role.value,
         permissions=_user_permissions(user),
         is_active=user.is_active,
-        created_at=user.created_at.isoformat(),
+        created_at=user.created_at.isoformat() + "Z",
     )
 
 
@@ -632,22 +637,22 @@ def _slot_payload(
             "platform_fee_amount": reservation.platform_fee_amount,
             "final_total": reservation.final_total,
             "selected_services": _reservation_services(reservation),
-            "customer_name": customer.name if customer else "Cliente nao informado",
-            "customer_phone": customer.phone if customer else None,
-            "vehicle_plate": vehicle.plate if vehicle else None,
+            "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),
+            "customer_phone": reservation.walk_in_phone or (customer.phone if customer else None),
+            "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "route_minutes": reservation.route_minutes,
-            "created_at": reservation.created_at.isoformat(),
-            "checked_in_at": reservation.checked_in_at.isoformat()
+            "created_at": reservation.created_at.isoformat() + "Z",
+            "checked_in_at": reservation.checked_in_at.isoformat() + "Z"
             if reservation.checked_in_at
             else None,
             "arrival_estimate_at": (
                 reservation.arrival_estimate_at
                 or reservation.created_at + timedelta(minutes=reservation.route_minutes)
-            ).isoformat(),
+            ).isoformat() + "Z",
             "is_manual_arrival": reservation.is_manual_arrival,
-            "hold_expires_at": reservation.hold_expires_at.isoformat(),
-            "cancelled_at": reservation.cancelled_at.isoformat()
+            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
+            "cancelled_at": reservation.cancelled_at.isoformat() + "Z"
             if reservation.cancelled_at
             else None,
             "cancellation_fee_amount": reservation.cancellation_fee_amount,
@@ -655,7 +660,7 @@ def _slot_payload(
             "checkout_grace_minutes": reservation.checkout_grace_minutes,
             "checkout_excess_minutes": checkout_excess_minutes,
             "checkout_excess_amount": checkout_excess_amount,
-            "checkout_excess_paid_at": reservation.checkout_excess_paid_at.isoformat()
+            "checkout_excess_paid_at": reservation.checkout_excess_paid_at.isoformat() + "Z"
             if reservation.checkout_excess_paid_at
             else None,
         },
@@ -663,22 +668,7 @@ def _slot_payload(
 
 
 def _slot_type(index: int, parking: ParkingManagementResponse) -> str:
-    vip_limit = parking.vip_spots
-    bus_limit = vip_limit + parking.bus_spots
-    large_limit = bus_limit + parking.large_spots
-    pickup_limit = large_limit + parking.pickup_spots
-
-    if index <= vip_limit:
-        return "vip"
-    if index <= bus_limit:
-        return "bus"
-    if index <= large_limit:
-        return "large"
-    if index <= pickup_limit:
-        return "pickup"
-    if parking.covered_spots and index <= parking.covered_spots:
-        return "covered"
-    return "uncovered"
+    return physical_spot_type(index, parking)
 
 
 def _reservation_services(reservation: Reservation) -> list[dict]:
@@ -739,3 +729,24 @@ def _ensure_partner_user(user: User):
 
     if not user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant required")
+
+
+@router.get("/fee-statement")
+async def partner_fee_statement(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    debts = (await db.scalars(select(PartnerFeeDebt).where(
+        PartnerFeeDebt.tenant_id == current_user.tenant_id
+    ).order_by(PartnerFeeDebt.created_at.desc()))).all()
+    settlements = (await db.execute(select(PartnerFeeSettlement, PartnerFeeDebt).join(
+        PartnerFeeDebt, PartnerFeeDebt.id == PartnerFeeSettlement.debt_id
+    ).where(PartnerFeeDebt.tenant_id == current_user.tenant_id))).all()
+    return {
+        "pending_total": float(sum(d.remaining_amount for d in debts)),
+        "debts": [{"id": d.id, "reservation_id": d.reservation_id,
+            "description": d.description, "amount": float(d.amount),
+            "remaining_amount": float(d.remaining_amount),
+            "created_at": d.created_at.isoformat() + "Z"} for d in debts],
+        "settlements": [{"debt_id": s.debt_id, "payment_id": s.payment_id,
+            "reservation_id": d.reservation_id, "amount": float(s.amount),
+            "created_at": s.created_at.isoformat() + "Z"} for s, d in settlements],
+    }
