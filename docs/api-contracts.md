@@ -66,7 +66,7 @@ Request:
   "city": "Valenca",
   "lat": -13.3703,
   "lng": -39.0731,
-  "arrival_tolerance_minutes": 15,
+  "arrival_tolerance_minutes": 5,
   "total_spots": 80,
   "available_spots": 42,
   "covered_spots": 24,
@@ -394,3 +394,10 @@ Cliente HTTP inicial: [Pix / Payments API oficial](https://www.mercadopago.com.b
 A chave `X-Idempotency-Key` e recebida do chamador. O cliente nao faz retentativas
 automaticas nem aplica status na reserva. OAuth, persistencia do intent, webhook,
 conciliacao e split precisam ser concluidos antes de conectar o transporte as rotas.
+## Veiculos Do Cliente
+
+`GET /customer-assets/vehicles` lista os veiculos do usuario autenticado.
+
+`POST /customer-assets/vehicles` recebe `nickname`, `plate`, `brand`, `model`, `color`, `vehicle_document` (PDF), `ownership_type` e `is_active`. Ao ativar um veiculo, os demais ficam inativos.
+
+Pre-reservas usam o tempo estimado da rota mais cinco minutos de tolerancia no MVP. A atualizacao do mapa entre operador e cliente usa o endpoint de mapa com recarga; webhook fica reservado para confirmacao externa do Mercado Pago.
