@@ -71,12 +71,17 @@ Future<Map<String, dynamic>> createOperationalPaymentIntent({
   required String token,
   required String reservationId,
   required String method,
+  String purpose = 'reservation',
 }) async {
-  return ApiService().postAuthorized(
+  final payment = await ApiService().postAuthorized(
     '/payments/reservations/$reservationId/intent',
-    {'method': method},
+    {'method': method, 'purpose': purpose},
     token,
   );
+  if (payment['is_simulated'] != true) {
+    throw Exception('Pagamento aguarda confirmação do provedor.');
+  }
+  return payment;
 }
 
 Future<void> confirmOperationalPayment({

@@ -14,11 +14,16 @@ class PartnerSlotReservation {
   final String? vehicleLabel;
   final int routeMinutes;
   final DateTime createdAt;
+  final DateTime? checkedInAt;
   final DateTime arrivalEstimateAt;
   final DateTime holdExpiresAt;
   final bool isManualArrival;
   final double cancellationFeeAmount;
   final double cancellationCreditAmount;
+  final int checkoutGraceMinutes;
+  final int checkoutExcessMinutes;
+  final double checkoutExcessAmount;
+  final DateTime? checkoutExcessPaidAt;
 
   const PartnerSlotReservation({
     required this.id,
@@ -36,11 +41,16 @@ class PartnerSlotReservation {
     required this.vehicleLabel,
     required this.routeMinutes,
     required this.createdAt,
+    required this.checkedInAt,
     required this.arrivalEstimateAt,
     required this.holdExpiresAt,
     required this.isManualArrival,
     required this.cancellationFeeAmount,
     required this.cancellationCreditAmount,
+    required this.checkoutGraceMinutes,
+    required this.checkoutExcessMinutes,
+    required this.checkoutExcessAmount,
+    required this.checkoutExcessPaidAt,
   });
 
   factory PartnerSlotReservation.fromJson(Map<String, dynamic> json) {
@@ -63,6 +73,9 @@ class PartnerSlotReservation {
       vehicleLabel: json['vehicle_label'] as String?,
       routeMinutes: json['route_minutes'] as int? ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
+      checkedInAt: json['checked_in_at'] == null
+          ? null
+          : DateTime.parse(json['checked_in_at'] as String),
       arrivalEstimateAt: DateTime.parse(json['arrival_estimate_at'] as String),
       holdExpiresAt: DateTime.parse(json['hold_expires_at'] as String),
       isManualArrival: json['is_manual_arrival'] as bool? ?? false,
@@ -70,6 +83,13 @@ class PartnerSlotReservation {
           .toDouble(),
       cancellationCreditAmount:
           (json['cancellation_credit_amount'] as num? ?? 0).toDouble(),
+      checkoutGraceMinutes: json['checkout_grace_minutes'] as int? ?? 15,
+      checkoutExcessMinutes: json['checkout_excess_minutes'] as int? ?? 0,
+      checkoutExcessAmount: (json['checkout_excess_amount'] as num? ?? 0)
+          .toDouble(),
+      checkoutExcessPaidAt: json['checkout_excess_paid_at'] == null
+          ? null
+          : DateTime.parse(json['checkout_excess_paid_at'] as String),
     );
   }
 }

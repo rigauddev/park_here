@@ -60,3 +60,7 @@ class ReservationResponse(BaseModel):
     cancelled_at: str | None = None
     cancellation_fee_amount: float = 0
     cancellation_credit_amount: float = 0
+    checkout_grace_minutes: int = 15
+    checkout_excess_minutes: int = 0
+    checkout_excess_amount: float = 0
+    checkout_excess_paid_at: str | None = None

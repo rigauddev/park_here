@@ -165,6 +165,9 @@ Operador (`OPERATOR`):
 - Pode receber pagamento e fazer check-in/checkout manual quando o fluxo operacional permitir.
 - Funcao caixa operacional permite receber dinheiro/Pix no mapa de vagas ou nos detalhes da reserva.
 - Modalidade por hora deve ficar para pagamento no checkout, pois o valor final depende do tempo real de permanencia.
+- Checkout por hora tem 15 minutos de tolerancia apos o periodo contratado.
+- Se o cliente ultrapassar a tolerancia, o checkout fica bloqueado ate pagar somente o excedente calculado.
+- O excedente e registrado como pagamento separado com `purpose=checkout_excess`, preparado para integracao Mercado Pago.
 - Diaria/semanal/mensal podem permitir pagar agora ou pagar na volta conforme decisao operacional do estabelecimento.
 - Nao altera tarifas, dados cadastrais, financeiro, taxas ou usuarios.
 - Nao deve ver menu de cliente, veiculos, carteira ou servicos publicos.
@@ -195,6 +198,8 @@ MVP:
 - Reserva criada por operador/parceiro usa previsao manual de chegada informada no atendimento.
 - Cards financeiros do mapa devem ter tooltip explicando o indicador, aberto apenas pelo icone de informacao.
 - Mapa deve exibir indicador de reservas canceladas com quantidade e valor, sem ocupar vagas.
+- Card de vaga com pre-reserva deve mostrar quanto tempo falta para expirar.
+- Card de vaga ocupada deve mostrar tempo em permanencia e destacar excedente quando passar da tolerancia.
 - Gerar o mapa com base em reservas e capacidade do estacionamento enquanto ainda nao existe modelagem de vaga individual.
 
 Roadmap:
@@ -293,7 +298,7 @@ MVP atual:
 
 Variaveis previstas:
 
-- `PAYMENT_PROVIDER=mercado_pago`
+- `PAYMENT_PROVIDER=mock` para simulacao local; Mercado Pago real ainda desabilitado
 - `MERCADO_PAGO_ACCESS_TOKEN`
 - `MERCADO_PAGO_PUBLIC_KEY`
 - `MERCADO_PAGO_WEBHOOK_SECRET`
@@ -421,3 +426,12 @@ Fluxo:
 7. Criar divulgacao simples de hoteis/restaurantes/turismo.
 8. Criar paginas internas de servico por parceiro.
 9. Habilitar contratacao direta com taxa do app.
+
+
+### Validacao do catalogo — 06/09/2026
+
+Cada estacionamento aceita um servico por codigo. Para trocar preco/nome no formulario
+atual, remover a entrada e adicionar novamente antes de salvar. Reservas existentes
+mantem o snapshot contratado. Valores negativos e nao finitos sao rejeitados.
+A chegada manual no minuto atual permanece hoje; horarios anteriores indicam o dia seguinte.
+A simulacao de pagamento e identificada no retorno da API e na mensagem do app.

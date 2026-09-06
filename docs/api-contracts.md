@@ -159,8 +159,13 @@ Response:
         "final_total": 42.5,
         "route_minutes": 14,
         "created_at": "2026-08-17T10:22:00",
+        "checked_in_at": null,
         "arrival_estimate_at": "2026-08-17T10:36:00",
-        "is_manual_arrival": false
+        "is_manual_arrival": false,
+        "checkout_grace_minutes": 15,
+        "checkout_excess_minutes": 0,
+        "checkout_excess_amount": 0,
+        "checkout_excess_paid_at": null
       }
     }
   ],
@@ -174,6 +179,8 @@ Regras:
 - O card da vaga deve mostrar a previsao em formato curto, por exemplo `14 min · 10h36`.
 - Reserva operacional deve permanecer vinculada ao `spot_code` selecionado no mapa de vagas.
 - Reserva cancelada entra nos indicadores de cancelamento, mas nao bloqueia vaga no mapa.
+- Vaga pre-reservada deve exibir tempo restante ate `hold_expires_at`.
+- Vaga em permanencia deve exibir tempo no patio e, quando houver, minutos/valor de excedente.
 - Detalhes da vaga devem mostrar cliente, veiculo, periodo, pagamento, servicos e acoes operacionais permitidas.
 
 ## Pre-Reserva E Reserva
@@ -247,6 +254,68 @@ Response: `ReservationResponse` com:
 }
 ```
 
+## Pagamento De Reserva E Excedente
+
+`POST /payments/reservations/{reservation_id}/intent`
+
+Request:
+
+```json
+{
+  "method": "pix",
+  "purpose": "reservation"
+}
+```
+
+Para pagar excedente de permanencia no checkout:
+
+```json
+{
+  "method": "pix",
+  "purpose": "checkout_excess"
+}
+```
+
+Response:
+
+```json
+{
+  "id": "payment-id",
+  "reservation_id": "reservation-id",
+  "provider": "mercado_pago",
+  "method": "pix",
+  "purpose": "checkout_excess",
+  "status": "pending",
+  "gross_amount": 5.0,
+  "platform_fee_amount": 0.0,
+  "partner_amount": 5.0,
+  "provider_fee_estimate": 0.0,
+  "checkout_url": "https://www.mercadopago.com.br/checkout/v1/mock?ref=checkout_excess:reservation-id",
+  "qr_code": "000201...",
+  "external_reference": "checkout_excess:reservation-id",
+  "split": [
+    {
+      "receiver": "parkhere_app",
+      "amount": 0.0,
+      "description": "Taxa ParkHere excedente"
+    },
+    {
+      "receiver": "mp_seller_parkhere_seed",
+      "amount": 5.0,
+      "description": "Excedente de permanencia"
+    }
+  ]
+}
+```
+
+Regras:
+
+- `purpose=reservation` cobra o valor original da reserva.
+- `purpose=checkout_excess` cobra somente o excedente calculado para plano por hora.
+- Checkout por hora permite tolerancia de 15 minutos apos o tempo contratado.
+- Se houver excedente sem pagamento, `POST /reservations/{reservation_id}/checkout` retorna `402` e mantem checkout bloqueado.
+- A confirmacao de pagamento do excedente grava `checkout_excess_paid_at` e libera nova tentativa de checkout.
+
 Regras:
 
 - Cliente pode cancelar a propria pre-reserva/reserva.
@@ -255,3 +324,45 @@ Regras:
 - Cancelamento ate 5 minutos apos criacao nao cobra taxa.
 - Apos 5 minutos, aplica taxa administrativa ParkHere configurada como `platform_fee.service_type=cancellation`.
 - Taxa de cancelamento do parceiro por estacionamento entra no proximo bloco de politica operacional.
+
+
+## Revisao de servicos e pagamento simulado — 06/09/2026
+
+### Gestao de estacionamento
+
+O request existente de `/partners/parking-management` continua com `services`:
+```json
+{"services": [{"code": "car_wash", "name": "Lavagem", "price": 30, "is_active": true}]}
+```
+Demais campos obrigatorios do estacionamento permanecem obrigatorios.
+`price` e tarifas por area devem ser finitos e >= 0. Codigo/nome sao aparados e nao
+podem ficar vazios. Codigos duplicados no catalogo retornam 422. Latitude/longitude
+respeitam os limites geograficos. A resposta de atualizacao inclui o catalogo recem-salvo.
+Em `service_codes` da reserva, repeticoes sao consideradas uma unica contratacao.
+Nao ha migration nova nesta rodada; snapshots de reservas anteriores sao preservados.
+
+### POST /payments/reservations/{reservation_id}/intent
+
+Request: `{"method":"pix","purpose":"reservation"}`.
+`method`: `pix`, `credit_card`, `debit_card`; `purpose`: `reservation`, `checkout_excess`.
+Resposta mantem todos os campos existentes e adiciona `is_simulated` booleano.
+No ambiente de simulacao: `provider="mock"`, `is_simulated=true`, `status="pending"`.
+O QR/checkout desse modo sao ficticios e nao devem ser usados para transferencias.
+`PAYMENT_PROVIDER` agora tem default `mock`. Configuracao explicita diferente de
+`mock` retorna 503: a integracao real ainda nao foi ligada aos endpoints.
+Reserva cancelada, concluida ou pre-reserva expirada retorna 409; excedente exige check-in.
+
+### POST /payments/{payment_id}/confirm
+
+Somente transacao `provider=mock` com ambiente `PAYMENT_PROVIDER=mock` pode ser
+confirmada manualmente. Demais providers retornam 403. Confirmacao de uma transacao
+ja paga e idempotente; transacoes pendentes nao reabrem reservas encerradas.
+O app so usa essa confirmacao se o intent informar `is_simulated=true`, e exibe
+que nenhuma cobranca real ocorreu. Sem reservation_id, o app retorna erro.
+Compatibilidade: transacoes ficticias antigas rotuladas `mercado_pago` nao sao
+confirmaveis por este endpoint; criar novo intent mock em reserva elegivel.
+
+Cliente HTTP inicial: [Pix / Payments API oficial](https://www.mercadopago.com.br/developers/pt/docs/checkout-bricks/payment-brick/payment-submission/pix).
+A chave `X-Idempotency-Key` e recebida do chamador. O cliente nao faz retentativas
+automaticas nem aplica status na reserva. OAuth, persistencia do intent, webhook,
+conciliacao e split precisam ser concluidos antes de conectar o transporte as rotas.

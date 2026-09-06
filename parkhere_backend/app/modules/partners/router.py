@@ -1,6 +1,7 @@
 import json
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
+from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -575,7 +576,9 @@ def _parking_layout_payload(
 
         reservation, vehicle, customer = assigned
         status = "occupied" if reservation.status == "checked_in" else "pre_reserved"
-        slots.append(_slot_payload(code, slot_type, status, reservation, vehicle, customer))
+        slots.append(
+            _slot_payload(code, slot_type, status, reservation, vehicle, customer, parking)
+        )
 
     return {
         "id": parking.id,
@@ -603,7 +606,16 @@ def _slot_payload(
     reservation: Reservation,
     vehicle: Vehicle | None,
     customer: User | None,
+    parking: ParkingManagementResponse,
 ):
+    checkout_excess_minutes, checkout_excess_amount = _checkout_excess_preview(
+        reservation,
+        slot_type,
+        parking,
+    )
+    if reservation.checkout_excess_paid_at is not None:
+        checkout_excess_amount = reservation.checkout_excess_amount
+
     return {
         "code": reservation.spot_code or code,
         "type": slot_type,
@@ -626,6 +638,9 @@ def _slot_payload(
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "route_minutes": reservation.route_minutes,
             "created_at": reservation.created_at.isoformat(),
+            "checked_in_at": reservation.checked_in_at.isoformat()
+            if reservation.checked_in_at
+            else None,
             "arrival_estimate_at": (
                 reservation.arrival_estimate_at
                 or reservation.created_at + timedelta(minutes=reservation.route_minutes)
@@ -637,6 +652,12 @@ def _slot_payload(
             else None,
             "cancellation_fee_amount": reservation.cancellation_fee_amount,
             "cancellation_credit_amount": reservation.cancellation_credit_amount,
+            "checkout_grace_minutes": reservation.checkout_grace_minutes,
+            "checkout_excess_minutes": checkout_excess_minutes,
+            "checkout_excess_amount": checkout_excess_amount,
+            "checkout_excess_paid_at": reservation.checkout_excess_paid_at.isoformat()
+            if reservation.checkout_excess_paid_at
+            else None,
         },
     }
 
@@ -670,6 +691,40 @@ def _reservation_services(reservation: Reservation) -> list[dict]:
         return []
 
     return services if isinstance(services, list) else []
+
+
+def _checkout_excess_preview(
+    reservation: Reservation,
+    slot_type: str,
+    parking: ParkingManagementResponse,
+) -> tuple[int, float]:
+    if (
+        reservation.status != "checked_in"
+        or reservation.checked_in_at is None
+        or reservation.pricing_plan != "hourly"
+    ):
+        return reservation.checkout_excess_minutes, reservation.checkout_excess_amount
+
+    elapsed_minutes = max(
+        int(
+            (
+                datetime.utcnow() - reservation.checked_in_at.replace(tzinfo=None)
+            ).total_seconds()
+            // 60
+        ),
+        0,
+    )
+    grace_minutes = reservation.checkout_grace_minutes or 15
+    included_minutes = reservation.duration_hours * 60 + grace_minutes
+    excess_minutes = max(elapsed_minutes - included_minutes, 0)
+    if excess_minutes == 0:
+        return 0, 0
+
+    if reservation.spot_type in {"covered", "vip"}:
+        hourly_amount = parking.covered_pricing.additional_hour_price
+    else:
+        hourly_amount = parking.uncovered_pricing.additional_hour_price
+    return excess_minutes, round(ceil(excess_minutes / 60) * hourly_amount, 2)
 
 
 def _ensure_partner_user(user: User):

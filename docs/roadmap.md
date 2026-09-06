@@ -1,5 +1,40 @@
 # Roadmap
 
+## Revisao de continuidade — 06/09/2026
+
+Escopo desta rodada: servicos adicionais do estacionamento e gestao operacional do ParkHere.
+O chat de autorizacao de eventos/secretarias pertence a outro produto e nao foi aplicado.
+O roadmap abaixo e um backlog historico, nao uma lista de funcionalidades concluidas.
+
+Verificado no codigo atual:
+- Cadastro com quantidades de vagas VIP, carro grande, onibus e picape; mapa baseado na configuracao.
+- Card de canceladas com quantidade/valor, cards financeiros de dimensoes iguais e tooltip no icone.
+- Servicos adicionais, tarifas por area, reserva por vaga e chegada operacional manual.
+
+Ajustado nesta rodada:
+- Chegada selecionada no minuto atual permanece no mesmo dia.
+- Servicos e tarifas rejeitam negativos/NaN/infinito; codigo de servico unico por estacionamento.
+- Selecao repetida de um servico nao duplica sua cobranca; atualizacao retorna o catalogo salvo.
+- Simulacao identificada como `mock` e `is_simulated`; confirmacao manual bloqueada para outros providers.
+- Reservas encerradas/expiradas nao podem ser pagas pelo fluxo simulado; pagamento sem reserva removido do app.
+- Cliente HTTP Mercado Pago para criar Pix com idempotencia e consultar pagamento, coberto por testes com transporte simulado.
+
+Validacao desta rodada: 12 testes backend, 4 testes Flutter (3 de chegada e 1 smoke),
+`flutter analyze` sem apontamentos e `git diff --check` limpo. Sem homologacao visual
+ou cobranca real. O SDK local resolveu quatro dependencias do lockfile durante os
+checks; as versoes que ja estavam no workspace foram restauradas ao final.
+
+Proximos passos para pagamento real, em ordem:
+1. OAuth do parceiro e armazenamento seguro/renovacao de credenciais.
+2. Intent persistido antes da chamada externa, chave idempotente reutilizavel e recuperacao de timeout.
+3. Webhook autenticado + consulta ao provedor, validacao de moeda/valor/referencia/recebedor e conciliacao idempotente.
+4. Tela Pix pendente com QR real e consulta de status; cartao por tokenizacao do provedor.
+5. Split marketplace 1:1, reembolso, ledger de creditos e homologacao ponta a ponta.
+
+Nao habilitar `PAYMENT_PROVIDER=mercado_pago` para cobrancas ainda: o endpoint retorna 503 nesta fase.
+Gestao ainda tem itens de roadmap abertos: fotos em storage seguro, politicas por parceiro,
+incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao concluidos.
+
 ## Fase 0: Organizacao
 
 - Inicializar Git.

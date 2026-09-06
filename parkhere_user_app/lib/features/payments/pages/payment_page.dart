@@ -75,13 +75,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       );
 
       if (result.success) {
-        // 🔥 Aqui no futuro você atualiza no backend a reserva como paga
-
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.isSimulated
+                  ? 'Pagamento simulado. Nenhuma cobrança foi realizada.'
+                  : 'Pagamento confirmado.',
+            ),
+          ),
+        );
         widget.onPaymentSuccess();
-
-        // ScaffoldMessenger.of(context).showSnackBar(
-        //   const SnackBar(content: Text("Pagamento realizado com sucesso!")),
-        // );
 
         if (mounted) {
           Navigator.pop(context);

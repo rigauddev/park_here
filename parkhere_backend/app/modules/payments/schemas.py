@@ -1,8 +1,11 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
 class CreatePaymentIntentRequest(BaseModel):
-    method: str = "pix"
+    method: Literal["pix", "credit_card", "debit_card"] = "pix"
+    purpose: Literal["reservation", "checkout_excess"] = "reservation"
 
 
 class PaymentSplitResponse(BaseModel):
@@ -15,7 +18,9 @@ class PaymentIntentResponse(BaseModel):
     id: str
     reservation_id: str
     provider: str
+    is_simulated: bool = False
     method: str
+    purpose: str
     status: str
     gross_amount: float
     platform_fee_amount: float

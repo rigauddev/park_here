@@ -22,6 +22,7 @@ class PaymentTransaction(BaseModel):
     tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False)
     provider = Column(String(40), nullable=False, default="mercado_pago")
     method = Column(String(30), nullable=False, default="pix")
+    payment_purpose = Column(String(40), nullable=False, default="reservation")
     status = Column(String(40), nullable=False, default="pending")
     gross_amount = Column(Float, nullable=False, default=0)
     platform_fee_amount = Column(Float, nullable=False, default=0)

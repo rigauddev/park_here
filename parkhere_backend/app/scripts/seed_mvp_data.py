@@ -1257,7 +1257,7 @@ async def ensure_seed_reservations(db, commit=True):
             "services_amount": 0,
             "platform_fee_amount": 2.5,
             "final_total": 22.5,
-            "checked_in_at": datetime.utcnow() - timedelta(hours=2),
+            "checked_in_at": datetime.utcnow() - timedelta(hours=4),
             "checked_out_at": None,
             "services": "[]",
             "spot_code": "V006",
@@ -1328,6 +1328,10 @@ async def ensure_seed_reservations(db, commit=True):
         reservation.cancellation_reason = None
         reservation.cancellation_fee_amount = 0
         reservation.cancellation_credit_amount = 0
+        reservation.checkout_grace_minutes = 15
+        reservation.checkout_excess_minutes = 0
+        reservation.checkout_excess_amount = 0
+        reservation.checkout_excess_paid_at = None
 
     if commit:
         await db.commit()
@@ -1424,16 +1428,16 @@ async def ensure_partner_payment_accounts(db, tenant_id=None, commit=True):
             tenant_id=tenant_id,
             provider="mercado_pago",
             provider_account_id="mp_seller_parkhere_seed",
-            account_label="Mercado Pago parceiro seed",
-            status="verified",
+            account_label="Mercado Pago parceiro seed (nao conectado)",
+            status="pending_verification",
             is_default=True,
             is_active=True,
         )
         db.add(account)
     else:
         account.provider_account_id = "mp_seller_parkhere_seed"
-        account.account_label = "Mercado Pago parceiro seed"
-        account.status = "verified"
+        account.account_label = "Mercado Pago parceiro seed (nao conectado)"
+        account.status = "pending_verification"
         account.is_active = True
 
     if commit:

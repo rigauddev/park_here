@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from app.modules.payments.schemas import (
     PaymentSplitResponse,
 )
 from app.modules.reservations.models import Reservation
+from app.modules.reservations.service import calculate_checkout_excess
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
@@ -28,28 +30,67 @@ class PaymentService:
         reservation = await _get_reservation(db, reservation_id)
         parking = await _get_parking(db, reservation.parking_id)
         _ensure_payment_permission(current_user, reservation, parking)
+        _ensure_payable_reservation(reservation)
+        if settings.PAYMENT_PROVIDER != "mock":
+            raise HTTPException(
+                status_code=503,
+                detail="Mercado Pago integration is not enabled; no payment was created",
+            )
         partner_account = await _get_partner_payment_account(db, parking.tenant_id)
 
-        if reservation.payment_status == "paid":
+        purpose = data.purpose
+        if purpose not in {"reservation", "checkout_excess"}:
+            raise HTTPException(status_code=422, detail="Invalid payment purpose")
+
+        if purpose == "reservation" and reservation.payment_status == "paid":
             raise HTTPException(status_code=409, detail="Reservation already paid")
 
-        gross_amount = reservation.final_total or reservation.estimated_total
-        platform_fee_amount = reservation.platform_fee_amount
+        if purpose == "checkout_excess":
+            if reservation.status != "checked_in":
+                raise HTTPException(status_code=409, detail="Checkout excess requires check-in")
+            excess_minutes, excess_amount = calculate_checkout_excess(
+                reservation,
+                parking,
+            )
+            reservation.checkout_excess_minutes = excess_minutes
+            reservation.checkout_excess_amount = excess_amount
+            if reservation.checkout_excess_amount <= 0:
+                raise HTTPException(status_code=409, detail="No checkout excess to pay")
+            if reservation.checkout_excess_paid_at is not None:
+                raise HTTPException(status_code=409, detail="Checkout excess already paid")
+            gross_amount = reservation.checkout_excess_amount
+            platform_fee_amount = 0.0
+        else:
+            gross_amount = reservation.final_total or reservation.estimated_total
+            platform_fee_amount = reservation.platform_fee_amount
+            if reservation.status == "checked_in" and reservation.pricing_plan == "hourly":
+                excess_minutes, excess_amount = calculate_checkout_excess(
+                    reservation,
+                    parking,
+                )
+                reservation.checkout_excess_minutes = excess_minutes
+                reservation.checkout_excess_amount = excess_amount
+                gross_amount += excess_amount
+
         partner_amount = gross_amount - platform_fee_amount
         provider_fee_estimate = 0.0
-        external_reference = f"reservation:{reservation.id}"
+        external_reference = f"{purpose}:{reservation.id}"
         split = [
             {
                 "receiver": "parkhere_app",
                 "amount": round(platform_fee_amount, 2),
-                "description": "Taxa ParkHere",
+                "description": "Taxa ParkHere"
+                if purpose == "reservation"
+                else "Taxa ParkHere excedente",
             },
             {
                 "receiver": partner_account.provider_account_id
                 if partner_account
                 else "partner_account_pending",
                 "amount": round(partner_amount, 2),
-                "description": "Repasse parceiro",
+                "description": "Repasse parceiro"
+                if purpose == "reservation"
+                else "Excedente de permanencia",
             },
         ]
 
@@ -58,6 +99,7 @@ class PaymentService:
             tenant_id=parking.tenant_id,
             provider=settings.PAYMENT_PROVIDER,
             method=data.method,
+            payment_purpose=purpose,
             status="pending",
             gross_amount=gross_amount,
             platform_fee_amount=platform_fee_amount,
@@ -75,7 +117,11 @@ class PaymentService:
         )
 
         db.add(transaction)
-        reservation.payment_status = "payment_pending"
+        reservation.payment_status = (
+            "checkout_excess_pending"
+            if purpose == "checkout_excess"
+            else "payment_pending"
+        )
         await db.commit()
         await db.refresh(transaction)
 
@@ -97,10 +143,27 @@ class PaymentService:
         reservation = await _get_reservation(db, transaction.reservation_id)
         parking = await _get_parking(db, reservation.parking_id)
         _ensure_payment_permission(current_user, reservation, parking)
+        if settings.PAYMENT_PROVIDER != "mock" or transaction.provider != "mock":
+            raise HTTPException(status_code=403, detail="Provider confirmation required")
+        if transaction.status == "paid":
+            return to_response(transaction)
+        _ensure_payable_reservation(reservation)
+        if transaction.status != "pending":
+            raise HTTPException(status_code=409, detail="Payment is not pending")
+        if transaction.payment_purpose == "reservation" and reservation.payment_status == "paid":
+            raise HTTPException(status_code=409, detail="Reservation already paid")
+        if transaction.payment_purpose == "checkout_excess" and reservation.checkout_excess_paid_at is not None:
+            raise HTTPException(status_code=409, detail="Checkout excess already paid")
         transaction.status = "paid"
         transaction.provider_payment_id = transaction.provider_payment_id or f"mp_mock_{payment_id}"
-        reservation.payment_status = "paid"
-        if reservation.status != "checked_in":
+        if transaction.payment_purpose == "checkout_excess":
+            reservation.checkout_excess_paid_at = datetime.utcnow()
+            reservation.payment_status = "paid"
+        else:
+            if reservation.checkout_excess_amount > 0:
+                reservation.checkout_excess_paid_at = datetime.utcnow()
+            reservation.payment_status = "paid"
+        if transaction.payment_purpose == "reservation" and reservation.status != "checked_in":
             reservation.status = "confirmed"
         await db.commit()
         await db.refresh(transaction)
@@ -109,7 +172,7 @@ class PaymentService:
 
 async def _get_reservation(db: AsyncSession, reservation_id: str) -> Reservation:
     result = await db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
+        select(Reservation).where(Reservation.id == reservation_id).with_for_update()
     )
     reservation = result.scalar_one_or_none()
     if reservation is None:
@@ -166,6 +229,14 @@ def _ensure_payment_permission(
     raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
+def _ensure_payable_reservation(reservation: Reservation) -> None:
+    if reservation.status not in {"pre_reserved", "confirmed", "checked_in"}:
+        raise HTTPException(status_code=409, detail="Reservation cannot be paid in this status")
+    if (reservation.status == "pre_reserved" and reservation.hold_expires_at
+            and reservation.hold_expires_at <= datetime.utcnow()):
+        raise HTTPException(status_code=409, detail="Pre-reservation expired")
+
+
 def _mock_checkout_url(external_reference: str) -> str:
     return f"https://www.mercadopago.com.br/checkout/v1/mock?ref={external_reference}"
 
@@ -186,7 +257,9 @@ def to_response(transaction: PaymentTransaction) -> PaymentIntentResponse:
         id=transaction.id,
         reservation_id=transaction.reservation_id,
         provider=transaction.provider,
+        is_simulated=transaction.provider == "mock",
         method=transaction.method,
+        purpose=transaction.payment_purpose,
         status=transaction.status,
         gross_amount=transaction.gross_amount,
         platform_fee_amount=transaction.platform_fee_amount,

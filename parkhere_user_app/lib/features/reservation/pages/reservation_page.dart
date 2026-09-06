@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../checkin_checkout/models/pre_checkin_model.dart';
+import '../../parking_search/models/parking_model.dart';
+import '../../parking_search/models/parking_pricing.dart';
+import '../../parking_search/models/payment_plan_enum.dart';
 import '../models/reservation_enum.dart';
 import '../models/reservation_model.dart';
+import '../providers/pre_reservation_provider.dart';
 import '../providers/reservation_provider.dart';
 import 'resevation_details_page.dart';
 
@@ -21,6 +26,7 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
   @override
   Widget build(BuildContext context) {
     final reservationsAsync = ref.watch(reservationsProvider);
+    final preReservationAsync = ref.watch(preReservationProvider);
 
     return DefaultTabController(
       length: 2,
@@ -36,11 +42,70 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
         ),
         body: reservationsAsync.when(
           data: (reservations) {
-            if (reservations.isEmpty) {
+            final preReservation = preReservationAsync.when(
+              data: (value) => value,
+              loading: () => null,
+              error: (_, __) => null,
+            );
+            final allReservations = [
+              if (preReservation != null && preReservation.active)
+                ReservationModel(
+                  id: preReservation.id,
+                  parkingName: preReservation.parkingName,
+                  plan: PlanType.hourly,
+                  status: ReservationStatus.open,
+                  checkinAt: preReservation.createdAt,
+                  estimatedValue: 0,
+                  carWash: false,
+                  tourGuide: false,
+                  transport: false,
+                  firstHourPrice: 0,
+                  additionalHourPrice: 0,
+                  checkinTime: preReservation.createdAt,
+                  hasUnpaidServices: false,
+                  unpaidServicesValue: 0,
+                  validUntil: preReservation.expiresAt,
+                  preCheckin: PreCheckinModel(
+                    parking: ParkingModel(
+                      id: preReservation.parkingId,
+                      name: preReservation.parkingName,
+                      city: 'Valença',
+                      lat: 0,
+                      lng: 0,
+                      rating: 0,
+                      availableSpots: 0,
+                      pricing: ParkingPricing(
+                        firstHourPrice: 0,
+                        additionalHourPrice: 0,
+                        dailyPrice: 0,
+                        monthlyPrice: 0,
+                      ),
+                      hasCarWash: false,
+                      hasTourGuide: false,
+                      hasTransportService: false,
+                      hasCoveredArea: false,
+                      hasVipSpots: false,
+                      carWashPrice: 0,
+                      tourGuidePrice: 0,
+                      transportPrice: 0,
+                    ),
+                    plan: PlanType.hourly,
+                    carWash: false,
+                    tourGuide: false,
+                    transport: false,
+                    total: 0,
+                    userLocationLat: 0,
+                    userLocationLng: 0,
+                  ),
+                ),
+              ...reservations,
+            ];
+
+            if (allReservations.isEmpty) {
               return const Center(child: Text("Nenhuma reserva encontrada."));
             }
 
-            final ordered = [...reservations]
+            final ordered = [...allReservations]
               ..sort((a, b) => b.checkinAt.compareTo(a.checkinAt));
 
             final contractedServices = _contractedServices(ordered)
@@ -228,6 +293,10 @@ class _ReservationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = _statusInfo(reservation.status);
+    final remaining = reservation.validUntil.difference(DateTime.now());
+    final remainingText = remaining.isNegative
+        ? 'Expirado'
+        : 'Expira em ${_formatDuration(remaining)}';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -265,6 +334,31 @@ class _ReservationCard extends StatelessWidget {
                 ),
                 _StatusBadge(label: status.$1, color: status.$2),
               ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: remaining.isNegative ? Colors.red.shade50 : AppTheme.softCyan,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    remaining.isNegative ? Icons.timer_off_outlined : Icons.timer_outlined,
+                    color: remaining.isNegative ? Colors.red : AppTheme.primary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    remainingText,
+                    style: TextStyle(
+                      color: remaining.isNegative ? Colors.red : AppTheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 14),
             Row(
@@ -327,6 +421,13 @@ class _ReservationCard extends StatelessWidget {
     final hour = date.hour.toString().padLeft(2, '0');
     final minute = date.minute.toString().padLeft(2, '0');
     return "$day/$month/${date.year} as $hour:$minute";
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours.remainder(24).toString().padLeft(2, '0');
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
   }
 }
 

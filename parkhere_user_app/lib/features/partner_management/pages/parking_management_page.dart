@@ -559,8 +559,13 @@ class _ParkingManagementFormPageState
       servicePriceController.text.replaceAll(',', '.'),
     );
 
-    if (name.isEmpty || price == null) {
-      _showMessage('Informe nome e preço do serviço.');
+    if (name.isEmpty || price == null || !price.isFinite || price < 0) {
+      _showMessage('Informe nome e preço válido, maior ou igual a zero.');
+      return;
+    }
+
+    if (services.any((service) => service.code == serviceCode)) {
+      _showMessage('Este tipo de serviço já foi adicionado.');
       return;
     }
 
@@ -606,6 +611,10 @@ class _ParkingManagementFormPageState
     final large = _int(largeController, 'Carro grande');
     final bus = _int(busController, 'Ônibus');
     final pickup = _int(pickupController, 'Picape');
+
+    if (total <= 0 || available > total) {
+      throw Exception('Informe total positivo e disponibilidade até o total.');
+    }
 
     if (covered + uncovered != total) {
       throw Exception('Cobertas + descobertas deve ser igual ao total.');
@@ -655,6 +664,9 @@ class _ParkingManagementFormPageState
   }
 
   ParkingAreaPricingModel _pricing(List<TextEditingController> controllers) {
+    if (controllers.any((controller) => _double(controller, 'Tarifa') < 0)) {
+      throw Exception('Tarifas não podem ser negativas.');
+    }
     return ParkingAreaPricingModel(
       firstHourPrice: _double(controllers[0], 'Primeira hora'),
       additionalHourPrice: _double(controllers[1], 'Hora adicional'),
@@ -683,13 +695,17 @@ class _ParkingManagementFormPageState
 
   int _int(TextEditingController controller, String label) {
     final value = int.tryParse(controller.text.trim());
-    if (value == null) throw Exception('Informe $label corretamente.');
+    if (value == null || value < 0) {
+      throw Exception('Informe $label corretamente.');
+    }
     return value;
   }
 
   double _double(TextEditingController controller, String label) {
     final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
-    if (value == null) throw Exception('Informe $label corretamente.');
+    if (value == null || !value.isFinite) {
+      throw Exception('Informe $label corretamente.');
+    }
     return value;
   }
 

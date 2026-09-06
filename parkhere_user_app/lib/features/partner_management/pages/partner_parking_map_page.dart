@@ -1,3 +1,6 @@
+import '../utils/manual_arrival.dart';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -215,14 +218,51 @@ class _ParkingLayoutPanel extends StatelessWidget {
   }
 }
 
-class _ParkingSlotTile extends ConsumerWidget {
+class _ParkingSlotTile extends ConsumerStatefulWidget {
   final String parkingId;
   final PartnerParkingSlot slot;
 
   const _ParkingSlotTile({required this.parkingId, required this.slot});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ParkingSlotTile> createState() => _ParkingSlotTileState();
+}
+
+class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.slot.reservation != null) {
+      timer = Timer.periodic(const Duration(minutes: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ParkingSlotTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.slot.reservation == null) {
+      timer?.cancel();
+      timer = null;
+    } else {
+      timer ??= Timer.periodic(const Duration(minutes: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slot = widget.slot;
     final color = switch (slot.status) {
       'occupied' => AppTheme.primary,
       'pre_reserved' => Colors.orange,
@@ -232,7 +272,7 @@ class _ParkingSlotTile extends ConsumerWidget {
 
     return InkWell(
       onTap: slot.reservation == null
-          ? () => _showCreateReservation(context, parkingId, slot)
+          ? () => _showCreateReservation(context, widget.parkingId, slot)
           : () => _showReservation(context, ref, slot),
       borderRadius: BorderRadius.circular(10),
       child: Container(
@@ -271,12 +311,13 @@ class _ParkingSlotTile extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            if (slot.reservation != null &&
-                slot.reservation!.status != 'checked_in') ...[
+            if (slot.reservation != null) ...[
               const SizedBox(height: 2),
               Text(
-                _arrivalPreview(slot.reservation!),
+                _timePreview(slot.reservation!),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: color,
                   fontSize: 9,
@@ -290,12 +331,36 @@ class _ParkingSlotTile extends ConsumerWidget {
     );
   }
 
-  String _arrivalPreview(PartnerSlotReservation reservation) {
-    final arrival = reservation.arrivalEstimateAt.toLocal();
-    final hour = arrival.hour.toString().padLeft(2, '0');
-    final minute = arrival.minute.toString().padLeft(2, '0');
-    if (reservation.isManualArrival) return 'Chega ${hour}h$minute';
-    return '${reservation.routeMinutes} min · ${hour}h$minute';
+  String _timePreview(PartnerSlotReservation reservation) {
+    if (reservation.status == 'checked_in') {
+      final checkedInAt = reservation.checkedInAt ?? reservation.createdAt;
+      final elapsed = DateTime.now().difference(checkedInAt.toLocal());
+      final included = Duration(
+        minutes:
+            reservation.durationHours * 60 + reservation.checkoutGraceMinutes,
+      );
+      if (reservation.checkoutExcessMinutes > 0 || elapsed > included) {
+        final excess = elapsed - included;
+        return 'Exced. ${_shortDuration(excess)}';
+      }
+      return 'No patio ${_shortDuration(elapsed)}';
+    }
+
+    final remaining = reservation.holdExpiresAt.toLocal().difference(
+      DateTime.now(),
+    );
+    if (remaining.inSeconds <= 0) return 'Expirada';
+    return 'Expira ${_shortDuration(remaining)}';
+  }
+
+  String _shortDuration(Duration value) {
+    final minutes = value.inMinutes.abs();
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    if (hours > 0) {
+      return '${hours}h${remainingMinutes.toString().padLeft(2, '0')}';
+    }
+    return '${remainingMinutes}min';
   }
 
   void _showCreateReservation(
@@ -322,14 +387,27 @@ class _ParkingSlotTile extends ConsumerWidget {
     final canCheckin =
         reservation.status == 'pre_reserved' ||
         reservation.status == 'confirmed';
+    final hasUnpaidExcess =
+        reservation.checkoutExcessAmount > 0 &&
+        reservation.checkoutExcessPaidAt == null;
     final canCheckout =
         reservation.status == 'checked_in' &&
-        reservation.paymentStatus == 'paid';
+        reservation.paymentStatus == 'paid' &&
+        !hasUnpaidExcess;
     final auth = ref.read(authProvider);
     final canCancel =
         reservation.status != 'checked_in' ||
         auth.role == 'partner_manager' ||
         auth.role == 'parking_admin';
+    final paymentPurpose =
+        hasUnpaidExcess && reservation.paymentStatus == 'paid'
+        ? 'checkout_excess'
+        : 'reservation';
+    final paymentAmount = hasUnpaidExcess && reservation.paymentStatus != 'paid'
+        ? reservation.finalTotal + reservation.checkoutExcessAmount
+        : hasUnpaidExcess
+        ? reservation.checkoutExcessAmount
+        : reservation.finalTotal;
     showDialog<void>(
       context: context,
       builder: (context) {
@@ -372,6 +450,7 @@ class _ParkingSlotTile extends ConsumerWidget {
                     reservation.vehicleLabel ?? 'Nao informado',
                   ),
                   _DetailLine('Previsao chegada', _arrivalDetail(reservation)),
+                  _DetailLine('Validade', _expiryDetail(reservation)),
                   _DetailLine(
                     'Vaga',
                     '${slot.code} · ${_slotTypeLabel(slot.type)}',
@@ -393,6 +472,29 @@ class _ParkingSlotTile extends ConsumerWidget {
                     'Total',
                     'R\$ ${reservation.finalTotal.toStringAsFixed(2)}',
                   ),
+                  if (reservation.status == 'checked_in') ...[
+                    _DetailLine(
+                      'Tolerancia checkout',
+                      '${reservation.checkoutGraceMinutes} minutos',
+                    ),
+                    _DetailLine(
+                      'Excedente',
+                      hasUnpaidExcess
+                          ? '${reservation.checkoutExcessMinutes} min · R\$ ${reservation.checkoutExcessAmount.toStringAsFixed(2)}'
+                          : 'Sem excedente pendente',
+                    ),
+                    if (hasUnpaidExcess)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Checkout bloqueado ate o pagamento do excedente.',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 10),
                   Text(
                     'Servicos contratados',
@@ -442,7 +544,7 @@ class _ParkingSlotTile extends ConsumerWidget {
               label: const Text('Cancelar'),
             ),
             OutlinedButton.icon(
-              onPressed: reservation.paymentStatus == 'paid'
+              onPressed: reservation.paymentStatus == 'paid' && !hasUnpaidExcess
                   ? null
                   : () {
                       Navigator.pop(context);
@@ -450,7 +552,8 @@ class _ParkingSlotTile extends ConsumerWidget {
                         context: context,
                         builder: (_) => _CashierPaymentDialog(
                           reservationId: reservation.id,
-                          amount: reservation.finalTotal,
+                          amount: paymentAmount,
+                          purpose: paymentPurpose,
                           onCompleted: () {
                             ref.invalidate(partnerParkingMapProvider);
                             ref.invalidate(partnerReservationsProvider);
@@ -459,7 +562,11 @@ class _ParkingSlotTile extends ConsumerWidget {
                       );
                     },
               icon: const Icon(Icons.receipt_long_outlined),
-              label: const Text('Pagamento'),
+              label: Text(
+                hasUnpaidExcess && reservation.paymentStatus == 'paid'
+                    ? 'Pagar excedente'
+                    : 'Pagamento',
+              ),
             ),
             FilledButton.icon(
               onPressed: canCheckin
@@ -523,6 +630,15 @@ class _ParkingSlotTile extends ConsumerWidget {
       return 'Informada manualmente · ${hour}h$minute';
     }
     return '${reservation.routeMinutes} minutos · ${hour}h$minute';
+  }
+
+  String _expiryDetail(PartnerSlotReservation reservation) {
+    final remaining = reservation.holdExpiresAt.toLocal().difference(
+      DateTime.now(),
+    );
+    if (reservation.status == 'checked_in') return 'Reserva em permanencia';
+    if (remaining.inSeconds <= 0) return 'Prazo expirado';
+    return 'Expira em ${_shortDuration(remaining)}';
   }
 
   String _slotTypeLabel(String type) {
@@ -790,6 +906,7 @@ class _FreeSlotReservationDialogState
                     'R\$ ${changeAmount!.toStringAsFixed(2)}',
                   ),
                 if (pixQrCode != null) ...[
+                  const Text('Simulação: QR demonstrativo, sem cobrança real.'),
                   const SizedBox(height: 12),
                   Center(
                     child: QrImageView(
@@ -845,7 +962,7 @@ class _FreeSlotReservationDialogState
               : const Icon(Icons.check),
           label: Text(
             pendingPixPaymentId != null
-                ? 'Confirmar Pix pago'
+                ? 'Confirmar simulação Pix'
                 : mode == _OperationalReservationMode.preReserve
                 ? 'Criar pre-reserva'
                 : 'Criar reserva',
@@ -871,7 +988,9 @@ class _FreeSlotReservationDialogState
         if (!mounted) return;
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pix confirmado e reserva paga.')),
+          const SnackBar(
+            content: Text('Pix simulado. Nenhuma cobrança realizada.'),
+          ),
         );
         return;
       }
@@ -952,18 +1071,11 @@ class _FreeSlotReservationDialogState
   }
 
   DateTime _arrivalDateTime() {
-    final now = DateTime.now();
-    var arrival = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      arrivalTime.hour,
-      arrivalTime.minute,
+    return manualArrival(
+      now: DateTime.now(),
+      hour: arrivalTime.hour,
+      minute: arrivalTime.minute,
     );
-    if (arrival.isBefore(now)) {
-      arrival = arrival.add(const Duration(days: 1));
-    }
-    return arrival;
   }
 
   String _formatTime(TimeOfDay time) {
@@ -1106,11 +1218,13 @@ class _CancelReservationDialogState
 class _CashierPaymentDialog extends ConsumerStatefulWidget {
   final String reservationId;
   final double amount;
+  final String purpose;
   final VoidCallback onCompleted;
 
   const _CashierPaymentDialog({
     required this.reservationId,
     required this.amount,
+    this.purpose = 'reservation',
     required this.onCompleted,
   });
 
@@ -1136,7 +1250,11 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Caixa do estacionamento'),
+      title: Text(
+        widget.purpose == 'checkout_excess'
+            ? 'Pagamento de excedente'
+            : 'Caixa do estacionamento',
+      ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: SingleChildScrollView(
@@ -1145,6 +1263,13 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _DetailLine('Total', 'R\$ ${widget.amount.toStringAsFixed(2)}'),
+              if (widget.purpose == 'checkout_excess') ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Este pagamento libera o checkout da vaga.',
+                  style: TextStyle(color: AppTheme.textMuted),
+                ),
+              ],
               const SizedBox(height: 12),
               DropdownButtonFormField<_OperationalPaymentMethod>(
                 initialValue: paymentMethod,
@@ -1203,6 +1328,7 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
                 _DetailLine('Troco', 'R\$ ${changeAmount!.toStringAsFixed(2)}'),
               ],
               if (pixQrCode != null) ...[
+                const Text('Simulação: QR demonstrativo, sem cobrança real.'),
                 const SizedBox(height: 12),
                 Center(
                   child: QrImageView(
@@ -1243,7 +1369,7 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
               : const Icon(Icons.point_of_sale),
           label: Text(
             pendingPixPaymentId != null
-                ? 'Confirmar Pix pago'
+                ? 'Confirmar simulação Pix'
                 : paymentMethod == _OperationalPaymentMethod.pix
                 ? 'Gerar QR Pix'
                 : 'Receber',
@@ -1268,7 +1394,9 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
         if (!mounted) return;
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pix confirmado no caixa.')),
+          const SnackBar(
+            content: Text('Pix simulado. Nenhuma cobrança realizada.'),
+          ),
         );
         return;
       }
@@ -1277,6 +1405,7 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
         token: token,
         reservationId: widget.reservationId,
         method: paymentMethod.apiValue,
+        purpose: widget.purpose,
       );
       final total = (payment['gross_amount'] as num).toDouble();
       if (paymentMethod == _OperationalPaymentMethod.cash) {

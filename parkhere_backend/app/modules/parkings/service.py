@@ -166,6 +166,7 @@ async def _get_owned_parking(
     result = await db.execute(
         select(Parking)
         .options(selectinload(Parking.services))
+        .execution_options(populate_existing=True)
         .where(Parking.id == parking_id, Parking.tenant_id == tenant_id)
     )
     parking = result.scalar_one_or_none()

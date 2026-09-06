@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from math import ceil
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -36,6 +37,7 @@ class ReservationService:
     VALID_SPOT_TYPES = {"uncovered", "covered", "vip", "large", "bus", "pickup"}
     VALID_PLANS = {"hourly", "daily", "weekly", "monthly"}
     FREE_CANCELLATION_MINUTES = 5
+    CHECKOUT_GRACE_MINUTES = 15
 
     @staticmethod
     async def create_pre_checkin(
@@ -170,6 +172,40 @@ class ReservationService:
             raise HTTPException(
                 status_code=409,
                 detail="Reservation must be checked in before checkout",
+            )
+
+        excess_minutes, excess_amount = calculate_checkout_excess(
+            reservation,
+            parking,
+        )
+        reservation.checkout_grace_minutes = ReservationService.CHECKOUT_GRACE_MINUTES
+        reservation.checkout_excess_minutes = excess_minutes
+        reservation.checkout_excess_amount = excess_amount
+        if reservation.payment_status != "paid":
+            reservation.payment_status = "checkout_payment_pending"
+            await db.commit()
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": "Checkout blocked until payment is completed",
+                    "checkout_excess_minutes": excess_minutes,
+                    "checkout_excess_amount": excess_amount,
+                    "checkout_grace_minutes": ReservationService.CHECKOUT_GRACE_MINUTES,
+                    "amount_due": round((reservation.final_total or 0) + excess_amount, 2),
+                },
+            )
+
+        if excess_amount > 0 and reservation.checkout_excess_paid_at is None:
+            reservation.payment_status = "checkout_excess_pending"
+            await db.commit()
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": "Checkout blocked until excess payment is completed",
+                    "checkout_excess_minutes": excess_minutes,
+                    "checkout_excess_amount": excess_amount,
+                    "checkout_grace_minutes": ReservationService.CHECKOUT_GRACE_MINUTES,
+                },
             )
 
         reservation.status = "completed"
@@ -432,6 +468,38 @@ def _base_amount(
     return monthly
 
 
+def calculate_checkout_excess(
+    reservation: Reservation,
+    parking: Parking,
+) -> tuple[int, float]:
+    if (
+        reservation.pricing_plan != "hourly"
+        or reservation.checked_in_at is None
+        or reservation.duration_hours <= 0
+    ):
+        return 0, 0
+
+    now = datetime.utcnow()
+    checked_in_at = reservation.checked_in_at.replace(tzinfo=None)
+    elapsed_minutes = max(int((now - checked_in_at).total_seconds() // 60), 0)
+    included_minutes = (
+        reservation.duration_hours * 60 + ReservationService.CHECKOUT_GRACE_MINUTES
+    )
+    excess_minutes = max(elapsed_minutes - included_minutes, 0)
+    if excess_minutes == 0:
+        return 0, 0
+
+    additional_hour = _additional_hour_price(parking, reservation.spot_type)
+    excess_amount = ceil(excess_minutes / 60) * additional_hour
+    return excess_minutes, round(excess_amount, 2)
+
+
+def _additional_hour_price(parking: Parking, spot_type: str) -> float:
+    if spot_type in {"covered", "vip"}:
+        return parking.covered_additional_hour_price or parking.additional_hour_price
+    return parking.uncovered_additional_hour_price or parking.additional_hour_price
+
+
 def _selected_services(
     services: list[ParkingService],
     requested_codes: list[str],
@@ -439,6 +507,7 @@ def _selected_services(
     if not requested_codes:
         return []
 
+    requested_codes = list(dict.fromkeys(requested_codes))
     active_services = {service.code: service for service in services if service.is_active}
     missing = [code for code in requested_codes if code not in active_services]
 
@@ -503,4 +572,10 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         else None,
         cancellation_fee_amount=reservation.cancellation_fee_amount,
         cancellation_credit_amount=reservation.cancellation_credit_amount,
+        checkout_grace_minutes=reservation.checkout_grace_minutes,
+        checkout_excess_minutes=reservation.checkout_excess_minutes,
+        checkout_excess_amount=reservation.checkout_excess_amount,
+        checkout_excess_paid_at=reservation.checkout_excess_paid_at.isoformat()
+        if reservation.checkout_excess_paid_at
+        else None,
     )

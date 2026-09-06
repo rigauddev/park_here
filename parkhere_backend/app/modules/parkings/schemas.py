@@ -1,11 +1,16 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ParkingServiceInput(BaseModel):
-    code: str
-    name: str
-    price: float
+    code: str = Field(min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=120)
+    price: float = Field(ge=0, allow_inf_nan=False)
     is_active: bool = True
+
+    @field_validator("code", "name", mode="before")
+    @classmethod
+    def strip_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 class ParkingServiceResponse(ParkingServiceInput):
@@ -21,19 +26,19 @@ class ParkingPricingResponse(BaseModel):
 
 
 class ParkingAreaPricing(BaseModel):
-    first_hour_price: float = 0
-    additional_hour_price: float = 0
-    daily_price: float = 0
-    weekly_price: float = 0
-    monthly_price: float = 0
+    first_hour_price: float = Field(default=0, ge=0, allow_inf_nan=False)
+    additional_hour_price: float = Field(default=0, ge=0, allow_inf_nan=False)
+    daily_price: float = Field(default=0, ge=0, allow_inf_nan=False)
+    weekly_price: float = Field(default=0, ge=0, allow_inf_nan=False)
+    monthly_price: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
 class ParkingManagementRequest(BaseModel):
     name: str
     address: str
     city: str = "Valenca"
-    lat: float
-    lng: float
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
     total_spots: int
     covered_spots: int = 0
     uncovered_spots: int = 0
@@ -51,6 +56,15 @@ class ParkingManagementRequest(BaseModel):
     covered_pricing: ParkingAreaPricing | None = None
     services: list[ParkingServiceInput] = Field(default_factory=list)
     is_active: bool = True
+
+
+    @field_validator("services")
+    @classmethod
+    def unique_service_codes(cls, services):
+        codes = [service.code for service in services]
+        if len(codes) != len(set(codes)):
+            raise ValueError("Service codes must be unique per parking")
+        return services
 
 
 class ParkingManagementResponse(BaseModel):

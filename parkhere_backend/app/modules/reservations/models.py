@@ -35,3 +35,7 @@ class Reservation(BaseModel):
     cancellation_reason = Column(Text, nullable=True)
     cancellation_fee_amount = Column(Float, nullable=False, default=0)
     cancellation_credit_amount = Column(Float, nullable=False, default=0)
+    checkout_grace_minutes = Column(Integer, nullable=False, default=15)
+    checkout_excess_minutes = Column(Integer, nullable=False, default=0)
+    checkout_excess_amount = Column(Float, nullable=False, default=0)
+    checkout_excess_paid_at = Column(DateTime(timezone=True), nullable=True)

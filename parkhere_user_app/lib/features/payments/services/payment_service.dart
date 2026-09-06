@@ -17,6 +17,9 @@ class PaymentService {
         {"method": _methodName(method)},
         accessToken,
       );
+      if (intent["is_simulated"] != true) {
+        throw Exception('Pagamento aguardando confirmação do provedor.');
+      }
       final confirmed = await _api.postAuthorized(
         "/payments/${intent["id"]}/confirm",
         {},
@@ -25,18 +28,14 @@ class PaymentService {
 
       return PaymentResult(
         success: confirmed["status"] == "paid",
+        isSimulated: confirmed["is_simulated"] == true,
         transactionId: confirmed["id"] as String,
         checkoutUrl: confirmed["checkout_url"] as String?,
         qrCode: confirmed["qr_code"] as String?,
       );
     }
 
-    await Future.delayed(const Duration(seconds: 2));
-
-    return PaymentResult(
-      success: true,
-      transactionId: DateTime.now().millisecondsSinceEpoch.toString(),
-    );
+    throw Exception('Uma reserva é necessária para iniciar o pagamento.');
   }
 
   String _methodName(PaymentMethod method) {
