@@ -9,6 +9,7 @@ import 'partner_parking_map_page.dart';
 import 'partner_reservations_page.dart';
 import 'partner_users_page.dart';
 import 'parking_management_page.dart';
+import 'parking_dashboard_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -105,6 +106,12 @@ class _PartnerManagementBody extends StatelessWidget {
         }
 
         return [
+          _ManagementAction(
+            icon: Icons.dashboard_outlined,
+            title: 'Dashboard',
+            description: 'Reservas, recebimentos e ticket médio.',
+            onTap: () => _open(context, const ParkingDashboardPage()),
+          ),
           _ManagementAction(
             icon: Icons.local_parking,
             title: 'Estacionamento',

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+import unicodedata
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,15 +21,26 @@ async def list_parkings(
         .options(selectinload(Parking.services))
         .where(Parking.is_active.is_(True))
     )
-    if city:
-        normalized_city = city.strip().lower()
-        query = query.where(func.lower(Parking.city).contains(normalized_city))
-
     result = await db.execute(
         query.order_by(Parking.rating.desc())
     )
+    parkings = result.scalars().all()
+    if city:
+        normalized_city = _normalize_city(city)
+        parkings = [
+            parking
+            for parking in parkings
+            if normalized_city in _normalize_city(parking.city)
+        ]
+    return [_to_response(parking) for parking in parkings]
 
-    return [_to_response(parking) for parking in result.scalars().all()]
+
+def _normalize_city(value: str) -> str:
+    return ''.join(
+        char
+        for char in unicodedata.normalize('NFKD', value.strip().lower())
+        if not unicodedata.combining(char)
+    )
 
 
 def _to_response(parking: Parking) -> ParkingResponse:

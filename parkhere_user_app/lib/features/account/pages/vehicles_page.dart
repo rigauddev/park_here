@@ -89,7 +89,20 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
                 : (value) => setState(() => selectedModel = value),
           ),
           const SizedBox(height: 12),
-          _field(colorController, 'Cor', Icons.palette_outlined),
+          DropdownButtonFormField<String>(
+            initialValue: colorController.text.isEmpty
+                ? null
+                : colorController.text,
+            decoration: const InputDecoration(
+              labelText: 'Cor',
+              prefixIcon: Icon(Icons.palette_outlined),
+            ),
+            items: [
+              for (final color in _vehicleColors)
+                DropdownMenuItem(value: color, child: Text(color)),
+            ],
+            onChanged: (value) => colorController.text = value ?? '',
+          ),
           SegmentedButton<VehicleOwnershipType>(
             segments: const [
               ButtonSegment(
@@ -165,7 +178,7 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
   Future<void> _pickVehicleDocument() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      allowedExtensions: const ['pdf'],
     );
 
     final file = result?.files.single;
@@ -222,6 +235,24 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
     ).showSnackBar(const SnackBar(content: Text('Veiculo salvo como ativo.')));
   }
 }
+
+const _vehicleColors = [
+  'Branco',
+  'Preto',
+  'Prata',
+  'Cinza',
+  'Grafite',
+  'Vermelho',
+  'Azul',
+  'Verde',
+  'Amarelo',
+  'Marrom',
+  'Bege',
+  'Laranja',
+  'Roxo',
+  'Dourado',
+  'Outro',
+];
 
 class _VehicleTile extends StatelessWidget {
   final VehicleModel vehicle;

@@ -191,7 +191,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       labelText: 'Cidade',
                       prefixIcon: Icon(Icons.location_city_outlined),
                     ),
-                    onSubmitted: (value) => Navigator.pop(context, value.trim()),
+                    onSubmitted: (value) =>
+                        Navigator.pop(context, value.trim()),
                   ),
                   const SizedBox(height: 14),
                   Wrap(
@@ -208,25 +209,14 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => Navigator.pop(context, ''),
-                          icon: const Icon(Icons.my_location_outlined),
-                          label: const Text('Usar localização'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () =>
-                              Navigator.pop(context, controller.text.trim()),
-                          icon: const Icon(Icons.search),
-                          label: const Text('Buscar'),
-                        ),
-                      ),
-                    ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () =>
+                          Navigator.pop(context, controller.text.trim()),
+                      icon: const Icon(Icons.search),
+                      label: const Text('Buscar'),
+                    ),
                   ),
                 ],
               ),
@@ -347,7 +337,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       ],
                       selected: {areaPreference},
                       onSelectionChanged: (value) {
-                        ref.read(selectedAreaPreferenceProvider.notifier).state =
+                        ref
+                                .read(selectedAreaPreferenceProvider.notifier)
+                                .state =
                             value.first;
                       },
                     ),
@@ -639,8 +631,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
           final query = _normalizeSearch(searchQuery);
           final filteredParkings = parkings.where((p) {
-      if (filter.covered && !p.hasCoveredArea) return false;
-      if (filter.vip && !p.hasVipSpots) return false;
+            if (filter.covered && !p.hasCoveredArea) return false;
+            if (filter.vip && !p.hasVipSpots) return false;
             if (query.isEmpty) return true;
             return _normalizeSearch(p.name).contains(query);
           }).toList();
@@ -822,6 +814,23 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       ],
                     ],
                   ),
+                ),
+              ),
+
+              Positioned(
+                right: 14,
+                bottom: 190,
+                child: FloatingActionButton.small(
+                  heroTag: 'home-map-location',
+                  tooltip: 'Usar minha localização',
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF169FC4),
+                  onPressed: () async {
+                    if (userLocation == null) await _loadUserLocation();
+                    if (!mounted) return;
+                    mapController.move(userLocation ?? _valencaCenter, 15);
+                  },
+                  child: const Icon(Icons.my_location),
                 ),
               ),
 
@@ -1095,8 +1104,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
           "spot_type": areaPreference == AreaPreference.covered
               ? "covered"
               : areaPreference == AreaPreference.uncovered
-                  ? "uncovered"
-                  : "any",
+              ? "uncovered"
+              : "any",
           "area_preference": areaPreference.name,
           "pricing_plan": plan.name,
           "duration_hours": 1,

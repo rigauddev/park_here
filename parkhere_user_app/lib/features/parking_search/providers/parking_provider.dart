@@ -38,6 +38,9 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
           .map((item) => ParkingModel.fromJson(item as Map<String, dynamic>))
           .toList();
     } catch (_) {
+      if (normalizedCity != null && normalizedCity.isNotEmpty) {
+        return const <ParkingModel>[];
+      }
       // Fallback local para continuar testando o app sem backend.
       await Future.delayed(const Duration(milliseconds: 500));
     }

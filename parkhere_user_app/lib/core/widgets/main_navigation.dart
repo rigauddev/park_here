@@ -17,6 +17,7 @@ import '../../features/reservation/pages/reservation_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../../features/partner_management/pages/partner_fee_statement_page.dart';
+import '../../features/partner_management/pages/parking_dashboard_page.dart';
 
 enum _MainArea {
   menu,
@@ -29,6 +30,7 @@ enum _MainArea {
   users,
   financial,
   fees,
+  dashboard,
   profile,
 }
 
@@ -77,11 +79,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             ),
           ),
       ],
-      leading: IconButton(
-        tooltip: _menuExpanded ? 'Ocultar menu' : 'Mostrar menu',
-        icon: Icon(_menuExpanded ? Icons.menu_open : Icons.menu),
-        onPressed: () => setState(() => _menuExpanded = !_menuExpanded),
-      ),
+      leading: isWebLayout
+          ? IconButton(
+              tooltip: _menuExpanded ? 'Ocultar menu' : 'Mostrar menu',
+              icon: Icon(_menuExpanded ? Icons.menu_open : Icons.menu),
+              onPressed: () => setState(() => _menuExpanded = !_menuExpanded),
+            )
+          : null,
     );
 
     if (isWebLayout) {
@@ -142,17 +146,17 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           );
         },
         destinations: [
+          if (!isPartner)
+            const NavigationDestination(
+              icon: Icon(Icons.menu),
+              selectedIcon: Icon(Icons.menu_open),
+              label: 'Menu',
+            ),
           if (isPartner && isPartnerOwner)
             const NavigationDestination(
               icon: Icon(Icons.business_center_outlined),
               selectedIcon: Icon(Icons.business_center),
               label: 'Gestão',
-            )
-          else if (!isPartner)
-            const NavigationDestination(
-              icon: Icon(Icons.map_outlined),
-              selectedIcon: Icon(Icons.map),
-              label: 'Mapa',
             ),
           if (isPartner)
             const NavigationDestination(
@@ -173,6 +177,12 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               label: 'Reservas',
             )
           else
+            const NavigationDestination(
+              icon: Icon(Icons.map_outlined),
+              selectedIcon: Icon(Icons.map),
+              label: 'Mapa',
+            ),
+          if (!isPartner)
             const NavigationDestination(
               icon: Icon(Icons.person_outline),
               selectedIcon: Icon(Icons.person),
@@ -227,6 +237,10 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return isPartnerOwner
             ? const PartnerFeeStatementPage()
             : const ProfilePage();
+      case _MainArea.dashboard:
+        return isPartnerOwner
+            ? const ParkingDashboardPage()
+            : const PartnerParkingMapPage();
       case _MainArea.financial:
         return isPartnerOwner
             ? const PartnerFinancialLockedPage()
@@ -256,11 +270,11 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.menu:
         return isPartner ? 0 : 0;
       case _MainArea.map:
-        return isPartner ? 1 : 0;
+        return isPartner ? 1 : 2;
       case _MainArea.services:
         return isPartner ? 1 : 1;
       case _MainArea.reservations:
-        return isPartner ? 2 : 2;
+        return isPartner ? 2 : 3;
       case _MainArea.vehicles:
       case _MainArea.wallet:
         return isPartner ? 4 : 2;
@@ -271,8 +285,10 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.fees:
       case _MainArea.financial:
         return isPartner ? 3 : 2;
+      case _MainArea.dashboard:
+        return isPartner ? 0 : 2;
       case _MainArea.profile:
-        return isPartner ? 4 : 2;
+        return isPartner ? 4 : 3;
     }
   }
 
@@ -296,11 +312,11 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 
     switch (index) {
       case 0:
-        return isPartner ? _MainArea.management : _MainArea.map;
+        return isPartner ? _MainArea.management : _MainArea.menu;
       case 1:
         return isPartner ? _MainArea.map : _MainArea.services;
       case 2:
-        return isPartner ? _MainArea.reservations : _MainArea.profile;
+        return isPartner ? _MainArea.reservations : _MainArea.map;
       case 3:
         return isPartner ? _MainArea.financial : _MainArea.profile;
       case 4:
@@ -357,6 +373,12 @@ class _WebMenu extends ConsumerWidget {
               expanded: expanded,
               title: 'Navegação',
               items: [
+                if (isPartner && isPartnerOwner)
+                  _MenuItem(
+                    Icons.dashboard_outlined,
+                    'Dashboard',
+                    _MainArea.dashboard,
+                  ),
                 if (isPartner && isPartnerOwner)
                   _MenuItem(
                     Icons.business_center_outlined,
