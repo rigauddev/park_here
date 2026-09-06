@@ -1126,21 +1126,22 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
     Navigator.of(context).pop();
 
+    final preCheckin = PreCheckinModel(
+      parking: parking,
+      plan: plan,
+      carWash: selected.carWash,
+      tourGuide: selected.tourGuide,
+      transport: selected.transport,
+      total: total,
+      reservationId: null,
+      platformFeeAmount: 0,
+      userLocationLat: userLocationLat,
+      userLocationLng: userLocationLng,
+    );
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RoutePreviewPage(
-          preCheckin: PreCheckinModel(
-            parking: parking,
-            plan: plan,
-            carWash: selected.carWash,
-            tourGuide: selected.tourGuide,
-            transport: selected.transport,
-            total: total,
-            reservationId: null,
-            platformFeeAmount: 0,
-            userLocationLat: userLocationLat,
-            userLocationLng: userLocationLng,
-          ),
+          preCheckin: preCheckin,
           onRouteSelected: () async {
             await ref
                 .read(preReservationProvider.notifier)
@@ -1153,7 +1154,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             if (token == null) {
               throw Exception('Sessao expirada. Entre novamente.');
             }
-            await ref.read(apiServiceProvider).postAuthorized(
+            final response = await ref.read(apiServiceProvider).postAuthorized(
               '/reservations/pre-checkin',
               {
                 'parking_id': parking.id,
@@ -1176,6 +1177,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               },
               token,
             );
+            preCheckin.reservationId = response['id'] as String?;
           },
         ),
       ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
+import '../../checkin_checkout/pages/checkin_page.dart';
 import '../../parking_search/models/parking_model.dart';
 import '../../parking_search/models/parking_pricing.dart';
 import '../../parking_search/models/payment_plan_enum.dart';
@@ -339,13 +340,17 @@ class _ReservationCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: remaining.isNegative ? Colors.red.shade50 : AppTheme.softCyan,
+                color: remaining.isNegative
+                    ? Colors.red.shade50
+                    : AppTheme.softCyan,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
                   Icon(
-                    remaining.isNegative ? Icons.timer_off_outlined : Icons.timer_outlined,
+                    remaining.isNegative
+                        ? Icons.timer_off_outlined
+                        : Icons.timer_outlined,
                     color: remaining.isNegative ? Colors.red : AppTheme.primary,
                     size: 18,
                   ),
@@ -353,7 +358,9 @@ class _ReservationCard extends StatelessWidget {
                   Text(
                     remainingText,
                     style: TextStyle(
-                      color: remaining.isNegative ? Colors.red : AppTheme.primary,
+                      color: remaining.isNegative
+                          ? Colors.red
+                          : AppTheme.primary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -382,22 +389,64 @@ class _ReservationCard extends StatelessWidget {
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ReservationDetailsPage(reservation: reservation),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  if (reservation.status == ReservationStatus.open)
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                CheckinPage(preCheckin: reservation.preCheckin),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.login),
+                      label: const Text('Check-in'),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text("Detalhes"),
+                  IconButton(
+                    tooltip: 'Agendar reserva / Schedule reservation',
+                    onPressed: () => _showScheduleDialog(context),
+                    icon: const Icon(Icons.calendar_month_outlined),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ReservationDetailsPage(reservation: reservation),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.receipt_long_outlined),
+                    label: const Text("Detalhes"),
+                  ),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showScheduleDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Agendar reserva / Schedule'),
+        content: const Text(
+          'Escolha a data e informe o horário de chegada. O pagamento antecipado de 50% será habilitado na próxima etapa do Mercado Pago.\n\nChoose the date and arrival time. The 50% prepayment will be enabled in the next Mercado Pago step.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar / Close'),
+          ),
+        ],
       ),
     );
   }
