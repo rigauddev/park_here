@@ -8,15 +8,38 @@ import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
 
-class PartnerParkingMapPage extends ConsumerWidget {
+class PartnerParkingMapPage extends ConsumerStatefulWidget {
   const PartnerParkingMapPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PartnerParkingMapPage> createState() =>
+      _PartnerParkingMapPageState();
+}
+
+class _PartnerParkingMapPageState extends ConsumerState<PartnerParkingMapPage> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) ref.invalidate(partnerParkingMapProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final layouts = ref.watch(partnerParkingMapProvider);
 
     return Scaffold(
@@ -53,7 +76,7 @@ class PartnerParkingMapPage extends ConsumerWidget {
   }
 }
 
-class _ParkingLayoutPanel extends StatelessWidget {
+class _ParkingLayoutPanel extends ConsumerWidget {
   final PartnerParkingLayout layout;
   final bool showFinancialSummary;
 
@@ -63,7 +86,7 @@ class _ParkingLayoutPanel extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -166,6 +189,8 @@ class _ParkingLayoutPanel extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+              _FeeStatementCard(onTap: () => _showFeeStatement(context, ref)),
               const SizedBox(height: 12),
             ],
             Wrap(
@@ -213,6 +238,63 @@ class _ParkingLayoutPanel extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showFeeStatement(BuildContext context, WidgetRef ref) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Taxas e compensações / Fees'),
+        content: FutureBuilder<Map<String, dynamic>>(
+          future: ApiService().getAuthorizedMap(
+            '/partners/fee-statement',
+            token,
+          ),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              if (snapshot.hasError) return Text('Erro: ${snapshot.error}');
+              return const SizedBox(
+                height: 70,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final pending = (snapshot.data!['pending_total'] as num? ?? 0)
+                .toDouble();
+            return Text(
+              'Pendente / Pending: R\$ ${pending.toStringAsFixed(2)}',
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar / Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeeStatementCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _FeeStatementCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.receipt_long_outlined),
+        title: const Text('Taxas e compensações / Fees'),
+        subtitle: const Text(
+          'Ver débitos de reservas em dinheiro e compensações.',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
       ),
     );
   }

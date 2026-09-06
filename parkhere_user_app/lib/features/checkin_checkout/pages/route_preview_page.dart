@@ -6,8 +6,13 @@ import '../../checkin_checkout/pages/checkin_page.dart';
 
 class RoutePreviewPage extends StatefulWidget {
   final PreCheckinModel preCheckin;
+  final Future<void> Function()? onRouteSelected;
 
-  const RoutePreviewPage({super.key, required this.preCheckin});
+  const RoutePreviewPage({
+    super.key,
+    required this.preCheckin,
+    this.onRouteSelected,
+  });
 
   @override
   State<RoutePreviewPage> createState() => _RoutePreviewPageState();
@@ -40,21 +45,19 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
             ListTile(
               leading: const Icon(Icons.map),
               title: const Text("Google Maps"),
-              onTap: () {
-                // abrir URL futura
-              },
+              onTap: () => _selectRoute('Google Maps'),
             ),
 
             ListTile(
               leading: const Icon(Icons.map_outlined),
               title: const Text("Waze"),
-              onTap: () {},
+              onTap: () => _selectRoute('Waze'),
             ),
 
             ListTile(
               leading: const Icon(Icons.public),
               title: const Text("OpenStreetMap"),
-              onTap: () {},
+              onTap: () => _selectRoute('OpenStreetMap'),
             ),
 
             const Spacer(),
@@ -164,6 +167,23 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  Future<void> _selectRoute(String appName) async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      await widget.onRouteSelected?.call();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Rota iniciada no $appName.')));
+      Navigator.pop(context);
+    } catch (error) {
+      _showError('Nao foi possivel iniciar a rota: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 

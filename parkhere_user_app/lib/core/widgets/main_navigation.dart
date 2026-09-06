@@ -16,7 +16,6 @@ import '../../features/partner_management/pages/partner_users_page.dart';
 import '../../features/reservation/pages/reservation_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../theme/app_theme.dart';
-import '../../features/partner_management/pages/partner_fee_statement_page.dart';
 import '../../features/partner_management/pages/parking_dashboard_page.dart';
 
 enum _MainArea {
@@ -29,7 +28,6 @@ enum _MainArea {
   management,
   users,
   financial,
-  fees,
   dashboard,
   profile,
 }
@@ -233,10 +231,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             : const PartnerParkingMapPage();
       case _MainArea.users:
         return isPartnerOwner ? const PartnerUsersPage() : const ProfilePage();
-      case _MainArea.fees:
-        return isPartnerOwner
-            ? const PartnerFeeStatementPage()
-            : const ProfilePage();
       case _MainArea.dashboard:
         return isPartnerOwner
             ? const ParkingDashboardPage()
@@ -282,7 +276,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return isPartner ? 0 : 2;
       case _MainArea.users:
         return isPartner ? 0 : 2;
-      case _MainArea.fees:
       case _MainArea.financial:
         return isPartner ? 3 : 2;
       case _MainArea.dashboard:
@@ -395,12 +388,6 @@ class _WebMenu extends ConsumerWidget {
                     Icons.confirmation_number_outlined,
                     'Reservas recebidas',
                     _MainArea.reservations,
-                  ),
-                if (isPartner && isPartnerOwner)
-                  _MenuItem(
-                    Icons.receipt_long,
-                    'Taxas e compensações',
-                    _MainArea.fees,
                   ),
                 if (isPartner && isPartnerOwner)
                   _MenuItem(Icons.group_outlined, 'Usuarios', _MainArea.users),
@@ -548,12 +535,6 @@ class _MobileDrawer extends StatelessWidget {
                 leading: const Icon(Icons.local_parking_outlined),
                 title: const Text('Mapa de vagas'),
                 onTap: () => onSelected(_MainArea.map),
-              ),
-            if (isPartner && isPartnerOwner)
-              ListTile(
-                leading: const Icon(Icons.receipt_long),
-                title: const Text('Taxas e compensações'),
-                onTap: () => onSelected(_MainArea.fees),
               ),
             if (isPartner && isPartnerOwner)
               ListTile(

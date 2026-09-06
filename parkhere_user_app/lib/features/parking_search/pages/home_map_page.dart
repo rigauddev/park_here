@@ -1074,65 +1074,6 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
     if (!mounted) return;
 
-    await ref
-        .read(preReservationProvider.notifier)
-        .createPreReservation(
-          parkingId: parking.id,
-          parkingName: parking.name,
-          routeMinutes: minutes,
-        );
-
-    if (!mounted) return;
-
-    String? reservationId;
-    var serverTotal = total;
-    var platformFeeAmount = 0.0;
-
-    try {
-      final token = ref.read(authProvider).accessToken;
-      if (token == null) {
-        throw Exception("Sessao expirada. Entre novamente.");
-      }
-
-      final response = await ref.read(apiServiceProvider).postAuthorized(
-        "/reservations/pre-checkin",
-        {
-          "parking_id": parking.id,
-          "route_minutes": minutes,
-          "estimated_total": total,
-          "vehicle_id": activeVehicle.id,
-          "spot_type": areaPreference == AreaPreference.covered
-              ? "covered"
-              : areaPreference == AreaPreference.uncovered
-              ? "uncovered"
-              : "any",
-          "area_preference": areaPreference.name,
-          "pricing_plan": plan.name,
-          "duration_hours": 1,
-          "service_codes": [
-            if (selected.carWash) "car_wash",
-            if (selected.tourGuide) "tour_guide",
-            if (selected.transport) "transport",
-          ],
-        },
-        token,
-      );
-      reservationId = response["id"] as String?;
-      serverTotal = (response["final_total"] as num?)?.toDouble() ?? total;
-      platformFeeAmount =
-          (response["platform_fee_amount"] as num?)?.toDouble() ?? 0;
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Reserva local criada. A API de bloqueio será sincronizada depois.",
-            ),
-          ),
-        );
-      }
-    }
-
     if (!mounted) return;
 
     Navigator.of(context).pop();
@@ -1146,12 +1087,48 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             carWash: selected.carWash,
             tourGuide: selected.tourGuide,
             transport: selected.transport,
-            total: serverTotal,
-            reservationId: reservationId,
-            platformFeeAmount: platformFeeAmount,
+            total: total,
+            reservationId: null,
+            platformFeeAmount: 0,
             userLocationLat: userLocationLat,
             userLocationLng: userLocationLng,
           ),
+          onRouteSelected: () async {
+            await ref
+                .read(preReservationProvider.notifier)
+                .createPreReservation(
+                  parkingId: parking.id,
+                  parkingName: parking.name,
+                  routeMinutes: minutes,
+                );
+            final token = ref.read(authProvider).accessToken;
+            if (token == null) {
+              throw Exception('Sessao expirada. Entre novamente.');
+            }
+            await ref.read(apiServiceProvider).postAuthorized(
+              '/reservations/pre-checkin',
+              {
+                'parking_id': parking.id,
+                'route_minutes': minutes,
+                'estimated_total': total,
+                'vehicle_id': activeVehicle.id,
+                'spot_type': areaPreference == AreaPreference.covered
+                    ? 'covered'
+                    : areaPreference == AreaPreference.uncovered
+                    ? 'uncovered'
+                    : 'any',
+                'area_preference': areaPreference.name,
+                'pricing_plan': plan.name,
+                'duration_hours': 1,
+                'service_codes': [
+                  if (selected.carWash) 'car_wash',
+                  if (selected.tourGuide) 'tour_guide',
+                  if (selected.transport) 'transport',
+                ],
+              },
+              token,
+            );
+          },
         ),
       ),
     );
