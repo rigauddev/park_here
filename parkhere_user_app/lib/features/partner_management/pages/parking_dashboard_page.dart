@@ -69,7 +69,10 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
           final received = reservations.fold<double>(
             0,
             (sum, item) =>
-                sum + ((item['final_total'] as num?)?.toDouble() ?? 0),
+                sum +
+                (item['payment_status'] == 'paid'
+                    ? ((item['final_total'] as num?)?.toDouble() ?? 0)
+                    : 0),
           );
           final average = reservations.isEmpty
               ? 0
