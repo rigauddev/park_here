@@ -1,4 +1,32 @@
-from pydantic import BaseModel, EmailStr
+import re
+
+from pydantic import BaseModel, EmailStr, field_validator
+
+
+def _digits(value: str, label: str, lengths: set[int]) -> str:
+    value = re.sub(r'\D', '', value or '')
+    if len(value) not in lengths or len(set(value)) == 1:
+        raise ValueError(f'{label} invalido')
+    return value
+
+
+def _phone(value: str | None) -> str | None:
+    if value is None:
+        return value
+    value = re.sub(r'\D', '', value)
+    if value.startswith('55') and len(value) in {12, 13}:
+        value = value[2:]
+    if len(value) not in {10, 11} or (len(value) == 11 and value[2] != '9'):
+        raise ValueError('Telefone brasileiro invalido')
+    return value
+
+
+def _cpf(value: str) -> str:
+    return _digits(value, 'CPF', {11})
+
+
+def _cnpj(value: str) -> str:
+    return _digits(value, 'CNPJ', {14})
 
 class RegisterParkingSchema(BaseModel):
     tenant_name: str
@@ -8,6 +36,9 @@ class RegisterParkingSchema(BaseModel):
     phone: str
     email: EmailStr
     password: str
+
+    _validate_cnpj = field_validator('cnpj')(_cnpj)
+    _validate_phone = field_validator('phone')(_phone)
 
 class CreateUserRequest(BaseModel):
     name: str
@@ -26,6 +57,9 @@ class CustomerSignupRequest(BaseModel):
     cpf: str
     phone: str
 
+    _validate_cpf = field_validator('cpf')(_cpf)
+    _validate_phone = field_validator('phone')(_phone)
+
 
 class PartnerSignupRequest(BaseModel):
     service_type: str
@@ -41,6 +75,9 @@ class PartnerSignupRequest(BaseModel):
     instagram: str | None = None
     website: str | None = None
     social_links: str | None = None
+
+    _validate_cnpj = field_validator('cnpj')(_cnpj)
+    _validate_phone = field_validator('phone')(_phone)
     
 class LoginRequest(BaseModel):
     email: str

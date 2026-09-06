@@ -53,8 +53,10 @@ class PreCheckinReservationRequest(BaseModel):
         value = re.sub(r"\D", "", value)
         if len(value) in {12, 13} and value.startswith("55"):
             value = value[2:]
-        if len(value) not in {10, 11}:
+        if len(value) not in {10, 11} or value[:2] == '00':
             raise ValueError("Informe telefone com DDD")
+        if len(value) == 11 and value[2] != '9':
+            raise ValueError("Celular deve seguir o formato brasileiro")
         return value
 
 

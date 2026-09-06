@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/api_service.dart';
@@ -820,6 +821,24 @@ class _FreeSlotReservationDialogState
                 decoration: const InputDecoration(
                   labelText: 'Telefone do proprietário com DDD',
                   prefixIcon: Icon(Icons.phone),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final phone = ownerPhoneController.text.replaceAll(
+                      RegExp(r'\D'),
+                      '',
+                    );
+                    if (phone.length < 10) return;
+                    final uri = Uri.parse(
+                      'https://wa.me/55$phone?text=${Uri.encodeComponent('Baixe o app ParkHere para acompanhar sua reserva: https://parkhere.app/download')}',
+                    );
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  },
+                  icon: const Icon(Icons.share),
+                  label: const Text('Enviar link do app pelo WhatsApp'),
                 ),
               ),
               SwitchListTile(
