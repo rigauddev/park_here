@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/services/location_service.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/checkin_page.dart';
@@ -175,6 +176,18 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     setState(() => _loading = true);
     try {
       await widget.onRouteSelected?.call();
+      final destination =
+          '${widget.preCheckin.parking.lat},${widget.preCheckin.parking.lng}';
+      final uri = switch (appName) {
+        'Waze' => Uri.parse('https://waze.com/ul?ll=$destination&navigate=yes'),
+        'OpenStreetMap' => Uri.parse(
+          'https://www.openstreetmap.org/directions?to=$destination',
+        ),
+        _ => Uri.parse(
+          'https://www.google.com/maps/dir/?api=1&destination=$destination',
+        ),
+      };
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
