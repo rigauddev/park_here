@@ -376,9 +376,11 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       price:
                           'R\$ ${parking.pricing.dailyPrice.toStringAsFixed(2)}',
                       badge: 'Dia completo',
-                      onTap: () =>
-                          ref.read(selectedPlanProvider.notifier).state =
-                              PlanType.daily,
+                      onTap: () {
+                        ref.read(selectedDailyDaysProvider.notifier).state = 1;
+                        ref.read(selectedPlanProvider.notifier).state =
+                            PlanType.daily;
+                      },
                     ),
                     const SizedBox(height: 10),
                     _PlanChoiceCard(
@@ -403,6 +405,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             // ✅ ETAPA 2 — Detalhes do Plano
             // ===============================
 
+            final dailyDays = ref.watch(selectedDailyDaysProvider);
             double total = 0;
 
             switch (plan) {
@@ -410,7 +413,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                 total = parking.pricing.firstHourPrice;
                 break;
               case PlanType.daily:
-                total = parking.pricing.dailyPrice;
+                total = parking.pricing.dailyPrice * dailyDays;
                 break;
               case PlanType.monthly:
                 total = parking.pricing.monthlyPrice;
@@ -488,7 +491,33 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                     ),
 
                   if (plan == PlanType.daily)
-                    Text("📅 Diária: R\$ ${parking.pricing.dailyPrice}"),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "📅 Diária: R\$ ${parking.pricing.dailyPrice} por dia",
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          initialValue: dailyDays,
+                          decoration: const InputDecoration(
+                            labelText: 'Quantidade de diárias / Number of days',
+                          ),
+                          items: [
+                            for (var day = 1; day <= 30; day++)
+                              DropdownMenuItem(value: day, child: Text('$day')),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              ref
+                                      .read(selectedDailyDaysProvider.notifier)
+                                      .state =
+                                  value;
+                            }
+                          },
+                        ),
+                      ],
+                    ),
 
                   if (plan == PlanType.monthly)
                     Text("📆 Mensal: R\$ ${parking.pricing.monthlyPrice}"),
@@ -579,12 +608,13 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           plan: plan,
                           selected: selected,
                           total: total,
+                          dailyDays: dailyDays,
                           userLocationLat: position.latitude,
                           userLocationLng: position.longitude,
                         );
                       },
                       child: const Text(
-                        "Reservar e bloquear vaga",
+                        "Iniciar rota",
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -637,8 +667,23 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             return _normalizeSearch(p.name).contains(query);
           }).toList();
 
-          // ✅ ordenar por melhor avaliado
-          filteredParkings.sort((a, b) => b.rating.compareTo(a.rating));
+          filteredParkings.sort((a, b) {
+            if (userLocation != null) {
+              final distance = const Distance();
+              final aDistance = distance.as(
+                LengthUnit.Meter,
+                userLocation!,
+                LatLng(a.lat, a.lng),
+              );
+              final bDistance = distance.as(
+                LengthUnit.Meter,
+                userLocation!,
+                LatLng(b.lat, b.lng),
+              );
+              return aDistance.compareTo(bDistance);
+            }
+            return b.rating.compareTo(a.rating);
+          });
           final selectedCityCenter = _cityCenterFor(selectedCity);
           final showSelectedCityMarker =
               selectedCityCenter != null && filteredParkings.isEmpty;
@@ -1034,10 +1079,13 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required PlanType plan,
     required SelectedServices selected,
     required double total,
+    required int dailyDays,
     required double userLocationLat,
     required double userLocationLng,
   }) async {
     final areaPreference = ref.read(selectedAreaPreferenceProvider);
+    await ref.read(accountProvider.notifier).syncVehicles();
+    if (!mounted) return;
     final account = ref.read(accountProvider);
     final activeVehicle = account.activeVehicle;
     if (activeVehicle == null) {
@@ -1119,7 +1167,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                     : 'any',
                 'area_preference': areaPreference.name,
                 'pricing_plan': plan.name,
-                'duration_hours': 1,
+                'duration_hours': plan == PlanType.daily ? dailyDays * 24 : 1,
                 'service_codes': [
                   if (selected.carWash) 'car_wash',
                   if (selected.tourGuide) 'tour_guide',

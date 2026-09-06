@@ -153,6 +153,41 @@ class AccountNotifier extends StateNotifier<AccountState> {
       vehicles: vehicles,
       walletMethods: walletMethods,
     );
+    await syncVehicles();
+  }
+
+  Future<void> syncVehicles() async {
+    final token = (await _storage.getTokens())['access'];
+    if (token == null || token.isEmpty) return;
+    try {
+      final remote = await _api.getAuthorized(
+        '/customer-assets/vehicles',
+        token,
+      );
+      if (remote.isNotEmpty) {
+        state = state.copyWith(
+          vehicles: remote
+              .map((item) => _vehicleFromJson(item as Map<String, dynamic>))
+              .toList(),
+        );
+        await _persistVehicles();
+        return;
+      }
+      for (final vehicle in state.vehicles) {
+        await _api.postAuthorized('/customer-assets/vehicles', {
+          'nickname': vehicle.nickname,
+          'plate': vehicle.plate,
+          'brand': vehicle.brand,
+          'model': vehicle.model,
+          'color': vehicle.color,
+          'vehicle_document': vehicle.documentFileName ?? 'document.pdf',
+          'ownership_type': vehicle.ownershipType.name,
+          'is_active': vehicle.isActive,
+        }, token);
+      }
+    } catch (_) {
+      // Offline mode keeps the local account available.
+    }
   }
 
   Future<void> saveDriverDocument(DriverDocumentModel document) async {

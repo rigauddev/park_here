@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../core/services/location_service.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
-import '../../checkin_checkout/pages/checkin_page.dart';
 
 class RoutePreviewPage extends StatefulWidget {
   final PreCheckinModel preCheckin;
@@ -62,113 +59,14 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
             ),
 
             const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF169FC4),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                ),
-                onPressed: _loading ? null : _validateAndGoToCheckin,
-                child: _loading
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        "Fazer check-in",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          CheckinPage(preCheckin: widget.preCheckin),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.lock_clock),
-                label: const Text("Check-in antecipado e pagamento"),
-              ),
+            const Text(
+              'O check-in só pode ser realizado no estacionamento, pela tela de reservas.',
+              textAlign: TextAlign.center,
             ),
           ],
         ),
       ),
     );
-  }
-
-  Future<void> _validateAndGoToCheckin() async {
-    try {
-      setState(() => _loading = true);
-
-      final locationService = LocationService();
-
-      final userPosition = Position(
-        latitude: -12.9704,
-        longitude: -38.5124,
-        timestamp: DateTime.now(),
-        accuracy: 0,
-        altitude: 0,
-        heading: 0,
-        speed: 0,
-        speedAccuracy: 0,
-        altitudeAccuracy: 0,
-        headingAccuracy: 0,
-      );
-
-      final latitude = widget.preCheckin.parking.lat;
-      final longitude = widget.preCheckin.parking.lng;
-
-      final distance = locationService.calculateDistance(
-        startLat: userPosition.latitude,
-        startLng: userPosition.longitude,
-        endLat: latitude,
-        endLng: longitude,
-      );
-
-      const allowedRadius = 30.0;
-
-      if (distance > allowedRadius) {
-        throw CheckinCheckoutError(
-          "Você precisa estar no estacionamento para realizar o check-in.\nDistância atual: ${distance.toStringAsFixed(1)}m",
-        );
-      }
-
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CheckinPage(preCheckin: widget.preCheckin),
-        ),
-      );
-    } catch (e) {
-      _showError(
-        e is CheckinCheckoutError ? e.message : "Erro ao validar localização.",
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
-    }
   }
 
   Future<void> _selectRoute(String appName) async {
