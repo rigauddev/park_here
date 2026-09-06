@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/services.dart';
 
 import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
@@ -176,6 +178,39 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 ),
               const SizedBox(height: 18),
             ],
+
+            if ((_selectedMethod ??
+                    (activeMethod == null
+                        ? null
+                        : _mapMethod(activeMethod.type))) ==
+                PaymentMethod.pix)
+              Card(
+                color: const Color(0xFFEAFBFF),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      const Text('QR Code Pix / Pix QR Code'),
+                      QrImageView(
+                        data:
+                            'parkhere://pix/${widget.reservationId ?? widget.amount}',
+                        size: 150,
+                      ),
+                      const Text('Validade: 15:00 / Valid for 15:00'),
+                      TextButton.icon(
+                        onPressed: () => Clipboard.setData(
+                          ClipboardData(
+                            text:
+                                'parkhere://pix/${widget.reservationId ?? widget.amount}',
+                          ),
+                        ),
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Copiar código / Copy code'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             Text(
               widget.payNow
