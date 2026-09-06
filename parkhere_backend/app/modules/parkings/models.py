@@ -14,7 +14,7 @@ class Parking(BaseModel):
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
     rating = Column(Float, default=5.0)
-    arrival_tolerance_minutes = Column(Integer, nullable=False, default=15)
+    arrival_tolerance_minutes = Column(Integer, nullable=False, default=5)
     total_spots = Column(Integer, nullable=False, default=0)
     available_spots = Column(Integer, nullable=False, default=0)
     covered_spots = Column(Integer, nullable=False, default=0)

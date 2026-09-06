@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.modules.auth.router import router as auth_router
 from app.modules.customers.router import router as customers_router
+from app.modules.customer_assets.router import router as customer_assets_router
 from app.modules.parkings.router import router as parkings_router
 from app.modules.partners.router import router as partners_router
 from app.modules.payments.router import router as payments_router
@@ -24,6 +25,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(customers_router)
+app.include_router(customer_assets_router)
 app.include_router(user_router)
 app.include_router(parkings_router)
 app.include_router(partners_router)

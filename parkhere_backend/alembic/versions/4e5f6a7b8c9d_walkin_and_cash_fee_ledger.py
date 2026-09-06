@@ -16,7 +16,7 @@ def base_columns():
 def upgrade():
     op.add_column("reservations", sa.Column("walk_in_plate", sa.String(7)))
     op.add_column("reservations", sa.Column("walk_in_phone", sa.String(20)))
-    op.add_column("parkings", sa.Column("arrival_tolerance_minutes", sa.Integer(), nullable=False, server_default="15"))
+    op.add_column("parkings", sa.Column("arrival_tolerance_minutes", sa.Integer(), nullable=False, server_default="5"))
     op.add_column("payment_transactions", sa.Column("cash_received", sa.Numeric(12, 2)))
     op.add_column("payment_transactions", sa.Column("withheld_fee_amount", sa.Numeric(12, 2), nullable=False, server_default="0"))
     op.create_table("partner_fee_debts", *base_columns(),

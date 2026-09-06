@@ -38,19 +38,6 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
         title: const Text('Dashboard do estacionamento'),
         actions: [
           IconButton(
-            tooltip: 'Período',
-            icon: const Icon(Icons.date_range),
-            onPressed: () async {
-              final range = await showDateRangePicker(
-                context: context,
-                firstDate: DateTime(2024),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-                initialDateRange: _period,
-              );
-              if (range != null) setState(() => _period = range);
-            },
-          ),
-          IconButton(
             onPressed: () => setState(() => _future = _load()),
             icon: const Icon(Icons.refresh),
           ),
@@ -59,6 +46,7 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
         builder: (context, snapshot) {
+          final isPt = Localizations.localeOf(context).languageCode != 'en';
           if (!snapshot.hasData) {
             if (snapshot.hasError) {
               return Center(child: Text('Erro: ${snapshot.error}'));
@@ -83,18 +71,43 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: _plan,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo de reserva / vaga',
-                ),
-                items: ['Todos', 'hourly', 'daily', 'weekly', 'monthly']
-                    .map(
-                      (value) =>
-                          DropdownMenuItem(value: value, child: Text(value)),
-                    )
-                    .toList(),
-                onChanged: (value) => setState(() => _plan = value ?? 'Todos'),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  SizedBox(
+                    width: 240,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _plan,
+                      decoration: InputDecoration(
+                        labelText: isPt
+                            ? 'Tipo de reserva / vaga'
+                            : 'Reservation / spot type',
+                      ),
+                      items: ['Todos', 'hourly', 'daily', 'weekly', 'monthly']
+                          .map((value) => DropdownMenuItem(
+                              value: value, child: Text(value)))
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _plan = value ?? 'Todos'),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final range = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2024),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                        initialDateRange: _period,
+                      );
+                      if (range != null) setState(() => _period = range);
+                    },
+                    icon: const Icon(Icons.date_range),
+                    label: Text(_period == null
+                        ? (isPt ? 'Período' : 'Period')
+                        : '${_period!.start.day}/${_period!.start.month} – ${_period!.end.day}/${_period!.end.month}'),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -102,26 +115,26 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
                 runSpacing: 12,
                 children: [
                   _MetricCard(
-                    'Reservas',
+                    isPt ? 'Reservas' : 'Reservations',
                     '${reservations.length}',
                     Icons.event_available,
                   ),
                   _MetricCard(
-                    'Recebido no período',
+                    isPt ? 'Recebido no período' : 'Received in period',
                     "R\$ ${received.toStringAsFixed(2)}",
                     Icons.payments,
                   ),
                   _MetricCard(
-                    'Ticket médio',
+                    isPt ? 'Ticket médio' : 'Average ticket',
                     "R\$ ${average.toStringAsFixed(2)}",
                     Icons.analytics,
                   ),
-                  _MetricCard('Concluídas', '$completed', Icons.check_circle),
+                  _MetricCard(isPt ? 'Concluídas' : 'Completed', '$completed', Icons.check_circle),
                 ],
               ),
               const SizedBox(height: 20),
               Text(
-                'Reservas recentes',
+                isPt ? 'Reservas recentes' : 'Recent reservations',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),

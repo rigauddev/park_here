@@ -22,7 +22,7 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
     required int routeMinutes,
   }) async {
     final now = DateTime.now();
-    final expires = now.add(Duration(minutes: routeMinutes));
+    final expires = now.add(Duration(minutes: routeMinutes + 5));
 
     final pre = PreReservationModel(
       id: now.millisecondsSinceEpoch.toString(),
@@ -35,7 +35,7 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
 
     state = AsyncData(pre);
 
-    _startExpirationTimer(routeMinutes);
+    _startExpirationTimer(routeMinutes + 5);
   }
 
   void _startExpirationTimer(int minutes) {

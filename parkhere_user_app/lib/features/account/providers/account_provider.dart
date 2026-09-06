@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/services/api_service.dart';
+import '../../../core/services/local_storage_service.dart';
 import '../models/account_models.dart';
 
 final accountProvider = StateNotifierProvider<AccountNotifier, AccountState>(
@@ -56,6 +58,9 @@ class AccountNotifier extends StateNotifier<AccountState> {
   AccountNotifier() : super(const AccountState()) {
     _load();
   }
+
+  final _api = ApiService();
+  final _storage = LocalStorageService();
 
   static const _setupDoneKey = 'account_setup_done';
   static const _walletDoneKey = 'wallet_setup_done';
@@ -165,6 +170,23 @@ class AccountNotifier extends StateNotifier<AccountState> {
 
     state = state.copyWith(vehicles: updated);
     await _persistVehicles();
+    final token = (await _storage.getTokens())['access'];
+    if (token != null && token.isNotEmpty) {
+      try {
+        await _api.postAuthorized('/customer-assets/vehicles', {
+          'nickname': vehicle.nickname,
+          'plate': vehicle.plate,
+          'brand': vehicle.brand,
+          'model': vehicle.model,
+          'color': vehicle.color,
+          'vehicle_document': vehicle.documentFileName,
+          'ownership_type': vehicle.ownershipType.name,
+          'is_active': vehicle.isActive,
+        }, token);
+      } catch (_) {
+        // Keep the local cache available when the API is temporarily offline.
+      }
+    }
     await _persistSetupIfComplete();
   }
 
