@@ -14,7 +14,7 @@ class ApiConstants {
       return 'http://localhost:8000';
     }
 
-    final envUrl = dotenv.env['API_URL'];
+    final envUrl = dotenv.isInitialized ? dotenv.env['API_URL'] : null;
     if (envUrl != null && envUrl.isNotEmpty) {
       if (defaultTargetPlatform == TargetPlatform.android &&
           _isLoopbackUrl(envUrl)) {
