@@ -6,6 +6,9 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../account/pages/account_setup_page.dart';
+import '../../account/pages/vehicles_page.dart';
+import '../../account/pages/wallet_page.dart';
+import '../../reservation/pages/reservation_page.dart';
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
 import 'login_page.dart';
@@ -29,6 +32,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final auth = ref.watch(authProvider);
     final email = auth.userEmail ?? 'cliente@parkhere.test';
     final isPartner = auth.accountType == AuthAccountType.partner;
+    final isCustomer = auth.accountType == AuthAccountType.customer;
     final isMobileLayout = MediaQuery.sizeOf(context).width < 900;
 
     return Scaffold(
@@ -83,6 +87,66 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             title: 'Dados da conta',
             rows: [('E-mail', email), ('Telefone', phone)],
           ),
+          if (isCustomer) ...[
+            const SizedBox(height: 14),
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.account_balance_wallet_outlined),
+                    title: const Text('Minha carteira'),
+                    subtitle: const Text('Cartões, Pix e forma de pagamento'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const WalletPage()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.calendar_month_outlined),
+                    title: const Text('Minhas reservas'),
+                    subtitle: const Text('Reservas, serviços e pré-reservas'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ReservationPage()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.local_car_wash_outlined),
+                    title: const Text('Serviços'),
+                    subtitle: const Text('Filtros por estacionamento e serviços'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ReservationPage()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.directions_car_filled_outlined),
+                    title: const Text('Veículos'),
+                    subtitle: const Text('Gerenciar placa, modelo e veiculo ativo'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const VehiclesPage()),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Card(
             child: Column(

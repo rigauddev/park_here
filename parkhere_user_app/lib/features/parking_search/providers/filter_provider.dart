@@ -34,3 +34,20 @@ class ParkingFilter {
 }
 
 final filterProvider = StateProvider<ParkingFilter>((ref) => ParkingFilter());
+
+final selectedAreaPreferenceProvider = StateProvider<AreaPreference>((ref) => AreaPreference.any);
+
+enum AreaPreference { any, covered, uncovered }
+
+extension AreaPreferenceLabel on AreaPreference {
+  String get label {
+    switch (this) {
+      case AreaPreference.any:
+        return 'Sem preferência';
+      case AreaPreference.covered:
+        return 'Coberta';
+      case AreaPreference.uncovered:
+        return 'Descoberta';
+    }
+  }
+}

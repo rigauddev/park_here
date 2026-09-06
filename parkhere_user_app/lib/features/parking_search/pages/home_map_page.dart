@@ -30,10 +30,27 @@ class HomeMapPage extends ConsumerStatefulWidget {
 class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   static const _valencaCenter = LatLng(-13.3703, -39.0731);
   static const _cityCenters = {
-    'valenca': LatLng(-13.3703, -39.0731),
+    'valença': LatLng(-13.3703, -39.0731),
     'salvador': LatLng(-12.9777, -38.5016),
-    'sao paulo': LatLng(-23.5505, -46.6333),
+    'são paulo': LatLng(-23.5505, -46.6333),
     'curitiba': LatLng(-25.4284, -49.2733),
+    'rio de janeiro': LatLng(-22.9068, -43.1729),
+    'belo horizonte': LatLng(-19.9167, -43.9345),
+    'porto alegre': LatLng(-30.0346, -51.2177),
+    'recife': LatLng(-8.0476, -34.8770),
+    'fortaleza': LatLng(-3.7319, -38.5267),
+    'manaus': LatLng(-3.1190, -60.0217),
+    'brasilia': LatLng(-15.7942, -47.8828),
+    'goiânia': LatLng(-16.6864, -49.2643),
+    'campinas': LatLng(-22.9056, -47.0616),
+    'natal': LatLng(-5.7945, -35.2110),
+    'florianópolis': LatLng(-27.5973, -48.5480),
+    'joão pessoa': LatLng(-7.1195, -34.8450),
+    'aracaju': LatLng(-10.9472, -37.0748),
+    'maceió': LatLng(-9.6659, -35.7353),
+    'teresina': LatLng(-5.0892, -42.8090),
+    'palmas': LatLng(-10.1679, -48.3325),
+    'belem': LatLng(-1.4558, -48.4902),
   };
 
   final mapController = MapController();
@@ -120,96 +137,100 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     return null;
   }
 
+  List<String> _normalizedCityList(List<ParkingModel> currentParkings) {
+    final citiesByKey = <String, String>{};
+
+    for (final city in [
+      ...currentParkings.map((parking) => parking.city),
+      ..._cityCenters.keys,
+      'Valença',
+      'Salvador',
+      'São Paulo',
+      'Curitiba',
+    ]) {
+      if (city.trim().isEmpty) continue;
+      final key = _normalizeSearch(city);
+      citiesByKey.putIfAbsent(key, () => city.trim());
+    }
+
+    final cities = citiesByKey.values.toList();
+    cities.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return cities;
+  }
+
   Future<void> _openCitySelector(List<ParkingModel> currentParkings) async {
     final currentCity = ref.read(selectedCityProvider);
     final controller = TextEditingController(text: currentCity);
 
-    final selected = await showModalBottomSheet<String>(
+    final selected = await showDialog<String>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (context) {
-        final cities = <String>{
-          ...currentParkings.map((parking) => parking.city),
-          'Valença',
-          'Salvador',
-          'São Paulo',
-          'Curitiba',
-        }.toList()..sort();
+        final cities = _normalizedCityList(currentParkings);
 
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 18,
-            bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 48,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: 18),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade400,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              Text(
-                'Selecionar cidade',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                textInputAction: TextInputAction.search,
-                decoration: const InputDecoration(
-                  labelText: 'Cidade',
-                  prefixIcon: Icon(Icons.location_city_outlined),
-                ),
-                onSubmitted: (value) => Navigator.pop(context, value.trim()),
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  for (final city in cities)
-                    ActionChip(
-                      avatar: const Icon(Icons.place_outlined, size: 18),
-                      label: Text(city),
-                      onPressed: () => Navigator.pop(context, city),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.pop(context, ''),
-                      icon: const Icon(Icons.my_location_outlined),
-                      label: const Text('Usar localização'),
-                    ),
+                  Text(
+                    'Selecionar cidade',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () =>
-                          Navigator.pop(context, controller.text.trim()),
-                      icon: const Icon(Icons.search),
-                      label: const Text('Buscar'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
+                      labelText: 'Cidade',
+                      prefixIcon: Icon(Icons.location_city_outlined),
                     ),
+                    onSubmitted: (value) => Navigator.pop(context, value.trim()),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (final city in cities)
+                        ActionChip(
+                          avatar: const Icon(Icons.place_outlined, size: 18),
+                          label: Text(city),
+                          onPressed: () => Navigator.pop(context, city),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => Navigator.pop(context, ''),
+                          icon: const Icon(Icons.my_location_outlined),
+                          label: const Text('Usar localização'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () =>
+                              Navigator.pop(context, controller.text.trim()),
+                          icon: const Icon(Icons.search),
+                          label: const Text('Buscar'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         );
       },
@@ -264,6 +285,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
           builder: (context, ref, child) {
             final plan = ref.watch(selectedPlanProvider);
             final selected = ref.watch(selectedServicesProvider);
+            final areaPreference = ref.watch(selectedAreaPreferenceProvider);
 
             // ===============================
             // ✅ ETAPA 1 — Escolher Plano
@@ -274,7 +296,6 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Barra Uber
                     Center(
                       child: Container(
                         width: 50,
@@ -297,6 +318,41 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                     ),
 
                     const SizedBox(height: 20),
+
+                    const Text(
+                      "Escolha a área da vaga:",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<AreaPreference>(
+                      segments: const [
+                        ButtonSegment(
+                          value: AreaPreference.any,
+                          label: Text('Sem preferência'),
+                          icon: Icon(Icons.pending_outlined),
+                        ),
+                        ButtonSegment(
+                          value: AreaPreference.covered,
+                          label: Text('Coberta'),
+                          icon: Icon(Icons.roofing_outlined),
+                        ),
+                        ButtonSegment(
+                          value: AreaPreference.uncovered,
+                          label: Text('Descoberta'),
+                          icon: Icon(Icons.sunny_snowing),
+                        ),
+                      ],
+                      selected: {areaPreference},
+                      onSelectionChanged: (value) {
+                        ref.read(selectedAreaPreferenceProvider.notifier).state =
+                            value.first;
+                      },
+                    ),
+
+                    const SizedBox(height: 18),
 
                     const Text(
                       "Escolha seu plano:",
@@ -583,12 +639,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
           final query = _normalizeSearch(searchQuery);
           final filteredParkings = parkings.where((p) {
-            // if (filter.covered && !p.hasCoveredArea) return false;
-            // if (filter.vip && !p.hasVipSpots) return false;
-            if (filter.carWash && !p.hasCarWash) return false;
-            if (filter.tourGuide && !p.hasTourGuide) return false;
-            if (filter.transport && !p.hasTransportService) return false;
-
+      if (filter.covered && !p.hasCoveredArea) return false;
+      if (filter.vip && !p.hasVipSpots) return false;
             if (query.isEmpty) return true;
             return _normalizeSearch(p.name).contains(query);
           }).toList();
@@ -976,6 +1028,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required double userLocationLat,
     required double userLocationLng,
   }) async {
+    final areaPreference = ref.read(selectedAreaPreferenceProvider);
     final account = ref.read(accountProvider);
     final activeVehicle = account.activeVehicle;
     if (activeVehicle == null) {
@@ -1039,7 +1092,12 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
           "route_minutes": minutes,
           "estimated_total": total,
           "vehicle_id": activeVehicle.id,
-          "spot_type": "uncovered",
+          "spot_type": areaPreference == AreaPreference.covered
+              ? "covered"
+              : areaPreference == AreaPreference.uncovered
+                  ? "uncovered"
+                  : "any",
+          "area_preference": areaPreference.name,
           "pricing_plan": plan.name,
           "duration_hours": 1,
           "service_codes": [

@@ -4,24 +4,30 @@ class LocationService {
   Future<Position> getCurrentLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      throw Exception("GPS desativado.");
+      throw Exception('GPS desativado. Ative a localização do dispositivo.');
     }
 
     LocationPermission permission = await Geolocator.checkPermission();
-
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        throw Exception("Permissão negada.");
+        throw Exception('Permissão de localização negada.');
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      throw Exception("Permissão negada permanentemente.");
+      throw Exception('Permissão de localização negada permanentemente.');
     }
 
-    return await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    if (permission == LocationPermission.unableToDetermine) {
+      throw Exception('Não foi possível confirmar a permissão de localização.');
+    }
+
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 15),
+      ),
     );
   }
 
