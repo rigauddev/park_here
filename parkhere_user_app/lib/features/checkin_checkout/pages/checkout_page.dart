@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../payments/pages/payment_page.dart';
 import '../../reservation/models/reservation_model.dart';
 import '../../reservation/pages/incident_dailog_page.dart';
 import '../providers/checkout_privider.dart';
+import '../../../core/services/api_service.dart';
+import '../../auth/providers/auth_provider.dart';
 // import '../services/checkout_service.dart';
 import 'checkout_qrcode_page.dart';
 
@@ -18,6 +21,66 @@ class CheckoutPage extends ConsumerStatefulWidget {
 }
 
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
+  final _picker = ImagePicker();
+  final Map<String, XFile?> _photos = {
+    'front': null,
+    'rear': null,
+    'left': null,
+    'right': null,
+  };
+  bool _uploadingPhotos = false;
+
+  Future<void> _capturePhoto(String kind) async {
+    final photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
+    if (photo == null) return;
+    setState(() => _photos[kind] = photo);
+  }
+
+  Future<bool> _uploadCheckoutPhotos() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null || widget.reservation.id.isEmpty) return true;
+    if (_photos.values.any((photo) => photo == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Capture as quatro fotos do checkout.')),
+      );
+      return false;
+    }
+    setState(() => _uploadingPhotos = true);
+    try {
+      for (final entry in _photos.entries) {
+        final photo = entry.value!;
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/${widget.reservation.id}/photos?kind=${entry.key}',
+          token,
+          photo.name,
+          await photo.readAsBytes(),
+        );
+      }
+      return true;
+    } catch (error) {
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Fotos não enviadas'),
+            content: Text('$error', textAlign: TextAlign.center),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _uploadingPhotos = false);
+    }
+  }
   // void initState() {
   //   super.initState();
 
@@ -149,6 +212,48 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
 
             const SizedBox(height: 20),
 
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Fotos do checkout',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const Text(
+                      'As fotos substituem as do check-in e ficam armazenadas por 7 dias.',
+                    ),
+                    for (final entry in {
+                      'front': 'Frente',
+                      'rear': 'Traseira',
+                      'left': 'Lateral esquerda',
+                      'right': 'Lateral direita',
+                    }.entries)
+                      ListTile(
+                        dense: true,
+                        title: Text(entry.value),
+                        leading: Icon(
+                          _photos[entry.key] == null
+                              ? Icons.camera_alt
+                              : Icons.check_circle,
+                          color: _photos[entry.key] == null
+                              ? null
+                              : Colors.green,
+                        ),
+                        trailing: IconButton(
+                          onPressed: _uploadingPhotos
+                              ? null
+                              : () => _capturePhoto(entry.key),
+                          icon: const Icon(Icons.camera_alt_outlined),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+
             /// 🔄 Loading
             if (state.status == CheckoutStatus.validating)
               const CircularProgressIndicator(),
@@ -176,10 +281,18 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: state.status == CheckoutStatus.validating
+                onPressed:
+                    state.status == CheckoutStatus.validating ||
+                        _uploadingPhotos
                     ? null
-                    : _confirmVehicleCheck,
-                child: const Text("Finalizar Checkout"),
+                    : () async {
+                        if (await _uploadCheckoutPhotos()) {
+                          _confirmVehicleCheck();
+                        }
+                      },
+                child: Text(
+                  _uploadingPhotos ? 'Enviando fotos...' : 'Finalizar Checkout',
+                ),
               ),
             ),
           ],

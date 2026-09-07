@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../../features/partner_management/pages/parking_dashboard_page.dart';
 import '../../features/partner_management/pages/guide_affiliations_page.dart';
 import '../../features/partner_management/pages/guide_dashboard_page.dart';
+import '../../features/partner_management/pages/guide_services_page.dart';
 import '../../features/partner_management/pages/admin_management_page.dart';
 
 enum _MainArea {
@@ -241,6 +242,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         if (isPartner) return const PartnerParkingMapPage();
         return const HomeMapPage();
       case _MainArea.services:
+        if (isGuide) return const GuideServicesPage();
         if (isPartner) return const PartnerManagementHomePage();
         return _ServicesHubPage(
           key: ValueKey(_servicesInitialIndex),
@@ -441,6 +443,12 @@ class _WebMenu extends ConsumerWidget {
                     isPartner ? 'Mapa de vagas' : 'Mapa',
                     _MainArea.map,
                   ),
+                if (isGuide)
+                  _MenuItem(
+                    Icons.tour_outlined,
+                    'Meus serviços',
+                    _MainArea.services,
+                  ),
                 if (isPartner && !isGuide)
                   _MenuItem(
                     Icons.confirmation_number_outlined,
@@ -503,12 +511,11 @@ class _WebMenu extends ConsumerWidget {
                     'Veículos',
                     _MainArea.vehicles,
                   ),
-                if (!isPartner)
-                  _MenuItem(
-                    Icons.account_balance_wallet_outlined,
-                    'Minha carteira',
-                    _MainArea.wallet,
-                  ),
+                _MenuItem(
+                  Icons.account_balance_wallet_outlined,
+                  isPartner ? 'Conta de repasse' : 'Minha carteira',
+                  _MainArea.wallet,
+                ),
                 if (!isPartner)
                   _MenuItem(
                     Icons.confirmation_number_outlined,
@@ -602,6 +609,12 @@ class _MobileDrawer extends StatelessWidget {
                 title: const Text('Estacionamentos'),
                 onTap: () => onSelected(_MainArea.map),
               ),
+            if (isGuide)
+              ListTile(
+                leading: const Icon(Icons.tour_outlined),
+                title: const Text('Meus serviços'),
+                onTap: () => onSelected(_MainArea.services),
+              ),
             if (isPartner && isPartnerOwner && !isGuide)
               ListTile(
                 leading: const Icon(Icons.lock_outline),
@@ -647,16 +660,17 @@ class _MobileDrawer extends StatelessWidget {
                     onTap: () => onSelected(_MainArea.vehicles),
                   ),
                   ListTile(
-                    leading: const Icon(Icons.account_balance_wallet_outlined),
-                    title: const Text('Minha carteira'),
-                    onTap: () => onSelected(_MainArea.wallet),
-                  ),
-                  ListTile(
                     leading: const Icon(Icons.confirmation_number_outlined),
                     title: const Text('Reservas'),
                     onTap: () => onSelected(_MainArea.reservations),
                   ),
                 ],
+                if (isPartner)
+                  ListTile(
+                    leading: const Icon(Icons.account_balance_wallet_outlined),
+                    title: const Text('Conta de repasse'),
+                    onTap: () => onSelected(_MainArea.wallet),
+                  ),
               ],
             ),
           ],

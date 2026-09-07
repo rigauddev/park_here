@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/account_models.dart';
 import '../providers/account_provider.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class WalletPage extends ConsumerStatefulWidget {
   const WalletPage({super.key});
@@ -32,20 +33,23 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(accountProvider);
-    final isPix = type == WalletMethodType.pix;
+    final isPartner = ref.watch(authProvider).isPartnerSession;
+    final isPix = isPartner || type == WalletMethodType.pix;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Carteira')),
+      appBar: AppBar(title: Text(isPartner ? 'Conta de repasse' : 'Carteira')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            'Formas de pagamento',
+            isPartner ? 'Recebimento das reservas' : 'Cartões para pagamento',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Salve seus cartões ou Pix. O CVV nunca fica armazenado e sera solicitado no pagamento.',
+          Text(
+            isPartner
+                ? 'Cadastre a chave Pix que receberá os repasses das reservas.'
+                : 'Cadastre cartões. O Pix é gerado pelo Mercado Pago no momento do pagamento.',
             style: TextStyle(color: AppTheme.textMuted),
           ),
           const SizedBox(height: 18),
@@ -68,27 +72,28 @@ class _WalletPageState extends ConsumerState<WalletPage> {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
-          SegmentedButton<WalletMethodType>(
-            segments: const [
-              ButtonSegment(
-                value: WalletMethodType.creditCard,
-                label: Text('Credito'),
-                icon: Icon(Icons.credit_card),
-              ),
-              ButtonSegment(
-                value: WalletMethodType.debitCard,
-                label: Text('Debito'),
-                icon: Icon(Icons.payment),
-              ),
-              ButtonSegment(
-                value: WalletMethodType.pix,
-                label: Text('Pix'),
-                icon: Icon(Icons.qr_code_2),
-              ),
-            ],
-            selected: {type},
-            onSelectionChanged: (value) => setState(() => type = value.first),
-          ),
+          if (!isPartner)
+            SegmentedButton<WalletMethodType>(
+              segments: const [
+                ButtonSegment(
+                  value: WalletMethodType.creditCard,
+                  label: Text('Credito'),
+                  icon: Icon(Icons.credit_card),
+                ),
+                ButtonSegment(
+                  value: WalletMethodType.debitCard,
+                  label: Text('Debito'),
+                  icon: Icon(Icons.payment),
+                ),
+                ButtonSegment(
+                  value: WalletMethodType.pix,
+                  label: Text('Pix'),
+                  icon: Icon(Icons.qr_code_2),
+                ),
+              ],
+              selected: {type},
+              onSelectionChanged: (value) => setState(() => type = value.first),
+            ),
           const SizedBox(height: 14),
           if (isPix)
             TextField(
@@ -142,7 +147,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   }
 
   Future<void> _addMethod() async {
-    final isPix = type == WalletMethodType.pix;
+    final isPix =
+        ref.read(authProvider).isPartnerSession || type == WalletMethodType.pix;
 
     if (isPix && pixController.text.trim().isEmpty) {
       _showError('Informe a chave Pix.');
@@ -171,7 +177,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
         .addWalletMethod(
           WalletMethodModel(
             id: DateTime.now().microsecondsSinceEpoch.toString(),
-            type: type,
+            type: isPix ? WalletMethodType.pix : type,
             label: label,
             holderName: isPix ? null : holderController.text.trim(),
             brand: brand,

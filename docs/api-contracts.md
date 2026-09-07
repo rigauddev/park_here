@@ -491,3 +491,15 @@ ocultar categorias com quantidade zero e enviar `spot_type` (`covered`, `uncover
 `vip`, `large`, `pickup`, `motorhome`, `bus` ou `any`) ao criar a pre-reserva.
 O campo `moto_home_spots` foi adicionado ao request de gestao e exige migration
 `e7f8a9b0c1d2_add_moto_home_spots`.
+
+## Carteira e fotos de inspeção — 07/09/2026
+
+Clientes cadastram somente cartões na carteira; pagamentos Pix geram o QR Code
+no Mercado Pago durante a reserva. Usuários parceiros cadastram apenas a chave
+Pix de recebimento na conta de repasse.
+
+O endpoint `POST /reservations/{reservation_id}/photos?kind=...` aceita fotos do
+check-in e checkout. O envio do checkout usa os mesmos tipos (`front`, `rear`,
+`left`, `right`) e substitui o arquivo anterior da reserva. Os arquivos ficam
+em armazenamento local temporário por sete dias e são removidos na próxima
+limpeza do endpoint.
