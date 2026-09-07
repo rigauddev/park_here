@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/services/api_service.dart';
 import '../models/parking_model.dart';
-import '../models/parking_pricing.dart';
 
 /// Provider global
 final selectedParkingProvider = StateProvider<ParkingModel?>((ref) => null);
@@ -41,11 +40,10 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
       if (normalizedCity != null && normalizedCity.isNotEmpty) {
         return const <ParkingModel>[];
       }
-      // Fallback local para continuar testando o app sem backend.
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Sem API, nao exibimos vagas inventadas.
+      return const <ParkingModel>[];
     }
-
-    return [
+    /* return [
       ParkingModel(
         id: "1",
         name: "Estacionamento Central",
@@ -98,7 +96,7 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
         tourGuidePrice: 100,
         transportPrice: 50,
       ),
-    ];
+    ]; */
 
     // Quando backend estiver pronto:
     /*

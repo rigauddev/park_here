@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.customer_assets.models import Vehicle
+from app.modules.reservations.models import Reservation
 from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/customer-assets", tags=["Customer assets"])
@@ -45,6 +46,20 @@ async def create_vehicle(
     db.add(vehicle)
     await db.commit()
     await db.refresh(vehicle)
+    # Vincula reservas operacionais feitas com placa/telefone antes do cadastro.
+    if current_user.phone:
+        pending = await db.scalars(
+            select(Reservation).where(
+                Reservation.walk_in_plate == vehicle.plate,
+                Reservation.walk_in_phone == current_user.phone,
+                Reservation.user_id.is_(None),
+                Reservation.status.in_(['pre_reserved', 'confirmed']),
+            )
+        )
+        for reservation in pending.all():
+            reservation.user_id = current_user.id
+            reservation.vehicle_id = vehicle.id
+        await db.commit()
     return _vehicle_payload(vehicle)
 
 
