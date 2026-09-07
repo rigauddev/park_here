@@ -297,6 +297,24 @@ O backend calcula e congela `guide_commission_amount` na reserva, conforme a
 comissão percentual ou fixa configurada pelo parceiro. O campo é uma comissão do
 estabelecimento para o guia e não altera o total cobrado do cliente.
 
+`GET /partners/guide/parkings` retorna `offer_terms` antes da solicitação de
+afiliação, com valores independentes para `daily`, `weekly`, `monthly` e
+`long_term`. O parceiro configura esses termos em
+`PUT /partners/parking-management/{parking_id}/guide-offer`. Na aprovação, os
+termos são copiados para a afiliação e ficam congelados para novas reservas.
+
+A equipe ParkHere configura a taxa da plataforma em `guide_commission` por
+`PUT /admin/platform-fees/guide_commission`. Essa porcentagem incide somente
+sobre a comissão bruta do guia. A reserva guarda `guide_commission_amount`,
+`guide_platform_fee_amount` e `guide_payout_amount`; esses campos aparecem
+apenas nas respostas de gestão do estacionamento e do guia, nunca na resposta
+do cliente.
+
+O ranking do guia está em `GET /partners/guide/dashboard` e combina quantidade
+de indicações, média das avaliações e total líquido a receber. O cliente pode
+avaliar uma indicação concluída uma única vez em
+`POST /partners/guide/reviews/{reservation_id}` com nota de 1 a 5.
+
 ## Cancelamento De Reserva
 
 `POST /reservations/{reservation_id}/cancel`

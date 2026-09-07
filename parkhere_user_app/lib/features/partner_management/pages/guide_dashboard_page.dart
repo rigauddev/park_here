@@ -15,6 +15,9 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
   final _api = ApiService();
   int _approved = 0;
   int _pending = 0;
+  int _indications = 0;
+  double _rating = 0;
+  double _payout = 0;
 
   @override
   void initState() {
@@ -26,10 +29,17 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
     final rows = await _api.getAuthorized('/partners/guide/parkings', token);
+    final dashboard = await _api.getAuthorizedMap(
+      '/partners/guide/dashboard',
+      token,
+    );
     if (!mounted) return;
     setState(() {
       _approved = rows.where((item) => item['status'] == 'approved').length;
       _pending = rows.where((item) => item['status'] == 'pending').length;
+      _indications = dashboard['indications'] as int? ?? 0;
+      _rating = (dashboard['rating'] as num?)?.toDouble() ?? 0;
+      _payout = (dashboard['total_payout'] as num?)?.toDouble() ?? 0;
     });
   }
 
@@ -64,6 +74,32 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _StatCard('Indicações', '$_indications', Icons.people),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _StatCard(
+                  'Nota',
+                  _rating.toStringAsFixed(1),
+                  Icons.star,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.payments),
+              title: const Text('Total a receber'),
+              subtitle: Text(
+                'R\$ ${_payout.toStringAsFixed(2)} após taxa da plataforma',
+              ),
+            ),
           ),
           const SizedBox(height: 18),
           const Card(

@@ -87,6 +87,8 @@ class ReservationResponse(BaseModel):
     platform_fee_amount: float
     guide_user_id: str | None = None
     guide_commission_amount: float = 0
+    guide_platform_fee_amount: float = 0
+    guide_payout_amount: float = 0
     final_total: float
     selected_services: list[ReservationServiceSnapshot]
     platform_fees: list[ReservationPlatformFeeSnapshot]

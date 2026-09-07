@@ -24,7 +24,7 @@ from app.modules.parkings.schemas import (
 )
 from app.modules.parkings.service import ParkingManagementService
 from app.modules.partners.models import PartnerProfile
-from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
@@ -77,8 +77,14 @@ class PartnerOperatorResponse(BaseModel):
 
 
 class GuideCommissionRequest(BaseModel):
-    commission_type: str
-    commission_value: float
+    commission_type: str = 'percentage'
+    commission_value: float = 0
+    terms: dict[str, dict[str, str | float]] | None = None
+
+
+class GuideReviewRequest(BaseModel):
+    rating: int
+    comment: str | None = None
 
 
 class GuideServiceRequest(BaseModel):
@@ -229,6 +235,8 @@ async def guide_parkings(
             'link_id': linked[parking.id].id if parking.id in linked else None,
             'commission_type': linked[parking.id].commission_type if parking.id in linked else None,
             'commission_value': float(linked[parking.id].commission_value) if parking.id in linked and linked[parking.id].commission_value else None,
+            'commission_terms': json.loads(linked[parking.id].commission_terms) if parking.id in linked and linked[parking.id].commission_terms else {},
+            'offer_terms': json.loads(parking.guide_commission_terms) if parking.guide_commission_terms else {},
         }
         for parking in parkings
     ]
@@ -252,6 +260,29 @@ async def request_guide_parking_link(
         db.add(existing)
         await db.commit()
     return {'parking_id': parking_id, 'status': existing.status}
+
+
+@router.put('/parking-management/{parking_id}/guide-offer')
+async def update_guide_offer(
+    parking_id: str,
+    data: GuideCommissionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.tenant_id == current_user.tenant_id))
+    if parking is None:
+        raise HTTPException(status_code=404, detail='Parking not found')
+    terms = data.terms or {'long_term': {'commission_type': data.commission_type, 'commission_value': data.commission_value}}
+    for period, term in terms.items():
+        if period not in {'daily', 'weekly', 'monthly', 'long_term'} or term.get('commission_type') not in {'percentage', 'fixed'}:
+            raise HTTPException(status_code=422, detail='Invalid commission offer')
+        value = float(term.get('commission_value', 0))
+        if value < 0 or (term.get('commission_type') == 'percentage' and value > 100):
+            raise HTTPException(status_code=422, detail='Invalid commission offer value')
+    parking.guide_commission_terms = json.dumps(terms)
+    await db.commit()
+    return {'parking_id': parking.id, 'offer_terms': terms}
 
 
 @router.get('/guide/services')
@@ -312,6 +343,15 @@ async def approve_guide_parking_link(
     link.status = 'approved'
     link.commission_type = data.commission_type
     link.commission_value = str(data.commission_value)
+    terms = data.terms or (json.loads(parking.guide_commission_terms) if parking.guide_commission_terms else {})
+    for period, term in terms.items():
+        if period not in {'daily', 'weekly', 'monthly', 'long_term'}:
+            raise HTTPException(status_code=422, detail='Invalid commission period')
+        if term.get('commission_type') not in {'percentage', 'fixed'} or float(term.get('commission_value', 0)) < 0:
+            raise HTTPException(status_code=422, detail='Invalid commission period value')
+        if term.get('commission_type') == 'percentage' and float(term.get('commission_value', 0)) > 100:
+            raise HTTPException(status_code=422, detail='Percentage commission cannot exceed 100')
+    link.commission_terms = json.dumps(terms) if terms else None
     await db.commit()
     return {
         'id': link.id,
@@ -319,6 +359,7 @@ async def approve_guide_parking_link(
         'status': link.status,
         'commission_type': link.commission_type,
         'commission_value': float(link.commission_value),
+        'commission_terms': terms,
     }
 
 
@@ -345,9 +386,45 @@ async def list_guide_requests(
             'status': link.status,
             'commission_type': link.commission_type,
             'commission_value': float(link.commission_value) if link.commission_value else None,
+            'commission_terms': json.loads(link.commission_terms) if link.commission_terms else {},
         }
         for link, guide, parking in result.all()
     ]
+
+
+@router.get('/guide/dashboard')
+async def guide_dashboard(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.TOUR_GUIDE:
+        raise HTTPException(status_code=403, detail='Guide account required')
+    indications = await db.scalar(select(func.count(Reservation.id)).where(Reservation.guide_user_id == current_user.id)) or 0
+    reviews = (await db.scalars(select(GuideReview).where(GuideReview.guide_user_id == current_user.id))).all()
+    average = round(sum(float(review.rating) for review in reviews) / len(reviews), 2) if reviews else 0
+    payout = await db.scalar(select(func.coalesce(func.sum(Reservation.guide_payout_amount), 0)).where(Reservation.guide_user_id == current_user.id)) or 0
+    return {'indications': indications, 'rating': average, 'review_count': len(reviews), 'total_payout': round(float(payout), 2)}
+
+
+@router.post('/guide/reviews/{reservation_id}')
+async def review_guide(
+    reservation_id: str,
+    data: GuideReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not 1 <= data.rating <= 5:
+        raise HTTPException(status_code=422, detail='Rating must be between 1 and 5')
+    reservation = await db.scalar(select(Reservation).where(Reservation.id == reservation_id, Reservation.user_id == current_user.id))
+    if reservation is None or reservation.guide_user_id is None or reservation.status not in {'checked_out', 'completed'}:
+        raise HTTPException(status_code=422, detail='Only completed guide reservations can be reviewed')
+    existing = await db.scalar(select(GuideReview).where(GuideReview.reservation_id == reservation_id))
+    if existing:
+        raise HTTPException(status_code=409, detail='Reservation already reviewed')
+    review = GuideReview(guide_user_id=reservation.guide_user_id, reservation_id=reservation.id, customer_user_id=current_user.id, rating=str(data.rating), comment=data.comment)
+    db.add(review)
+    await db.commit()
+    return {'rating': data.rating, 'status': 'recorded'}
 
 
 @router.get("/parking-map")
@@ -433,6 +510,8 @@ async def list_partner_reservations(
             "platform_fee_amount": reservation.platform_fee_amount,
             "guide_user_id": reservation.guide_user_id,
             "guide_commission_amount": reservation.guide_commission_amount,
+            "guide_platform_fee_amount": reservation.guide_platform_fee_amount,
+            "guide_payout_amount": reservation.guide_payout_amount,
             "final_total": reservation.final_total,
             "selected_services": _reservation_services(reservation),
             "created_at": reservation.created_at.isoformat() + "Z",
@@ -860,6 +939,8 @@ def _slot_payload(
             "platform_fee_amount": reservation.platform_fee_amount,
             "guide_user_id": reservation.guide_user_id,
             "guide_commission_amount": reservation.guide_commission_amount,
+            "guide_platform_fee_amount": reservation.guide_platform_fee_amount,
+            "guide_payout_amount": reservation.guide_payout_amount,
             "final_total": reservation.final_total,
             "selected_services": _reservation_services(reservation),
             "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),

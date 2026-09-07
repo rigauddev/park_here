@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.base import BaseModel
@@ -45,6 +45,7 @@ class Parking(BaseModel):
     wants_automatic_access = Column(Boolean, default=False)
     has_automatic_access = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    guide_commission_terms = Column(Text, nullable=True)
 
     services = relationship("ParkingService", back_populates="parking")
 

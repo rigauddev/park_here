@@ -35,6 +35,12 @@ Para testar indicação de guia, cadastre um usuário parceiro com serviço `Gui
 turístico`, solicite afiliação a um estacionamento e aprove a solicitação no
 usuário gestor definindo comissão percentual ou fixa.
 
+O seed já oferece `guia@parkhere.test` afiliado ao estacionamento principal. A
+lista do guia mostra as ofertas por diária, semanal, mensal e longa duração antes
+de solicitar novas afiliações. A taxa da plataforma padrão para a comissão do
+guia é 20%; o guia vê o valor líquido e o estacionamento vê o bruto, a taxa e o
+líquido.
+
 ## Android fisico por USB
 
 Com a API local na porta 8000:

@@ -363,6 +363,12 @@ async def seed():
         ]
         db.add_all(parkings)
         await db.flush()
+        parkings[0].guide_commission_terms = json.dumps({
+            "daily": {"commission_type": "fixed", "commission_value": 8},
+            "weekly": {"commission_type": "percentage", "commission_value": 12},
+            "monthly": {"commission_type": "percentage", "commission_value": 15},
+            "long_term": {"commission_type": "percentage", "commission_value": 18},
+        })
 
         db.add(
             GuideParkingLink(
@@ -1405,6 +1411,13 @@ async def ensure_platform_fees(db, commit=True):
             "fee_mode": "percentage",
             "fixed_amount": 0,
             "percentage": 10,
+            "min_fee": 0,
+            "max_fee": None,
+        },
+        "guide_commission": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 20,
             "min_fee": 0,
             "max_fee": None,
         },

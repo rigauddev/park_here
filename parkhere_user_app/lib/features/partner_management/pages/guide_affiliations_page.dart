@@ -87,11 +87,28 @@ class _ParkingAffiliationCard extends StatelessWidget {
       'approved' => 'Aprovado',
       _ => 'Solicitar afiliação',
     };
+    final offers =
+        (parking['offer_terms'] as Map?)?.cast<String, dynamic>() ?? {};
+    final offerText = offers.isEmpty
+        ? 'Taxa a definir pelo estabelecimento'
+        : offers.entries
+              .map((entry) {
+                final term = (entry.value as Map).cast<String, dynamic>();
+                final value = term['commission_value'];
+                final suffix = term['commission_type'] == 'percentage'
+                    ? '%'
+                    : ' R\$';
+                return '${_periodLabel(entry.key)}: $value$suffix';
+              })
+              .join('  •  ');
     return Card(
       child: ListTile(
         leading: const Icon(Icons.local_parking),
         title: Text(parking['name'] as String? ?? 'Estacionamento'),
-        subtitle: Text(parking['city'] as String? ?? ''),
+        subtitle: Text(
+          '${parking['city'] as String? ?? ''}\nOferta: $offerText',
+        ),
+        isThreeLine: true,
         trailing: status == 'not_linked'
             ? FilledButton(
                 onPressed: () => onRequest(parking['id'] as String),
@@ -101,4 +118,11 @@ class _ParkingAffiliationCard extends StatelessWidget {
       ),
     );
   }
+
+  static String _periodLabel(String value) => switch (value) {
+    'daily' => 'Diária',
+    'weekly' => 'Semanal',
+    'monthly' => 'Mensal',
+    _ => 'Longa duração',
+  };
 }

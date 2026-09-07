@@ -23,6 +23,7 @@ from app.modules.customer_assets.models import Vehicle
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.platform_fees.models import PlatformFee
 
 
 @dataclass
@@ -57,7 +58,9 @@ class ReservationService:
         data.spot_code = await allocate_spot(db, parking, data.spot_code, data.spot_type)
 
         pricing = await _calculate_pricing(db, parking, data)
-        guide_commission_amount = await _guide_commission(db, parking.id, data.guide_user_id, pricing.base_amount + pricing.services_amount)
+        guide_commission_amount, guide_platform_fee_amount, guide_payout_amount = await _guide_commission(
+            db, parking.id, data.guide_user_id, pricing.base_amount + pricing.services_amount, data.pricing_plan
+        )
         parking.available_spots -= 1
         arrival_estimate_at = _arrival_estimate(data)
 
@@ -67,6 +70,8 @@ class ReservationService:
             vehicle_id=data.vehicle_id,
             guide_user_id=data.guide_user_id,
             guide_commission_amount=guide_commission_amount,
+            guide_platform_fee_amount=guide_platform_fee_amount,
+            guide_payout_amount=guide_payout_amount,
             walk_in_plate=data.walk_in_plate,
             walk_in_phone=data.walk_in_phone,
             spot_code=data.spot_code,
@@ -240,9 +245,9 @@ async def _get_parking_with_services(db: AsyncSession, parking_id: str) -> Parki
     return parking
 
 
-async def _guide_commission(db, parking_id: str, guide_user_id: str | None, base_amount: float) -> float:
+async def _guide_commission(db, parking_id: str, guide_user_id: str | None, base_amount: float, pricing_plan: str) -> tuple[float, float, float]:
     if not guide_user_id:
-        return 0.0
+        return 0.0, 0.0, 0.0
     link = await db.scalar(select(GuideParkingLink).where(
         GuideParkingLink.guide_user_id == guide_user_id,
         GuideParkingLink.parking_id == parking_id,
@@ -250,8 +255,15 @@ async def _guide_commission(db, parking_id: str, guide_user_id: str | None, base
     ))
     if link is None:
         raise HTTPException(status_code=422, detail='Guide is not affiliated with this parking')
-    value = float(link.commission_value or 0)
-    return round(base_amount * value / 100, 2) if link.commission_type == 'percentage' else round(value, 2)
+    terms = json.loads(link.commission_terms) if link.commission_terms else {}
+    term = terms.get(pricing_plan) or terms.get('long_term') or {}
+    commission_type = term.get('commission_type') or link.commission_type
+    value = float(term.get('commission_value', link.commission_value or 0))
+    gross = round(base_amount * value / 100, 2) if commission_type == 'percentage' else round(value, 2)
+    platform = await db.scalar(select(PlatformFee).where(PlatformFee.service_type == 'guide_commission', PlatformFee.is_active.is_(True)))
+    platform_rate = float(platform.percentage) if platform else 0.0
+    platform_fee = round(gross * platform_rate / 100, 2)
+    return gross, platform_fee, round(gross - platform_fee, 2)
 
 
 async def _get_reservation_with_parking(
@@ -650,6 +662,8 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         platform_fee_amount=reservation.platform_fee_amount,
         guide_user_id=reservation.guide_user_id,
         guide_commission_amount=reservation.guide_commission_amount,
+        guide_platform_fee_amount=reservation.guide_platform_fee_amount,
+        guide_payout_amount=reservation.guide_payout_amount,
         final_total=reservation.final_total,
         selected_services=selected_services,
         platform_fees=platform_fees,

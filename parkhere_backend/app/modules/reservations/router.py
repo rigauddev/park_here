@@ -18,7 +18,10 @@ router = APIRouter(prefix="/reservations", tags=["Reservations"])
 PHOTO_ROOT = Path('/app/storage/inspection')
 
 
-@router.post("/pre-checkin", response_model=ReservationResponse)
+_PRIVATE_GUIDE_FIELDS = {"guide_user_id", "guide_commission_amount", "guide_platform_fee_amount", "guide_payout_amount"}
+
+
+@router.post("/pre-checkin", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
 async def create_pre_checkin_reservation(
     data: PreCheckinReservationRequest,
     db: AsyncSession = Depends(get_db),
@@ -27,7 +30,7 @@ async def create_pre_checkin_reservation(
     return await ReservationService.create_pre_checkin(db, data, current_user)
 
 
-@router.post("/{reservation_id}/checkin", response_model=ReservationResponse)
+@router.post("/{reservation_id}/checkin", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
 async def checkin_reservation(
     reservation_id: str,
     db: AsyncSession = Depends(get_db),
@@ -63,7 +66,7 @@ async def upload_reservation_photo(
     return {'reservation_id': reservation_id, 'kind': kind, 'retention_days': 7}
 
 
-@router.post("/{reservation_id}/checkout", response_model=ReservationResponse)
+@router.post("/{reservation_id}/checkout", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
 async def checkout_reservation(
     reservation_id: str,
     db: AsyncSession = Depends(get_db),
@@ -72,7 +75,7 @@ async def checkout_reservation(
     return await ReservationService.checkout(db, reservation_id, current_user)
 
 
-@router.post("/{reservation_id}/cancel", response_model=ReservationResponse)
+@router.post("/{reservation_id}/cancel", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
 async def cancel_reservation(
     reservation_id: str,
     data: CancelReservationRequest,
