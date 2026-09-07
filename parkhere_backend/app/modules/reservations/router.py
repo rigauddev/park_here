@@ -48,7 +48,12 @@ async def upload_reservation_photo(
     current_user: User = Depends(get_current_user),
 ):
     reservation, parking = await _get_reservation_with_parking(db, reservation_id)
-    if current_user.tenant_id != parking.tenant_id:
+    # Customers upload photos for their own reservation; staff uploads are
+    # limited to the parking tenant.
+    if current_user.role.value == 'customer':
+        if reservation.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail='Reservation not allowed')
+    elif current_user.tenant_id != parking.tenant_id:
         raise HTTPException(status_code=403, detail='Reservation not allowed')
     if kind not in {'front', 'rear', 'left', 'right'}:
         raise HTTPException(status_code=422, detail='Invalid photo kind')

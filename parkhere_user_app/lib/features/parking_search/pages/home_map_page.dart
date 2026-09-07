@@ -75,9 +75,11 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       final parkings = await ref.read(parkingProvider.future);
       if (!mounted || parkings.isEmpty) return;
       final nearest = parkings.reduce((a, b) {
-        final distanceA = math.pow(a.lat - position.latitude, 2) +
+        final distanceA =
+            math.pow(a.lat - position.latitude, 2) +
             math.pow(a.lng - position.longitude, 2);
-        final distanceB = math.pow(b.lat - position.latitude, 2) +
+        final distanceB =
+            math.pow(b.lat - position.latitude, 2) +
             math.pow(b.lng - position.longitude, 2);
         return distanceA < distanceB ? a : b;
       });
@@ -255,6 +257,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
     final parkings = ref.read(parkingProvider).value ?? const <ParkingModel>[];
     if (parkings.isNotEmpty) {
+      // Preserve the canonical spelling returned by the API (for example,
+      // typing "sao paulo" displays "São Paulo").
+      ref.read(selectedCityProvider.notifier).state = parkings.first.city;
       _focusSearchResults(parkings, normalizedCity);
       return;
     }
