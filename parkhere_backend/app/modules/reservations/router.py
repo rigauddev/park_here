@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -33,10 +33,12 @@ async def create_pre_checkin_reservation(
 @router.post("/{reservation_id}/checkin", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
 async def checkin_reservation(
     reservation_id: str,
+    latitude: float | None = Query(default=None, ge=-90, le=90),
+    longitude: float | None = Query(default=None, ge=-180, le=180),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await ReservationService.checkin(db, reservation_id, current_user)
+    return await ReservationService.checkin(db, reservation_id, current_user, latitude, longitude)
 
 
 @router.post("/{reservation_id}/photos")
