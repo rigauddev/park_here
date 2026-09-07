@@ -102,7 +102,11 @@ class AuthService:
             email=normalized_email,
             password_hash=hash_password(data.password),
             phone=data.phone,
-            role=UserRoleEnum.PARTNER_MANAGER,
+            role=(
+                UserRoleEnum.TOUR_GUIDE
+                if data.service_type == 'tour_guide'
+                else UserRoleEnum.PARTNER_MANAGER
+            ),
         )
         db.add(partner_user)
 

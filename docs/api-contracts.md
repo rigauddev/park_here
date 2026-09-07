@@ -21,6 +21,18 @@ o campo `file`. Para CNPJ, o tipo aceito é `alvara`; para CPF, `rg` ou `cnh`.
 Os arquivos ficam no volume local do backend e o cadastro passa para
 `documents_submitted`.
 
+## Afiliação de guia a estacionamento
+
+- `GET /partners/guide/parkings` lista estacionamentos ativos e o status da
+  solicitação do guia (`not_linked`, `pending` ou `approved`).
+- `POST /partners/guide/parkings/{parking_id}` cria a solicitação do guia.
+- `GET /partners/guide/requests` lista solicitações recebidas pelo parceiro de
+  estacionamento.
+- `POST /partners/guide/links/{link_id}/approve` recebe
+  `{commission_type: "percentage"|"fixed", commission_value: number}` e
+  aprova o vínculo. Percentual é limitado a 100; valor fixo representa reais
+  por indicação.
+
 ## Busca De Estacionamentos
 
 `GET /parkings?city=Valenca`

@@ -61,5 +61,7 @@ class AuthState {
   bool get isPartnerOwner =>
       role == 'partner_manager' || role == 'parking_admin';
 
+  bool get isTourGuide => role == 'tour_guide';
+
   bool get isOperator => role == 'operator';
 }

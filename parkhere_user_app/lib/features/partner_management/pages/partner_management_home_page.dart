@@ -10,6 +10,9 @@ import 'partner_reservations_page.dart';
 import 'partner_users_page.dart';
 import 'parking_management_page.dart';
 import 'parking_dashboard_page.dart';
+import 'guide_affiliations_page.dart';
+import 'guide_dashboard_page.dart';
+import 'guide_requests_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -144,6 +147,12 @@ class _PartnerManagementBody extends StatelessWidget {
             onTap: () => _open(context, const PartnerUsersPage()),
           ),
           _ManagementAction(
+            icon: Icons.handshake_outlined,
+            title: 'Solicitações de guias',
+            description: 'Aprove afiliações e defina a comissão por indicação.',
+            onTap: () => _open(context, const GuideRequestsPage()),
+          ),
+          _ManagementAction(
             icon: Icons.lock_outline,
             title: 'Financeiro Pro',
             description:
@@ -195,24 +204,32 @@ class _PartnerManagementBody extends StatelessWidget {
           ),
         ];
       case 'tour_guide':
+        return [
+          _ManagementAction(
+            icon: Icons.dashboard_outlined,
+            title: 'Dashboard',
+            description: 'Serviços, afiliações e indicações do guia.',
+            onTap: () => _open(context, const GuideDashboardPage()),
+          ),
+          _ManagementAction(
+            icon: Icons.local_parking_outlined,
+            title: 'Estacionamentos',
+            description: 'Solicite afiliação e acompanhe as comissões.',
+            onTap: () => _open(context, const GuideAffiliationsPage()),
+          ),
+          _ManagementAction(
+            icon: Icons.tour_outlined,
+            title: 'Serviços turísticos',
+            description: 'Roteiros, idiomas, agenda, capacidade e valores.',
+            onTap: () => _showPending(context),
+          ),
+        ];
       case 'tourism_company':
         return [
           _ManagementAction(
             icon: Icons.tour_outlined,
-            title: 'Pacotes',
-            description: 'Roteiros, idiomas, capacidade e valores.',
-            onTap: () => _showPending(context),
-          ),
-          _ManagementAction(
-            icon: Icons.event_note_outlined,
-            title: 'Agenda',
-            description: 'Datas, horarios e pontos de encontro.',
-            onTap: () => _showPending(context),
-          ),
-          _ManagementAction(
-            icon: Icons.receipt_long_outlined,
-            title: 'Financeiro',
-            description: 'Relatorios e repasses entram no modulo pago.',
+            title: 'Serviços turísticos',
+            description: 'Pacotes, agenda e valores.',
             onTap: () => _showPending(context),
           ),
         ];

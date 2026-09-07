@@ -10,3 +10,5 @@ class GuideParkingLink(BaseModel):
     guide_user_id = Column(String(36), ForeignKey('users.id'), nullable=False)
     parking_id = Column(String(36), ForeignKey('parkings.id'), nullable=False)
     status = Column(String(20), nullable=False, default='pending')
+    commission_type = Column(String(20), nullable=True)
+    commission_value = Column(String(30), nullable=True)

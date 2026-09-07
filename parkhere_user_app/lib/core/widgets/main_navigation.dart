@@ -17,6 +17,8 @@ import '../../features/reservation/pages/reservation_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../../features/partner_management/pages/parking_dashboard_page.dart';
+import '../../features/partner_management/pages/guide_affiliations_page.dart';
+import '../../features/partner_management/pages/guide_dashboard_page.dart';
 
 enum _MainArea {
   menu,
@@ -56,13 +58,21 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     final auth = ref.watch(authProvider);
     final isPartner = auth.isPartnerSession;
     final isPartnerOwner = auth.isPartnerOwner;
-    if (isPartner && !isPartnerOwner && _selectedArea == _MainArea.financial) {
+    final isGuide = auth.isTourGuide;
+    if (isGuide &&
+        (_selectedArea == _MainArea.financial ||
+            _selectedArea == _MainArea.reservations)) {
+      _selectedArea = _MainArea.management;
+    } else if (isPartner &&
+        !isPartnerOwner &&
+        _selectedArea == _MainArea.financial) {
       _selectedArea = _MainArea.map;
     }
     final page = Navigator(
       key: ValueKey('${_selectedArea.name}:$_servicesInitialIndex'),
       onGenerateRoute: (_) => MaterialPageRoute<void>(
-        builder: (_) => _pageFor(_selectedArea, isPartner, isPartnerOwner),
+        builder: (_) =>
+            _pageFor(_selectedArea, isPartner, isPartnerOwner, isGuide),
       ),
     );
     final topBar = AppBar(
@@ -96,6 +106,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               selectedArea: _selectedArea,
               isPartner: isPartner,
               isPartnerOwner: isPartnerOwner,
+              isGuide: isGuide,
               onSelected: _selectArea,
             ),
             const VerticalDivider(width: 1),
@@ -110,6 +121,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       drawer: _MobileDrawer(
         isPartner: isPartner,
         isPartnerOwner: isPartnerOwner,
+        isGuide: isGuide,
         onSelected: (area, [serviceTabIndex]) {
           Navigator.pop(context);
           _selectArea(area, serviceTabIndex);
@@ -123,6 +135,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               selectedArea: _selectedArea,
               isPartner: isPartner,
               isPartnerOwner: isPartnerOwner,
+              isGuide: isGuide,
               onSelected: _selectArea,
             ),
           Expanded(child: page),
@@ -133,6 +146,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           _selectedArea,
           isPartner,
           isPartnerOwner,
+          isGuide,
         ),
         onDestinationSelected: (index) {
           setState(
@@ -140,6 +154,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               index,
               isPartner,
               isPartnerOwner,
+              isGuide,
             ),
           );
         },
@@ -150,17 +165,17 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               selectedIcon: Icon(Icons.menu_open),
               label: 'Menu',
             ),
-          if (isPartner && isPartnerOwner)
+          if (isPartner && (isPartnerOwner || isGuide))
             const NavigationDestination(
               icon: Icon(Icons.business_center_outlined),
               selectedIcon: Icon(Icons.business_center),
               label: 'Gestão',
             ),
           if (isPartner)
-            const NavigationDestination(
-              icon: Icon(Icons.local_parking_outlined),
-              selectedIcon: Icon(Icons.local_parking),
-              label: 'Vagas',
+            NavigationDestination(
+              icon: const Icon(Icons.local_parking_outlined),
+              selectedIcon: const Icon(Icons.local_parking),
+              label: isGuide ? 'Estacionamentos' : 'Vagas',
             )
           else
             const NavigationDestination(
@@ -168,31 +183,31 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               selectedIcon: Icon(Icons.widgets),
               label: 'Serviços',
             ),
-          if (isPartner)
+          if (isPartner && !isGuide)
             const NavigationDestination(
               icon: Icon(Icons.confirmation_number_outlined),
               selectedIcon: Icon(Icons.confirmation_number),
               label: 'Reservas',
-            )
-          else
+            ),
+          if (!isPartner)
             const NavigationDestination(
               icon: Icon(Icons.map_outlined),
               selectedIcon: Icon(Icons.map),
               label: 'Mapa',
             ),
-          if (!isPartner)
+          if (!isPartner || isGuide)
             const NavigationDestination(
               icon: Icon(Icons.person_outline),
               selectedIcon: Icon(Icons.person),
               label: 'Perfil',
             ),
-          if (isPartner && isPartnerOwner)
+          if (isPartner && isPartnerOwner && !isGuide)
             const NavigationDestination(
               icon: Icon(Icons.lock_outline),
               selectedIcon: Icon(Icons.lock),
               label: 'Financeiro',
             ),
-          if (isPartner)
+          if (isPartner && !isGuide)
             const NavigationDestination(
               icon: Icon(Icons.person_outline),
               selectedIcon: Icon(Icons.person),
@@ -203,11 +218,17 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     );
   }
 
-  Widget _pageFor(_MainArea area, bool isPartner, bool isPartnerOwner) {
+  Widget _pageFor(
+    _MainArea area,
+    bool isPartner,
+    bool isPartnerOwner,
+    bool isGuide,
+  ) {
     switch (area) {
       case _MainArea.menu:
         return const _MenuHubPage();
       case _MainArea.map:
+        if (isGuide) return const GuideAffiliationsPage();
         if (isPartner) return const PartnerParkingMapPage();
         return const HomeMapPage();
       case _MainArea.services:
@@ -217,6 +238,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           initialIndex: _servicesInitialIndex,
         );
       case _MainArea.reservations:
+        if (isGuide) return const GuideDashboardPage();
         if (isPartner) return const PartnerReservationsPage();
         return const ReservationPage();
       case _MainArea.vehicles:
@@ -226,12 +248,14 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         if (isPartner) return const ProfilePage();
         return const WalletPage();
       case _MainArea.management:
+        if (isGuide) return const GuideDashboardPage();
         return isPartnerOwner
             ? const PartnerManagementHomePage()
             : const PartnerParkingMapPage();
       case _MainArea.users:
         return isPartnerOwner ? const PartnerUsersPage() : const ProfilePage();
       case _MainArea.dashboard:
+        if (isGuide) return const GuideDashboardPage();
         return isPartnerOwner
             ? const ParkingDashboardPage()
             : const PartnerParkingMapPage();
@@ -244,7 +268,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     }
   }
 
-  int _mobileIndexFor(_MainArea area, bool isPartner, bool isPartnerOwner) {
+  int _mobileIndexFor(
+    _MainArea area,
+    bool isPartner,
+    bool isPartnerOwner,
+    bool isGuide,
+  ) {
+    if (isGuide) return area == _MainArea.map ? 1 : 0;
     if (isPartner && !isPartnerOwner) {
       switch (area) {
         case _MainArea.map:
@@ -289,7 +319,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     int index,
     bool isPartner,
     bool isPartnerOwner,
+    bool isGuide,
   ) {
+    if (isGuide) {
+      if (index == 1) return _MainArea.map;
+      if (index == 2) return _MainArea.profile;
+      return _MainArea.management;
+    }
     if (isPartner && !isPartnerOwner) {
       switch (index) {
         case 0:
@@ -331,7 +367,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   _MainArea _initialArea() {
     final auth = ref.read(authProvider);
     if (!auth.isPartnerSession) return _MainArea.map;
-    return auth.isPartnerOwner ? _MainArea.management : _MainArea.map;
+    return auth.isTourGuide || auth.isPartnerOwner
+        ? _MainArea.management
+        : _MainArea.map;
   }
 }
 
@@ -340,6 +378,7 @@ class _WebMenu extends ConsumerWidget {
   final _MainArea selectedArea;
   final bool isPartner;
   final bool isPartnerOwner;
+  final bool isGuide;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _WebMenu({
@@ -347,6 +386,7 @@ class _WebMenu extends ConsumerWidget {
     required this.selectedArea,
     required this.isPartner,
     required this.isPartnerOwner,
+    required this.isGuide,
     required this.onSelected,
   });
 
@@ -366,7 +406,7 @@ class _WebMenu extends ConsumerWidget {
               expanded: expanded,
               title: 'Navegação',
               items: [
-                if (isPartner && isPartnerOwner)
+                if (isPartner && (isPartnerOwner || isGuide))
                   _MenuItem(
                     Icons.dashboard_outlined,
                     'Dashboard',
@@ -378,18 +418,27 @@ class _WebMenu extends ConsumerWidget {
                     'Minha empresa',
                     _MainArea.management,
                   ),
-                _MenuItem(
-                  isPartner ? Icons.local_parking_outlined : Icons.map_outlined,
-                  isPartner ? 'Mapa de vagas' : 'Mapa',
-                  _MainArea.map,
-                ),
-                if (isPartner)
+                if (isGuide)
+                  _MenuItem(
+                    Icons.local_parking_outlined,
+                    'Estacionamentos',
+                    _MainArea.map,
+                  )
+                else
+                  _MenuItem(
+                    isPartner
+                        ? Icons.local_parking_outlined
+                        : Icons.map_outlined,
+                    isPartner ? 'Mapa de vagas' : 'Mapa',
+                    _MainArea.map,
+                  ),
+                if (isPartner && !isGuide)
                   _MenuItem(
                     Icons.confirmation_number_outlined,
                     'Reservas recebidas',
                     _MainArea.reservations,
                   ),
-                if (isPartner && isPartnerOwner)
+                if (isPartner && isPartnerOwner && !isGuide)
                   _MenuItem(Icons.group_outlined, 'Usuarios', _MainArea.users),
                 if (isPartner && isPartnerOwner)
                   _MenuItem(
@@ -495,11 +544,13 @@ class _WebMenu extends ConsumerWidget {
 class _MobileDrawer extends StatelessWidget {
   final bool isPartner;
   final bool isPartnerOwner;
+  final bool isGuide;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _MobileDrawer({
     required this.isPartner,
     required this.isPartnerOwner,
+    required this.isGuide,
     required this.onSelected,
   });
 
@@ -512,31 +563,37 @@ class _MobileDrawer extends StatelessWidget {
           children: [
             Text('ParkHere', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
-            if (isPartner && isPartnerOwner)
+            if (isPartner && (isPartnerOwner || isGuide))
               ListTile(
                 leading: const Icon(Icons.business_center_outlined),
                 title: const Text('Minha empresa'),
                 onTap: () => onSelected(_MainArea.management),
               ),
-            if (isPartner)
+            if (isPartner && !isGuide)
               ListTile(
                 leading: const Icon(Icons.confirmation_number_outlined),
                 title: const Text('Reservas recebidas'),
                 onTap: () => onSelected(_MainArea.reservations),
               ),
-            if (isPartner && isPartnerOwner)
+            if (isPartner && isPartnerOwner && !isGuide)
               ListTile(
                 leading: const Icon(Icons.group_outlined),
                 title: const Text('Usuarios'),
                 onTap: () => onSelected(_MainArea.users),
               ),
-            if (isPartner)
+            if (isPartner && !isGuide)
               ListTile(
                 leading: const Icon(Icons.local_parking_outlined),
                 title: const Text('Mapa de vagas'),
                 onTap: () => onSelected(_MainArea.map),
               ),
-            if (isPartner && isPartnerOwner)
+            if (isGuide)
+              ListTile(
+                leading: const Icon(Icons.local_parking_outlined),
+                title: const Text('Estacionamentos'),
+                onTap: () => onSelected(_MainArea.map),
+              ),
+            if (isPartner && isPartnerOwner && !isGuide)
               ListTile(
                 leading: const Icon(Icons.lock_outline),
                 title: const Text('Financeiro Pro'),

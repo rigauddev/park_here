@@ -75,6 +75,11 @@ class PartnerOperatorResponse(BaseModel):
     created_at: str
 
 
+class GuideCommissionRequest(BaseModel):
+    commission_type: str
+    commission_value: float
+
+
 @router.post("/signup")
 async def partner_signup(
     data: PartnerSignupRequest,
@@ -203,10 +208,21 @@ async def guide_parkings(
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
     if not profile or profile.service_type not in {'tour_guide', 'tourism_company'}:
         raise HTTPException(status_code=403, detail='Guide account required')
-    links = await db.scalars(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id))
-    linked = {link.parking_id: link.status for link in links.all()}
+    links = (await db.scalars(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id))).all()
+    linked = {link.parking_id: link for link in links}
     parkings = (await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all()
-    return [{'id': parking.id, 'name': parking.name, 'city': parking.city, 'status': linked.get(parking.id, 'not_linked')} for parking in parkings]
+    return [
+        {
+            'id': parking.id,
+            'name': parking.name,
+            'city': parking.city,
+            'status': linked[parking.id].status if parking.id in linked else 'not_linked',
+            'link_id': linked[parking.id].id if parking.id in linked else None,
+            'commission_type': linked[parking.id].commission_type if parking.id in linked else None,
+            'commission_value': float(linked[parking.id].commission_value) if parking.id in linked and linked[parking.id].commission_value else None,
+        }
+        for parking in parkings
+    ]
 
 
 @router.post('/guide/parkings/{parking_id}')
@@ -227,6 +243,65 @@ async def request_guide_parking_link(
         db.add(existing)
         await db.commit()
     return {'parking_id': parking_id, 'status': existing.status}
+
+
+@router.post('/guide/links/{link_id}/approve')
+async def approve_guide_parking_link(
+    link_id: str,
+    data: GuideCommissionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    if data.commission_type not in {'percentage', 'fixed'} or data.commission_value < 0:
+        raise HTTPException(status_code=422, detail='Invalid commission terms')
+    link = await db.scalar(select(GuideParkingLink).where(GuideParkingLink.id == link_id))
+    if link is None:
+        raise HTTPException(status_code=404, detail='Affiliation request not found')
+    parking = await db.scalar(select(Parking).where(Parking.id == link.parking_id, Parking.tenant_id == current_user.tenant_id))
+    if parking is None:
+        raise HTTPException(status_code=403, detail='Parking does not belong to this partner')
+    if data.commission_type == 'percentage' and data.commission_value > 100:
+        raise HTTPException(status_code=422, detail='Percentage commission cannot exceed 100')
+    link.status = 'approved'
+    link.commission_type = data.commission_type
+    link.commission_value = str(data.commission_value)
+    await db.commit()
+    return {
+        'id': link.id,
+        'parking_id': link.parking_id,
+        'status': link.status,
+        'commission_type': link.commission_type,
+        'commission_value': float(link.commission_value),
+    }
+
+
+@router.get('/guide/requests')
+async def list_guide_requests(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    result = await db.execute(
+        select(GuideParkingLink, User, Parking)
+        .join(User, User.id == GuideParkingLink.guide_user_id)
+        .join(Parking, Parking.id == GuideParkingLink.parking_id)
+        .where(Parking.tenant_id == current_user.tenant_id)
+        .order_by(GuideParkingLink.created_at.desc())
+    )
+    return [
+        {
+            'id': link.id,
+            'guide_name': guide.name,
+            'guide_email': guide.email,
+            'parking_id': parking.id,
+            'parking_name': parking.name,
+            'status': link.status,
+            'commission_type': link.commission_type,
+            'commission_value': float(link.commission_value) if link.commission_value else None,
+        }
+        for link, guide, parking in result.all()
+    ]
 
 
 @router.get("/parking-map")
