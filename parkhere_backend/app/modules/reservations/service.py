@@ -310,6 +310,19 @@ async def _ensure_reservation_permission(
         )
         if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=403, detail="Vehicle not allowed")
+        active = await db.scalar(
+            select(Reservation.id).where(
+                Reservation.user_id == current_user.id,
+                Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
+                (Reservation.status != "pre_reserved")
+                | (Reservation.hold_expires_at > datetime.utcnow()),
+            ).limit(1)
+        )
+        if active is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Finalize ou cancele sua reserva ativa antes de criar outra.",
+            )
         return
 
     if current_user.role in {

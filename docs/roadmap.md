@@ -66,6 +66,9 @@ incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao 
 - Criar historico de reservas com data, status, valor e tela de detalhes.
 - Criar avaliacao simples de estacionamento/servico e app no detalhe da reserva.
 - Criar navegacao responsiva: menu inferior simplificado no mobile e menu web por categorias.
+- Regra de UX para todos os novos blocos: projetar primeiro para celulares, testar
+  larguras de tablet e manter compatibilidade web. Seletores extensos devem usar
+  listas/menus responsivos para evitar overflow e quebra de textos.
 - Criar submenu de servicos com estacionamento, lava-jato, hoteis e passeios turisticos.
 - Listar estacionamentos disponiveis dentro de Servicos > Estacionamento.
 - Criar menu Reservas para reservas ativas e historico.

@@ -335,65 +335,65 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    SegmentedButton<AreaPreference>(
-                      multiSelectionEnabled: false,
-                      segments: [
-                        const ButtonSegment(
+                    DropdownButtonFormField<AreaPreference>(
+                      initialValue: areaPreference,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de vaga',
+                        prefixIcon: Icon(Icons.local_parking_outlined),
+                      ),
+                      items: [
+                        DropdownMenuItem(
                           value: AreaPreference.any,
-                          label: Text('Qualquer'),
-                          icon: Icon(Icons.pending_outlined),
+                          child: Text('Qualquer (${parking.availableSpots})'),
                         ),
                         if (parking.coveredSpots > 0)
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AreaPreference.covered,
-                            label: Text('Coberta (${parking.coveredSpots})'),
-                            icon: const Icon(Icons.roofing_outlined),
+                            child: Text('Coberta (${parking.coveredSpots})'),
                           ),
                         if (parking.uncoveredSpots > 0)
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AreaPreference.uncovered,
-                            label: Text(
+                            child: Text(
                               'Descoberta (${parking.uncoveredSpots})',
                             ),
-                            icon: const Icon(Icons.sunny_snowing),
                           ),
                         if (parking.hasVipSpots && parking.vipSpots > 0)
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AreaPreference.vip,
-                            label: Text('VIP (${parking.vipSpots})'),
-                            icon: const Icon(Icons.star),
+                            child: Text('VIP (${parking.vipSpots})'),
                           ),
                         if (parking.largeSpots > 0)
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AreaPreference.large,
-                            label: Text('Grande (${parking.largeSpots})'),
-                            icon: const Icon(Icons.local_shipping),
+                            child: Text(
+                              'Espaço grande (${parking.largeSpots})',
+                            ),
                           ),
                         if (parking.motoHomeSpots > 0)
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AreaPreference.motorhome,
-                            label: Text('Motorhome (${parking.motoHomeSpots})'),
-                            icon: const Icon(Icons.rv_hookup),
+                            child: Text('Motorhome (${parking.motoHomeSpots})'),
                           ),
                         if (parking.busSpots > 0)
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AreaPreference.bus,
-                            label: Text('Ônibus (${parking.busSpots})'),
-                            icon: const Icon(Icons.directions_bus),
+                            child: Text('Ônibus (${parking.busSpots})'),
                           ),
                         if (parking.pickupSpots > 0)
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AreaPreference.pickup,
-                            label: Text('Pickup (${parking.pickupSpots})'),
-                            icon: const Icon(Icons.local_shipping_outlined),
+                            child: Text('Pickup (${parking.pickupSpots})'),
                           ),
                       ],
-                      selected: {areaPreference},
-                      onSelectionChanged: (value) {
-                        ref
-                                .read(selectedAreaPreferenceProvider.notifier)
-                                .state =
-                            value.first;
+                      onChanged: (value) {
+                        if (value != null) {
+                          ref
+                                  .read(selectedAreaPreferenceProvider.notifier)
+                                  .state =
+                              value;
+                        }
                       },
                     ),
 

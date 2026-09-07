@@ -36,32 +36,29 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
 
             const SizedBox(height: 20),
 
-            const Text("Deseja abrir a rota em qual aplicativo?"),
-
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.route_outlined),
+                title: const Text('Resumo da pré-reserva'),
+                subtitle: Text(
+                  '${widget.preCheckin.plan.name.toUpperCase()} • R\$ ${widget.preCheckin.total.toStringAsFixed(2)}',
+                ),
+              ),
+            ),
             const SizedBox(height: 15),
-
-            ListTile(
-              leading: const Icon(Icons.map),
-              title: const Text("Google Maps"),
-              onTap: () => _selectRoute('Google Maps'),
-            ),
-
-            ListTile(
-              leading: const Icon(Icons.map_outlined),
-              title: const Text("Waze"),
-              onTap: () => _selectRoute('Waze'),
-            ),
-
-            ListTile(
-              leading: const Icon(Icons.public),
-              title: const Text("OpenStreetMap"),
-              onTap: () => _selectRoute('OpenStreetMap'),
+            const Text(
+              'Ao iniciar, a pré-reserva será enviada ao estacionamento com o tempo estimado da rota + 5 minutos.',
+              textAlign: TextAlign.center,
             ),
 
             const Spacer(),
-            const Text(
-              'O check-in só pode ser realizado no estacionamento, pela tela de reservas.',
-              textAlign: TextAlign.center,
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _loading ? null : _openMapChooser,
+                icon: const Icon(Icons.navigation_outlined),
+                label: const Text('Iniciar rota'),
+              ),
             ),
           ],
         ),
@@ -96,6 +93,30 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openMapChooser() async {
+    final app = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            const ListTile(title: Text('Escolha seu aplicativo de mapas')),
+            for (final item in const [
+              ('Google Maps', Icons.map),
+              ('Waze', Icons.map_outlined),
+              ('OpenStreetMap', Icons.public),
+            ])
+              ListTile(
+                leading: Icon(item.$2),
+                title: Text(item.$1),
+                onTap: () => Navigator.pop(context, item.$1),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (app != null) await _selectRoute(app);
   }
 
   void _showError(String message) {
