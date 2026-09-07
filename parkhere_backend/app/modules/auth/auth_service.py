@@ -79,10 +79,16 @@ class AuthService:
 
     @staticmethod
     async def register_partner(db: AsyncSession, data):
+        normalized_email = data.email.strip().lower()
+        existing = await db.execute(select(User).where(User.email == normalized_email))
+        if existing.scalar_one_or_none():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=409, detail="Email already registered")
+
         tenant = Tenant(
             name=data.company_name,
             cnpj=data.cnpj,
-            email=data.email,
+            email=normalized_email,
             plan=PlanEnum.FREE,
             status=TenantStatusEnum.TRIAL,
         )
@@ -93,7 +99,7 @@ class AuthService:
             tenant_id=tenant.id,
             name=data.responsible_name,
             firt_name=data.responsible_name.split(" ")[0],
-            email=data.email,
+            email=normalized_email,
             password_hash=hash_password(data.password),
             phone=data.phone,
             role=UserRoleEnum.PARTNER_MANAGER,

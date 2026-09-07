@@ -164,6 +164,42 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
   }
 
+  Future<Map<String, dynamic>> registerPartner({
+    required String serviceType,
+    required String companyName,
+    required String cnpj,
+    required String registrationStatus,
+    required String responsibleName,
+    required String email,
+    required String password,
+    String? phone,
+    required bool hasInsurance,
+    String? insuranceProvider,
+    String? instagram,
+    String? website,
+    String? socialLinks,
+  }) {
+    return _api.post('/partners/signup', {
+      'service_type': serviceType,
+      'company_name': companyName.trim(),
+      'cnpj': cnpj,
+      'registration_status': registrationStatus.trim(),
+      'responsible_name': responsibleName.trim(),
+      'email': email.trim().toLowerCase(),
+      'password': password,
+      'phone': phone?.trim().isEmpty == true ? null : phone?.trim(),
+      'has_insurance': hasInsurance,
+      'insurance_provider': insuranceProvider?.trim().isEmpty == true
+          ? null
+          : insuranceProvider?.trim(),
+      'instagram': instagram?.trim().isEmpty == true ? null : instagram?.trim(),
+      'website': website?.trim().isEmpty == true ? null : website?.trim(),
+      'social_links': socialLinks?.trim().isEmpty == true
+          ? null
+          : socialLinks?.trim(),
+    });
+  }
+
   Future<String> requestPasswordReset(String email) async {
     final response = await _api.post("/auth/password/request-reset", {
       "email": email.trim().toLowerCase(),

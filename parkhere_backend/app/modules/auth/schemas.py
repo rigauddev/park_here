@@ -3,6 +3,18 @@ import re
 from pydantic import BaseModel, EmailStr, field_validator
 
 
+PARTNER_SERVICE_TYPES = {
+    'parking',
+    'car_wash',
+    'hotel',
+    'restaurant',
+    'tour_guide',
+    'tourism_company',
+    'transport',
+    'other',
+}
+
+
 def _digits(value: str, label: str, lengths: set[int]) -> str:
     value = re.sub(r'\D', '', value or '')
     if len(value) not in lengths or len(set(value)) == 1:
@@ -78,6 +90,14 @@ class PartnerSignupRequest(BaseModel):
 
     _validate_cnpj = field_validator('cnpj')(_cnpj)
     _validate_phone = field_validator('phone')(_phone)
+
+    @field_validator('service_type')
+    @classmethod
+    def validate_service_type(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in PARTNER_SERVICE_TYPES:
+            raise ValueError('Tipo de servico de parceiro invalido')
+        return value
     
 class LoginRequest(BaseModel):
     email: str
