@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/api_service.dart';
+import '../../../core/services/location_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class GuideAffiliationsPage extends ConsumerStatefulWidget {
@@ -16,6 +17,9 @@ class _GuideAffiliationsPageState extends ConsumerState<GuideAffiliationsPage> {
   final _api = ApiService();
   List<Map<String, dynamic>> _parkings = [];
   bool _loading = true;
+  final _cityController = TextEditingController();
+  double? _latitude;
+  double? _longitude;
 
   @override
   void initState() {
@@ -23,10 +27,30 @@ class _GuideAffiliationsPageState extends ConsumerState<GuideAffiliationsPage> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _cityController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
-    final result = await _api.getAuthorized('/partners/guide/parkings', token);
+    final query = <String, String>{};
+    if (_cityController.text.trim().length >= 2) {
+      query['city'] = _cityController.text.trim();
+    }
+    if (_latitude != null && _longitude != null) {
+      query['latitude'] = '$_latitude';
+      query['longitude'] = '$_longitude';
+    }
+    final suffix = query.isEmpty
+        ? ''
+        : '?${query.entries.map((entry) => '${entry.key}=${Uri.encodeQueryComponent(entry.value)}').join('&')}';
+    final result = await _api.getAuthorized(
+      '/partners/guide/parkings$suffix',
+      token,
+    );
     if (mounted) {
       setState(() {
         _parkings = result.cast<Map<String, dynamic>>();
@@ -53,6 +77,35 @@ class _GuideAffiliationsPageState extends ConsumerState<GuideAffiliationsPage> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _cityController,
+                          decoration: const InputDecoration(
+                            labelText: 'Cidade / City',
+                            prefixIcon: Icon(Icons.location_city),
+                          ),
+                          onSubmitted: (_) => _load(),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Usar minha localização',
+                        onPressed: () async {
+                          final position = await LocationService()
+                              .getCurrentLocation();
+                          if (!mounted) return;
+                          setState(() {
+                            _latitude = position.latitude;
+                            _longitude = position.longitude;
+                          });
+                          await _load();
+                        },
+                        icon: const Icon(Icons.my_location),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   const Text(
                     'Solicite afiliação aos estacionamentos onde você atua. A comissão será definida pelo estabelecimento ao aprovar.',
                     style: TextStyle(color: Colors.black54),

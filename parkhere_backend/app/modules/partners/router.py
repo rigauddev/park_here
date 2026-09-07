@@ -4,7 +4,7 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 from math import ceil
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -93,6 +93,7 @@ class GuideServiceRequest(BaseModel):
     price: float = 0
     duration_minutes: str | None = None
     is_active: bool = True
+    schedule: dict[str, str] | None = None
 
 
 @router.post("/signup")
@@ -217,15 +218,23 @@ async def upload_partner_document(
 
 @router.get('/guide/parkings')
 async def guide_parkings(
+    city: str | None = Query(default=None, min_length=2),
+    latitude: float | None = Query(default=None),
+    longitude: float | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
-    if not profile or profile.service_type not in {'tour_guide', 'tourism_company'}:
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type not in {'tour_guide', 'tourism_company'}):
         raise HTTPException(status_code=403, detail='Guide account required')
     links = (await db.scalars(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id))).all()
     linked = {link.parking_id: link for link in links}
-    parkings = (await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all()
+    parkings = list((await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all())
+    if city:
+        city_key = city.strip().casefold()
+        parkings = [parking for parking in parkings if city_key in parking.city.casefold()]
+    if latitude is not None and longitude is not None:
+        parkings.sort(key=lambda parking: (parking.lat - latitude) ** 2 + (parking.lng - longitude) ** 2)
     return [
         {
             'id': parking.id,
@@ -249,7 +258,7 @@ async def request_guide_parking_link(
     current_user: User = Depends(get_current_user),
 ):
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
-    if not profile or profile.service_type not in {'tour_guide', 'tourism_company'}:
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type not in {'tour_guide', 'tourism_company'}):
         raise HTTPException(status_code=403, detail='Guide account required')
     parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.is_active.is_(True)))
     if parking is None:
@@ -291,7 +300,7 @@ async def list_guide_services(
     current_user: User = Depends(get_current_user),
 ):
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
-    if not profile or profile.service_type != 'tour_guide':
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type != 'tour_guide'):
         raise HTTPException(status_code=403, detail='Guide account required')
     services = (await db.scalars(select(GuideService).where(GuideService.guide_user_id == current_user.id).order_by(GuideService.created_at.desc()))).all()
     return [_guide_service_payload(service) for service in services]
@@ -304,7 +313,7 @@ async def create_guide_service(
     current_user: User = Depends(get_current_user),
 ):
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
-    if not profile or profile.service_type != 'tour_guide':
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type != 'tour_guide'):
         raise HTTPException(status_code=403, detail='Guide account required')
     if not data.name.strip() or data.price < 0:
         raise HTTPException(status_code=422, detail='Invalid guide service')
@@ -314,6 +323,7 @@ async def create_guide_service(
         description=data.description.strip() if data.description else None,
         price=data.price,
         duration_minutes=data.duration_minutes,
+        schedule=json.dumps(data.schedule or {}),
         is_active=data.is_active,
     )
     db.add(service)
@@ -708,6 +718,7 @@ def _guide_service_payload(service: GuideService) -> dict:
         'description': service.description,
         'price': service.price,
         'duration_minutes': service.duration_minutes,
+        'schedule': json.loads(service.schedule) if service.schedule else {},
         'is_active': service.is_active,
     }
 

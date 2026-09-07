@@ -11,4 +11,5 @@ class GuideService(BaseModel):
     description = Column(Text, nullable=True)
     price = Column(Float, nullable=False, default=0)
     duration_minutes = Column(String(20), nullable=True)
+    schedule = Column(String(1000), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)

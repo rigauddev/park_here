@@ -34,6 +34,7 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
     final description = TextEditingController();
     final price = TextEditingController();
     final duration = TextEditingController();
+    final schedule = TextEditingController();
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -60,6 +61,12 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
                 controller: duration,
                 decoration: const InputDecoration(labelText: 'Duração'),
               ),
+              TextField(
+                controller: schedule,
+                decoration: const InputDecoration(
+                  labelText: 'Agenda (ex.: seg-sex 08:00-18:00)',
+                ),
+              ),
             ],
           ),
         ),
@@ -84,6 +91,7 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
       'description': description.text,
       'price': amount,
       'duration_minutes': duration.text,
+      'schedule': {'description': schedule.text.trim()},
       'is_active': true,
     }, token);
     await _load();
@@ -104,13 +112,29 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
         children: [
           for (final service in _services)
             Card(
-              child: ListTile(
-                leading: const Icon(Icons.tour),
-                title: Text(service['name'] as String? ?? ''),
-                subtitle: Text(service['description'] as String? ?? ''),
-                trailing: Text(
-                  'R\$ ${((service['price'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
-                ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.tour),
+                    title: Text(service['name'] as String? ?? ''),
+                    subtitle: Text(service['description'] as String? ?? ''),
+                    isThreeLine: true,
+                    trailing: Text(
+                      'R\$ ${((service['price'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                    ),
+                  ),
+                  if ((service['schedule'] as Map?)?['description'] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 72, bottom: 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Agenda: ${(service['schedule'] as Map)['description']}',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
         ],
