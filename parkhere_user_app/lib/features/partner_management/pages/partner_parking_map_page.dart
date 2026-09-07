@@ -119,79 +119,20 @@ class _ParkingLayoutPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             if (showFinancialSummary) ...[
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  _MoneySummaryCard(
-                    icon: Icons.schedule,
-                    label: 'Pre-reservas',
-                    value: layout.preReservedAmount,
-                    count: layout.preReservedSpots,
-                    color: Colors.orange,
-                    tooltip:
-                        'Soma das pre-reservas aguardando confirmacao ou chegada.',
-                  ),
-                  _MoneySummaryCard(
-                    icon: Icons.verified_outlined,
-                    label: 'Reservas confirmadas',
-                    value: layout.confirmedAmount,
-                    color: AppTheme.success,
-                    tooltip:
-                        'Soma das reservas confirmadas, com vaga bloqueada.',
-                  ),
-                  _MoneySummaryCard(
-                    icon: Icons.login,
-                    label: 'Em permanencia',
-                    value: layout.checkedInAmount,
-                    count: layout.occupiedSpots,
-                    color: AppTheme.primary,
-                    tooltip:
-                        'Valores de reservas com check-in realizado e veiculo no patio.',
-                  ),
-                  _MoneySummaryCard(
-                    icon: Icons.point_of_sale,
-                    label: 'Recebido no caixa',
-                    value: layout.paidAmount,
-                    color: const Color(0xFF00897B),
-                    tooltip:
-                        'Total ja registrado como pago para este estabelecimento.',
-                  ),
-                  _MoneySummaryCard(
-                    icon: Icons.pending_actions,
-                    label: 'A receber',
-                    value: layout.pendingPaymentAmount,
-                    color: Colors.red,
-                    tooltip:
-                        'Total pendente de pagamento no check-in ou checkout.',
-                  ),
-                  _MoneySummaryCard(
-                    icon: Icons.cancel_outlined,
-                    label: 'Canceladas',
-                    value: layout.cancelledAmount,
-                    count: layout.cancelledSpots,
-                    color: Theme.of(context).colorScheme.error,
-                    tooltip:
-                        'Quantidade e valor bruto das reservas canceladas neste estacionamento.',
-                  ),
-                  _MoneySummaryCard(
-                    icon: Icons.local_car_wash,
-                    label: 'Servicos pre-reserva',
-                    value: layout.servicesAmountByStatus['pre_reserved'] ?? 0,
-                    color: Colors.orange,
-                    tooltip: 'Soma dos servicos adicionais em pre-reservas.',
-                  ),
-                  _MoneySummaryCard(
-                    icon: Icons.miscellaneous_services,
-                    label: 'Servicos confirmados',
-                    value: layout.servicesAmountByStatus['confirmed'] ?? 0,
-                    color: AppTheme.success,
-                    tooltip:
-                        'Soma dos servicos adicionais em reservas confirmadas.',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
+              if (MediaQuery.sizeOf(context).width < 600)
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text('Resumo do turno / Shift summary'),
+                  children: [_financialSummary(context, ref)],
+                )
+              else
+                _financialSummary(context, ref),
+            ],
+            if (showFinancialSummary) ...[
+              if (MediaQuery.sizeOf(context).width < 600)
+                const SizedBox(height: 4)
+              else
+                const SizedBox(height: 10),
               _FeeStatementCard(onTap: () => _showFeeStatement(context, ref)),
               const _CashShiftCard(),
               const SizedBox(height: 12),
@@ -228,10 +169,14 @@ class _ParkingLayoutPanel extends ConsumerWidget {
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: MediaQuery.sizeOf(context).width >= 900
                       ? 10
-                      : 4,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  mainAxisExtent: 96,
+                      : MediaQuery.sizeOf(context).width >= 600
+                      ? 6
+                      : 3,
+                  crossAxisSpacing: 6,
+                  mainAxisSpacing: 6,
+                  mainAxisExtent: MediaQuery.sizeOf(context).width < 600
+                      ? 82
+                      : 96,
                 ),
                 itemBuilder: (context, index) {
                   final slot = layout.slots[index];
@@ -242,6 +187,82 @@ class _ParkingLayoutPanel extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _financialSummary(BuildContext context, WidgetRef ref) {
+    return Column(
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _MoneySummaryCard(
+              icon: Icons.schedule,
+              label: 'Pre-reservas',
+              value: layout.preReservedAmount,
+              count: layout.preReservedSpots,
+              color: Colors.orange,
+              tooltip:
+                  'Soma das pre-reservas aguardando confirmacao ou chegada.',
+            ),
+            _MoneySummaryCard(
+              icon: Icons.verified_outlined,
+              label: 'Reservas confirmadas',
+              value: layout.confirmedAmount,
+              color: AppTheme.success,
+              tooltip: 'Soma das reservas confirmadas, com vaga bloqueada.',
+            ),
+            _MoneySummaryCard(
+              icon: Icons.login,
+              label: 'Em permanencia',
+              value: layout.checkedInAmount,
+              count: layout.occupiedSpots,
+              color: AppTheme.primary,
+              tooltip:
+                  'Valores de reservas com check-in realizado e veiculo no patio.',
+            ),
+            _MoneySummaryCard(
+              icon: Icons.point_of_sale,
+              label: 'Recebido no caixa',
+              value: layout.paidAmount,
+              color: const Color(0xFF00897B),
+              tooltip:
+                  'Total ja registrado como pago para este estabelecimento.',
+            ),
+            _MoneySummaryCard(
+              icon: Icons.pending_actions,
+              label: 'A receber',
+              value: layout.pendingPaymentAmount,
+              color: Colors.red,
+              tooltip: 'Total pendente de pagamento no check-in ou checkout.',
+            ),
+            _MoneySummaryCard(
+              icon: Icons.cancel_outlined,
+              label: 'Canceladas',
+              value: layout.cancelledAmount,
+              count: layout.cancelledSpots,
+              color: Theme.of(context).colorScheme.error,
+              tooltip:
+                  'Quantidade e valor bruto das reservas canceladas neste estacionamento.',
+            ),
+            _MoneySummaryCard(
+              icon: Icons.local_car_wash,
+              label: 'Servicos pre-reserva',
+              value: layout.servicesAmountByStatus['pre_reserved'] ?? 0,
+              color: Colors.orange,
+              tooltip: 'Soma dos servicos adicionais em pre-reservas.',
+            ),
+            _MoneySummaryCard(
+              icon: Icons.miscellaneous_services,
+              label: 'Servicos confirmados',
+              value: layout.servicesAmountByStatus['confirmed'] ?? 0,
+              color: AppTheme.success,
+              tooltip: 'Soma dos servicos adicionais em reservas confirmadas.',
+            ),
+          ],
+        ),
+      ],
     );
   }
 
