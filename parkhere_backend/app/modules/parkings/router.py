@@ -7,6 +7,8 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.modules.parkings.models import Parking
 from app.modules.parkings.schemas import ParkingPricingResponse, ParkingResponse
+from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/parkings", tags=["Parkings"])
 
@@ -33,6 +35,19 @@ async def list_parkings(
             if normalized_city in _normalize_city(parking.city)
         ]
     return [_to_response(parking) for parking in parkings]
+
+
+@router.get('/{parking_id}/guides')
+async def list_affiliated_guides(parking_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(GuideParkingLink, User)
+        .join(User, User.id == GuideParkingLink.guide_user_id)
+        .where(GuideParkingLink.parking_id == parking_id, GuideParkingLink.status == 'approved')
+    )
+    return [
+        {'id': guide.id, 'name': guide.name, 'email': guide.email}
+        for _, guide in result.all()
+    ]
 
 
 def _normalize_city(value: str) -> str:

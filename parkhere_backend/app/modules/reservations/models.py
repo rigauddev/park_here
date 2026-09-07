@@ -12,6 +12,8 @@ class Reservation(BaseModel):
     walk_in_plate = Column(String(7), nullable=True)
     walk_in_phone = Column(String(20), nullable=True)
     vehicle_id = Column(String(36), ForeignKey("vehicles.id"), nullable=True)
+    guide_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    guide_commission_amount = Column(Float, nullable=False, default=0)
     status = Column(String(40), nullable=False, default="pre_reserved")
     checked_in_at = Column(DateTime(timezone=True), nullable=True)
     checked_out_at = Column(DateTime(timezone=True), nullable=True)

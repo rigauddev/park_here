@@ -23,6 +23,7 @@ class PreCheckinReservationRequest(BaseModel):
     route_minutes: int
     estimated_total: float | None = None
     vehicle_id: str | None = None
+    guide_user_id: str | None = None
     spot_code: str | None = None
     arrival_estimate_at: str | None = None
     is_manual_arrival: bool = False
@@ -84,6 +85,8 @@ class ReservationResponse(BaseModel):
     base_amount: float
     services_amount: float
     platform_fee_amount: float
+    guide_user_id: str | None = None
+    guide_commission_amount: float = 0
     final_total: float
     selected_services: list[ReservationServiceSnapshot]
     platform_fees: list[ReservationPlatformFeeSnapshot]

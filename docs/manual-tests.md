@@ -11,7 +11,7 @@ Apagar banco, subir containers, aplicar migrations e rodar seed:
 docker compose down -v
 docker compose up -d mysql api
 docker compose exec -T api alembic upgrade head
-docker compose exec -T api python app/scripts/seed_mvp_data.py
+docker compose exec -T api python -m app.scripts.seed_mvp_data
 docker compose up -d web
 ```
 
@@ -28,7 +28,12 @@ Contas seed:
 - Parceiro gestor: `admin@parkhere.test` / `123456`
 - Parceiro dono: `parceiro@parkhere.test` / `123456`
 - Operador: `operador@parkhere.test` / `123456`
+- Guia turístico: `guia@parkhere.test` / `123456`
 - MFA local: `000000`
+
+Para testar indicação de guia, cadastre um usuário parceiro com serviço `Guia
+turístico`, solicite afiliação a um estacionamento e aprove a solicitação no
+usuário gestor definindo comissão percentual ou fixa.
 
 ## Android fisico por USB
 
@@ -41,15 +46,26 @@ bash scripts/run_android_usb.sh ZF524HQSZV
 O script configura `adb reverse` e passa `API_URL=http://127.0.0.1:8000` por
 `--dart-define`. Execute novamente se desconectar o cabo.
 
-## Fluxo cliente
+## Fluxo completo cliente, guia e estacionamento
 
-1. Entre como cliente e faca login.
-2. Pesquise `Valenca` no mapa ou abra `Servicos > Estacionamento`.
-3. Selecione um estacionamento, plano e servicos extras.
-4. Confirme a pre-reserva e veja tempo de chegada/expiracao.
-5. Pague com Pix simulado e confirme que a reserva fica paga.
-6. Abra `Reservas`, realize check-in e depois checkout.
-7. Cancele outra pre-reserva e confirme que a vaga volta a ficar livre.
+1. Entre como cliente e faça login; confira que os estacionamentos próximos à
+   localização são listados.
+2. Cadastre um veículo e confirme em `Veículos` que ele continua salvo após sair
+   e entrar novamente. Cadastre um cartão na carteira.
+3. Pesquise `Valença`, selecione um estacionamento e escolha um plano. Para
+   diária, informe a quantidade de dias.
+4. Faça uma reserva sem indicação: abra a rota, escolha um aplicativo de mapas,
+   confirme a pré-reserva e verifique a validade como tempo estimado + 5 minutos.
+5. Volte para `Reservas`, faça check-in com validação de localização e fotos,
+   pague com o cartão salvo ou Pix simulado e confirme que a pré-reserva virou
+   reserva ativa.
+6. Faça checkout e confirme o status finalizado, horário, fotos temporárias e
+   atualização da vaga.
+7. Repita o fluxo selecionando o serviço de guia e um guia afiliado. Confira no
+   resumo e na API o `guide_user_id` e a comissão congelada.
+8. Repita escolhendo `Sem indicação` e confirme que a reserva não possui comissão
+   de guia.
+9. Cancele uma pré-reserva não paga e confirme que a vaga volta a ficar livre.
 
 ## Fluxo parceiro
 

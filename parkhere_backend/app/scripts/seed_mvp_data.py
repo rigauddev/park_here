@@ -15,6 +15,8 @@ from app.modules.customer_assets.models import (
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.platform_fees.models import PlatformFee
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.partners.guide_service_models import GuideService
 from app.modules.payments.models import PartnerPaymentAccount
 from app.modules.reservations.models import Reservation
 from app.modules.tenants.models.tenant_model_plan_enum import PlanEnum
@@ -112,7 +114,18 @@ async def seed():
             email_verified=True,
             role=UserRoleEnum.CUSTOMER,
         )
-        db.add_all([system_admin, partner_user, operator_user, customer])
+        guide_user = User(
+            tenant_id=tenant.id,
+            name="Guia Turistico ParkHere",
+            firt_name="Guia",
+            email="guia@parkhere.test",
+            password_hash=hash_password("123456"),
+            phone="71999992222",
+            phone_verified=True,
+            email_verified=True,
+            role=UserRoleEnum.TOUR_GUIDE,
+        )
+        db.add_all([system_admin, partner_user, operator_user, customer, guide_user])
         await db.flush()
         await ensure_partner_profile(db, tenant.id, commit=False)
         await ensure_descriptive_seed_users(db, commit=False)
@@ -351,6 +364,26 @@ async def seed():
         db.add_all(parkings)
         await db.flush()
 
+        db.add(
+            GuideParkingLink(
+                guide_user_id=guide_user.id,
+                parking_id=parkings[0].id,
+                status="approved",
+                commission_type="percentage",
+                commission_value="10",
+            )
+        )
+        db.add(
+            GuideService(
+                guide_user_id=guide_user.id,
+                name="Roteiro histórico de Valença",
+                description="Passeio guiado pelo centro histórico.",
+                price=120,
+                duration_minutes="120",
+                is_active=True,
+            )
+        )
+
         db.add_all(
             [
                 ParkingService(parking_id=parkings[0].id, code="car_wash", name="Lava-jato", price=30),
@@ -433,6 +466,7 @@ async def seed():
     print("Customer login seed: cliente@parkhere.test / 123456")
     print("Parking admin seed: admin@parkhere.test / 123456")
     print("Partner login seed: parceiro@parkhere.test / 123456")
+    print("Tour guide login seed: guia@parkhere.test / 123456")
 
 
 async def refresh_existing_seed(db):

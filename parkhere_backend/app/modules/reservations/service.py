@@ -22,6 +22,7 @@ from app.modules.reservations.schemas import (
 from app.modules.customer_assets.models import Vehicle
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
+from app.modules.partners.guide_models import GuideParkingLink
 
 
 @dataclass
@@ -56,6 +57,7 @@ class ReservationService:
         data.spot_code = await allocate_spot(db, parking, data.spot_code, data.spot_type)
 
         pricing = await _calculate_pricing(db, parking, data)
+        guide_commission_amount = await _guide_commission(db, parking.id, data.guide_user_id, pricing.base_amount + pricing.services_amount)
         parking.available_spots -= 1
         arrival_estimate_at = _arrival_estimate(data)
 
@@ -63,6 +65,8 @@ class ReservationService:
             parking_id=parking.id,
             user_id=current_user.id,
             vehicle_id=data.vehicle_id,
+            guide_user_id=data.guide_user_id,
+            guide_commission_amount=guide_commission_amount,
             walk_in_plate=data.walk_in_plate,
             walk_in_phone=data.walk_in_phone,
             spot_code=data.spot_code,
@@ -234,6 +238,20 @@ async def _get_parking_with_services(db: AsyncSession, parking_id: str) -> Parki
     if parking is None:
         raise HTTPException(status_code=404, detail="Parking not found")
     return parking
+
+
+async def _guide_commission(db, parking_id: str, guide_user_id: str | None, base_amount: float) -> float:
+    if not guide_user_id:
+        return 0.0
+    link = await db.scalar(select(GuideParkingLink).where(
+        GuideParkingLink.guide_user_id == guide_user_id,
+        GuideParkingLink.parking_id == parking_id,
+        GuideParkingLink.status == 'approved',
+    ))
+    if link is None:
+        raise HTTPException(status_code=422, detail='Guide is not affiliated with this parking')
+    value = float(link.commission_value or 0)
+    return round(base_amount * value / 100, 2) if link.commission_type == 'percentage' else round(value, 2)
 
 
 async def _get_reservation_with_parking(
@@ -630,6 +648,8 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         base_amount=reservation.base_amount,
         services_amount=reservation.services_amount,
         platform_fee_amount=reservation.platform_fee_amount,
+        guide_user_id=reservation.guide_user_id,
+        guide_commission_amount=reservation.guide_commission_amount,
         final_total=reservation.final_total,
         selected_services=selected_services,
         platform_fees=platform_fees,

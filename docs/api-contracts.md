@@ -252,6 +252,7 @@ Request:
   "pricing_plan": "hourly",
   "duration_hours": 2,
   "route_minutes": 14,
+  "guide_user_id": null,
   "service_codes": ["car_wash"]
 }
 ```
@@ -287,6 +288,14 @@ Regras:
 - Duas reservas simultaneas para a mesma vaga geram uma confirmacao e uma falha `409`.
 - Reserva agendada futura deve validar horario de funcionamento, antecedencia maxima e politica de cancelamento antes da confirmacao.
 - Politica de cancelamento deve explicitar prazo sem taxa, taxa do estacionamento, taxa ParkHere e regra de credito em carteira.
+
+Quando o cliente contratar o serviço de guia, o app pode consultar
+`GET /parkings/{parking_id}/guides` e enviar o `guide_user_id` escolhido. A lista
+contém apenas guias com afiliação aprovada pelo estacionamento. Se o identificador
+não pertencer a uma afiliação aprovada, a API rejeita a reserva com `422`.
+O backend calcula e congela `guide_commission_amount` na reserva, conforme a
+comissão percentual ou fixa configurada pelo parceiro. O campo é uma comissão do
+estabelecimento para o guia e não altera o total cobrado do cliente.
 
 ## Cancelamento De Reserva
 

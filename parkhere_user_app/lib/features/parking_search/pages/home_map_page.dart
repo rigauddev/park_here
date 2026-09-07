@@ -1084,6 +1084,43 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required double userLocationLng,
   }) async {
     final areaPreference = ref.read(selectedAreaPreferenceProvider);
+    String? guideUserId;
+    if (selected.tourGuide) {
+      try {
+        final guides = await ref
+            .read(apiServiceProvider)
+            .get('/parkings/${parking.id}/guides');
+        if (!mounted) return;
+        if (guides.isNotEmpty) {
+          final selectedGuide = await showDialog<String>(
+            context: context,
+            builder: (context) => SimpleDialog(
+              title: const Text('Indicar guia / Select a guide'),
+              children: [
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, '__none__'),
+                  child: const Text('Sem indicação / No guide'),
+                ),
+                for (final rawGuide in guides)
+                  SimpleDialogOption(
+                    onPressed: () =>
+                        Navigator.pop(context, rawGuide['id'] as String),
+                    child: Text(
+                      (rawGuide['name'] as String?)?.trim().isNotEmpty == true
+                          ? rawGuide['name'] as String
+                          : rawGuide['email'] as String? ?? 'Guia',
+                    ),
+                  ),
+              ],
+            ),
+          );
+          if (selectedGuide == null) return;
+          if (selectedGuide != '__none__') guideUserId = selectedGuide;
+        }
+      } catch (_) {
+        // A indicação é opcional; a reserva pode seguir sem guia.
+      }
+    }
     await ref.read(accountProvider.notifier).syncVehicles();
     if (!mounted) return;
     final account = ref.read(accountProvider);
@@ -1169,6 +1206,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                 'area_preference': areaPreference.name,
                 'pricing_plan': plan.name,
                 'duration_hours': plan == PlanType.daily ? dailyDays * 24 : 1,
+                if (guideUserId != null) 'guide_user_id': guideUserId,
                 'service_codes': [
                   if (selected.carWash) 'car_wash',
                   if (selected.tourGuide) 'tour_guide',
