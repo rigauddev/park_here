@@ -2,6 +2,11 @@
 
 ## Status Atual
 
+O plano base inclui o caixa operacional e o relatório básico de entradas,
+saídas, recebimentos e fechamento do turno. O módulo Financeiro Pro é um
+recurso contratado separadamente e fica reservado para análises avançadas,
+repasses, taxas, comissões, conciliação e exportações financeiras.
+
 Hoje a gestao existe em dois blocos diferentes:
 
 - `tenants` representam estabelecimentos/contas parceiras.

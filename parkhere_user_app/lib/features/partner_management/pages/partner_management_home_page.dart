@@ -14,6 +14,7 @@ import 'guide_affiliations_page.dart';
 import 'guide_dashboard_page.dart';
 import 'guide_requests_page.dart';
 import 'guide_services_page.dart';
+import 'partner_cash_report_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -101,6 +102,12 @@ class _PartnerManagementBody extends StatelessWidget {
               onTap: () => _open(context, const PartnerReservationsPage()),
             ),
             _ManagementAction(
+              icon: Icons.point_of_sale_outlined,
+              title: 'Caixa e movimentações',
+              description: 'Entradas, saídas e fechamento operacional.',
+              onTap: () => _open(context, const PartnerCashReportPage()),
+            ),
+            _ManagementAction(
               icon: Icons.lock_outline,
               title: 'Financeiro Pro',
               description: 'Relatorios ficam bloqueados para o plano pago.',
@@ -128,6 +135,13 @@ class _PartnerManagementBody extends StatelessWidget {
             description:
                 'Painel visual das vagas livres, pre-reservadas e ocupadas.',
             onTap: () => _open(context, const PartnerParkingMapPage()),
+          ),
+          _ManagementAction(
+            icon: Icons.point_of_sale_outlined,
+            title: 'Caixa e movimentações',
+            description:
+                'Entradas, saídas, recebimentos e fechamento do turno.',
+            onTap: () => _open(context, const PartnerCashReportPage()),
           ),
           _ManagementAction(
             icon: Icons.design_services_outlined,
