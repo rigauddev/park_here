@@ -58,13 +58,28 @@ def _normalize_city(value: str) -> str:
     )
 
 
+_CANONICAL_CITIES = {
+    'valenca': 'Valença',
+    'sao paulo': 'São Paulo',
+    'brasilia': 'Brasília',
+    'goiania': 'Goiânia',
+    'belem': 'Belém',
+    'joao pessoa': 'João Pessoa',
+    'florianopolis': 'Florianópolis',
+}
+
+
+def _canonical_city(value: str) -> str:
+    return _CANONICAL_CITIES.get(_normalize_city(value), value)
+
+
 def _to_response(parking: Parking) -> ParkingResponse:
     services = {service.code: service for service in parking.services if service.is_active}
 
     return ParkingResponse(
         id=parking.id,
         name=parking.name,
-        city=parking.city,
+        city=_canonical_city(parking.city),
         lat=parking.lat,
         lng=parking.lng,
         rating=parking.rating,
