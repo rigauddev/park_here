@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,6 +32,11 @@ class ParkFinderApp extends ConsumerWidget {
       theme: AppTheme.theme,
       locale: locale,
       supportedLocales: const [Locale('pt', 'BR'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
       title: appNameFor(locale),
       home: const AuthGate(),
     );
