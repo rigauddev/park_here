@@ -26,6 +26,8 @@ class PaymentTransaction(BaseModel):
     status = Column(String(40), nullable=False, default="pending")
     gross_amount = Column(Float, nullable=False, default=0)
     platform_fee_amount = Column(Float, nullable=False, default=0)
+    customer_fee_amount = Column(Float, nullable=False, default=0)
+    establishment_fee_amount = Column(Float, nullable=False, default=0)
     partner_amount = Column(Float, nullable=False, default=0)
     provider_fee_estimate = Column(Float, nullable=False, default=0)
     cash_received = Column(Numeric(12, 2), nullable=True)

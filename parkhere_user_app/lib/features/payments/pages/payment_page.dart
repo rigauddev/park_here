@@ -32,6 +32,28 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   PaymentMethod? _selectedMethod;
   final cvvController = TextEditingController();
   bool _isLoading = false;
+  Map<String, dynamic>? _quote;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuote();
+  }
+
+  Future<void> _loadQuote() async {
+    final reservationId = widget.reservationId;
+    final token = ref.read(authProvider).accessToken;
+    if (reservationId == null || token == null) return;
+    try {
+      final quote = await PaymentService().reservationQuote(
+        reservationId,
+        token,
+      );
+      if (mounted) setState(() => _quote = quote);
+    } catch (_) {
+      // The payment page can still use the reservation total if the quote is unavailable.
+    }
+  }
 
   @override
   void dispose() {
@@ -225,6 +247,38 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               "Valor: R\$ ${widget.amount.toStringAsFixed(2)}",
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
+            if (_quote != null)
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      title: const Text('Resumo da reserva'),
+                      trailing: Text(
+                        'R\$ ${(_quote!['reservation_amount'] as num).toDouble().toStringAsFixed(2)}',
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('Taxa do usuário'),
+                      trailing: Text(
+                        'R\$ ${(_quote!['customer_fee_amount'] as num).toDouble().toStringAsFixed(2)}',
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('Taxa do estabelecimento'),
+                      trailing: Text(
+                        'R\$ ${(_quote!['establishment_fee_amount'] as num).toDouble().toStringAsFixed(2)}',
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('Total'),
+                      trailing: Text(
+                        'R\$ ${(_quote!['total_amount'] as num).toDouble().toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (widget.reservationId != null) ...[
               const SizedBox(height: 8),
               const Text(

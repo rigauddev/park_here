@@ -13,6 +13,15 @@ from app.modules.users.models.user_model import User
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
 
+@router.get('/reservations/{reservation_id}/quote')
+async def reservation_payment_quote(
+    reservation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await PaymentService.reservation_payment_quote(db, reservation_id, current_user)
+
+
 @router.post(
     "/reservations/{reservation_id}/intent",
     response_model=PaymentIntentResponse,

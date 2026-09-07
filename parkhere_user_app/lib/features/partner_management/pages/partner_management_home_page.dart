@@ -13,6 +13,7 @@ import 'parking_dashboard_page.dart';
 import 'guide_affiliations_page.dart';
 import 'guide_dashboard_page.dart';
 import 'guide_requests_page.dart';
+import 'guide_services_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -221,7 +222,7 @@ class _PartnerManagementBody extends StatelessWidget {
             icon: Icons.tour_outlined,
             title: 'Serviços turísticos',
             description: 'Roteiros, idiomas, agenda, capacidade e valores.',
-            onTap: () => _showPending(context),
+            onTap: () => _open(context, const GuideServicesPage()),
           ),
         ];
       case 'tourism_company':

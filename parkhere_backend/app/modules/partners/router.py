@@ -25,6 +25,7 @@ from app.modules.parkings.schemas import (
 from app.modules.parkings.service import ParkingManagementService
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
@@ -78,6 +79,14 @@ class PartnerOperatorResponse(BaseModel):
 class GuideCommissionRequest(BaseModel):
     commission_type: str
     commission_value: float
+
+
+class GuideServiceRequest(BaseModel):
+    name: str
+    description: str | None = None
+    price: float = 0
+    duration_minutes: str | None = None
+    is_active: bool = True
 
 
 @router.post("/signup")
@@ -243,6 +252,43 @@ async def request_guide_parking_link(
         db.add(existing)
         await db.commit()
     return {'parking_id': parking_id, 'status': existing.status}
+
+
+@router.get('/guide/services')
+async def list_guide_services(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if not profile or profile.service_type != 'tour_guide':
+        raise HTTPException(status_code=403, detail='Guide account required')
+    services = (await db.scalars(select(GuideService).where(GuideService.guide_user_id == current_user.id).order_by(GuideService.created_at.desc()))).all()
+    return [_guide_service_payload(service) for service in services]
+
+
+@router.post('/guide/services', status_code=201)
+async def create_guide_service(
+    data: GuideServiceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if not profile or profile.service_type != 'tour_guide':
+        raise HTTPException(status_code=403, detail='Guide account required')
+    if not data.name.strip() or data.price < 0:
+        raise HTTPException(status_code=422, detail='Invalid guide service')
+    service = GuideService(
+        guide_user_id=current_user.id,
+        name=data.name.strip(),
+        description=data.description.strip() if data.description else None,
+        price=data.price,
+        duration_minutes=data.duration_minutes,
+        is_active=data.is_active,
+    )
+    db.add(service)
+    await db.commit()
+    await db.refresh(service)
+    return _guide_service_payload(service)
 
 
 @router.post('/guide/links/{link_id}/approve')
@@ -572,6 +618,17 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
         is_active=user.is_active,
         created_at=user.created_at.isoformat() + "Z",
     )
+
+
+def _guide_service_payload(service: GuideService) -> dict:
+    return {
+        'id': service.id,
+        'name': service.name,
+        'description': service.description,
+        'price': service.price,
+        'duration_minutes': service.duration_minutes,
+        'is_active': service.is_active,
+    }
 
 
 def _user_permissions(user: User) -> list[str]:

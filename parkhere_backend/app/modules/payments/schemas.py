@@ -25,6 +25,8 @@ class PaymentIntentResponse(BaseModel):
     status: str
     gross_amount: float
     platform_fee_amount: float
+    customer_fee_amount: float = 0
+    establishment_fee_amount: float = 0
     partner_amount: float
     withheld_fee_amount: float = 0
     cash_received: float | None = None

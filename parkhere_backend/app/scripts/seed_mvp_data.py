@@ -1381,6 +1381,13 @@ async def ensure_platform_fees(db, commit=True):
             "min_fee": 1.00,
             "max_fee": 10,
         },
+        "establishment": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 0,
+            "min_fee": 0,
+            "max_fee": None,
+        },
     }
 
     result = await db.execute(

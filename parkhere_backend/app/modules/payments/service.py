@@ -24,9 +24,32 @@ from app.modules.reservations.models import Reservation
 from app.modules.reservations.service import calculate_checkout_excess
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
+from app.modules.platform_fees.service import PlatformFeeService
 
 
 class PaymentService:
+    @staticmethod
+    async def reservation_payment_quote(
+        db: AsyncSession,
+        reservation_id: str,
+        current_user: User,
+    ) -> dict:
+        reservation = await _get_reservation(db, reservation_id)
+        parking = await _get_parking(db, reservation.parking_id)
+        _ensure_payment_permission(current_user, reservation, parking)
+        customer_fee = reservation.platform_fee_amount or 0
+        lines = await PlatformFeeService.calculate_lines(
+            db,
+            {'establishment': (reservation.base_amount or 0) + (reservation.services_amount or 0)},
+        )
+        establishment_fee = sum(line.fee_amount for line in lines)
+        return {
+            'reservation_amount': round((reservation.final_total or reservation.estimated_total) - customer_fee, 2),
+            'customer_fee_amount': round(customer_fee, 2),
+            'establishment_fee_amount': round(establishment_fee, 2),
+            'total_amount': round(reservation.final_total or reservation.estimated_total, 2),
+        }
+
     @staticmethod
     async def create_reservation_payment_intent(
         db: AsyncSession,
@@ -74,7 +97,15 @@ class PaymentService:
             platform_fee_amount = 0.0
         else:
             gross_amount = reservation.final_total or reservation.estimated_total
-            platform_fee_amount = reservation.platform_fee_amount
+            customer_fee_amount = reservation.platform_fee_amount
+            establishment_fee_amount = 0.0
+            if purpose == 'reservation':
+                fee_lines = await PlatformFeeService.calculate_lines(
+                    db,
+                    {'establishment': (reservation.base_amount or 0) + (reservation.services_amount or 0)},
+                )
+                establishment_fee_amount = sum(line.fee_amount for line in fee_lines)
+            platform_fee_amount = customer_fee_amount + establishment_fee_amount
             if reservation.status == "checked_in" and reservation.pricing_plan == "hourly":
                 excess_minutes, excess_amount = calculate_checkout_excess(
                     reservation,
@@ -83,6 +114,9 @@ class PaymentService:
                 reservation.checkout_excess_minutes = excess_minutes
                 reservation.checkout_excess_amount = excess_amount
                 gross_amount += excess_amount
+        if purpose == 'checkout_excess':
+            customer_fee_amount = 0.0
+            establishment_fee_amount = 0.0
 
         if data.method == "cash" and (
             data.cash_received is None or data.cash_received < gross_amount
@@ -140,7 +174,9 @@ class PaymentService:
             payment_purpose=purpose,
             status="pending",
             gross_amount=gross_amount,
-            platform_fee_amount=platform_fee_amount,
+                platform_fee_amount=platform_fee_amount,
+                customer_fee_amount=customer_fee_amount,
+                establishment_fee_amount=establishment_fee_amount,
             partner_amount=partner_amount,
             provider_fee_estimate=provider_fee_estimate,
             checkout_url=_mock_checkout_url(external_reference),
@@ -327,6 +363,8 @@ def to_response(transaction: PaymentTransaction) -> PaymentIntentResponse:
         if transaction.cash_received is not None
         else None,
         platform_fee_amount=transaction.platform_fee_amount,
+        customer_fee_amount=transaction.customer_fee_amount,
+        establishment_fee_amount=transaction.establishment_fee_amount,
         partner_amount=transaction.partner_amount,
         provider_fee_estimate=transaction.provider_fee_estimate,
         checkout_url=transaction.checkout_url,

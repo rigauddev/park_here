@@ -10,6 +10,7 @@ from app.modules.customer_assets.models import DriverDocument, Vehicle, WalletPa
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PartnerPaymentAccount, PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement

@@ -5,6 +5,16 @@ import '../../../core/services/api_service.dart';
 class PaymentService {
   final _api = ApiService();
 
+  Future<Map<String, dynamic>> reservationQuote(
+    String reservationId,
+    String accessToken,
+  ) {
+    return _api.getAuthorizedMap(
+      '/payments/reservations/$reservationId/quote',
+      accessToken,
+    );
+  }
+
   Future<PaymentResult> processPayment({
     required double amount,
     required PaymentMethod method,

@@ -33,6 +33,21 @@ Os arquivos ficam no volume local do backend e o cadastro passa para
   aprova o vínculo. Percentual é limitado a 100; valor fixo representa reais
   por indicação.
 
+## Resumo de pagamento
+
+`GET /payments/reservations/{reservation_id}/quote` retorna `reservation_amount`,
+`customer_fee_amount`, `establishment_fee_amount` e `total_amount`. As duas
+taxas são configuradas pelo administrador do sistema em
+`/admin/platform-fees`; o usuário vê o detalhamento antes de confirmar o
+pagamento.
+
+O administrador do sistema gerencia essas regras com `GET /admin/platform-fees`
+e `PUT /admin/platform-fees/{service_type}`. Esses endpoints exigem o papel
+`SUPER_ADMIN`; gestores de estacionamento e guias não alteram taxas globais.
+
+Guias parceiros usam `GET/POST /partners/guide/services` para cadastrar seus
+próprios serviços turísticos, separados das afiliações a estacionamentos.
+
 ## Busca De Estacionamentos
 
 `GET /parkings?city=Valenca`
