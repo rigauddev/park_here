@@ -115,6 +115,27 @@ class ApiService {
     throw Exception(_errorMessage(response));
   }
 
+  Future<Map<String, dynamic>> uploadAuthorizedFile(
+    String endpoint,
+    String token,
+    String fileName,
+    List<int> bytes,
+  ) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${ApiConstants.baseUrl}$endpoint'),
+    )..headers.addAll(_authorizedHeaders(token));
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: fileName),
+    );
+    final response = await http.Response.fromStream(await request.send());
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    await _handleUnauthorized(response);
+    throw Exception(_errorMessage(response));
+  }
+
   String _errorMessage(http.Response response) {
     try {
       final detail =

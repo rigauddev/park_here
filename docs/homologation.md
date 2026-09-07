@@ -25,6 +25,8 @@ docker compose --env-file .env.homolog -f compose.homolog.yml up -d --build
 
 O Caddy obtem e renova o certificado HTTPS. A API fica disponivel em `/api` e o MySQL nao e publicado externamente.
 
+Fotos de check-in e checkout ficam no volume Docker `inspection_photos`, em `/app/storage/inspection`. A API remove arquivos com mais de sete dias durante novos envios. Esse volume deve entrar no backup do VPS; o conteúdo não é exposto pelo Caddy.
+
 ## Backup e restauracao
 
 ```bash

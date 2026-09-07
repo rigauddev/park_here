@@ -1805,6 +1805,15 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
 
     setState(() => isSubmitting = true);
     try {
+      for (final entry in photos.entries) {
+        final photo = entry.value!;
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/${widget.reservationId}/photos?kind=${_photoKind(entry.key)}',
+          token,
+          photo.name,
+          await photo.readAsBytes(),
+        );
+      }
       await checkinOperationalReservation(
         token: token,
         reservationId: widget.reservationId,
@@ -1824,6 +1833,13 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
       if (mounted) setState(() => isSubmitting = false);
     }
   }
+
+  String _photoKind(String label) => switch (label) {
+    'Frente' => 'front',
+    'Traseira' => 'rear',
+    'Lateral esquerda' => 'left',
+    _ => 'right',
+  };
 }
 
 class _CheckoutPhotosDialog extends ConsumerStatefulWidget {
@@ -1932,6 +1948,15 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
 
     setState(() => isSubmitting = true);
     try {
+      for (final entry in photos.entries) {
+        final photo = entry.value!;
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/${widget.reservationId}/photos?kind=${_photoKind(entry.key)}',
+          token,
+          photo.name,
+          await photo.readAsBytes(),
+        );
+      }
       await checkoutOperationalReservation(
         token: token,
         reservationId: widget.reservationId,
@@ -1951,6 +1976,13 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
       if (mounted) setState(() => isSubmitting = false);
     }
   }
+
+  String _photoKind(String label) => switch (label) {
+    'Frente' => 'front',
+    'Traseira' => 'rear',
+    'Lateral esquerda' => 'left',
+    _ => 'right',
+  };
 }
 
 class _MoneySummaryCard extends StatelessWidget {

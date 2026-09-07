@@ -12,6 +12,7 @@ services:
       - ./parkhere_backend/.env
     volumes:
       - ./parkhere_backend:/app
+      - inspection_photos:/app/storage/inspection
     command: >
       uvicorn app.main:app
       --host 0.0.0.0
@@ -58,3 +59,4 @@ services:
 
 volumes:
   mysql_data:
+  inspection_photos:

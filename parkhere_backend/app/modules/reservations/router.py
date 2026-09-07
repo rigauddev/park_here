@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -8,10 +11,11 @@ from app.modules.reservations.schemas import (
     PreCheckinReservationRequest,
     ReservationResponse,
 )
-from app.modules.reservations.service import ReservationService
+from app.modules.reservations.service import ReservationService, _get_reservation_with_parking
 from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
+PHOTO_ROOT = Path('/app/storage/inspection')
 
 
 @router.post("/pre-checkin", response_model=ReservationResponse)
@@ -30,6 +34,33 @@ async def checkin_reservation(
     current_user: User = Depends(get_current_user),
 ):
     return await ReservationService.checkin(db, reservation_id, current_user)
+
+
+@router.post("/{reservation_id}/photos")
+async def upload_reservation_photo(
+    reservation_id: str,
+    kind: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+    if current_user.tenant_id != parking.tenant_id:
+        raise HTTPException(status_code=403, detail='Reservation not allowed')
+    if kind not in {'front', 'rear', 'left', 'right'}:
+        raise HTTPException(status_code=422, detail='Invalid photo kind')
+    if file.content_type not in {None, 'image/jpeg', 'image/png'}:
+        raise HTTPException(status_code=415, detail='Only JPEG or PNG photos are accepted')
+    PHOTO_ROOT.mkdir(parents=True, exist_ok=True)
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    for old in PHOTO_ROOT.glob('*/*'):
+        if old.is_file() and datetime.utcfromtimestamp(old.stat().st_mtime) < cutoff:
+            old.unlink(missing_ok=True)
+    folder = PHOTO_ROOT / reservation_id
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f'{kind}.jpg'
+    target.write_bytes(await file.read())
+    return {'reservation_id': reservation_id, 'kind': kind, 'retention_days': 7}
 
 
 @router.post("/{reservation_id}/checkout", response_model=ReservationResponse)

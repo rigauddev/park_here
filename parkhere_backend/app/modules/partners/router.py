@@ -1,5 +1,6 @@
 import json
 import re
+from uuid import uuid4
 from datetime import datetime, timedelta
 from math import ceil
 
@@ -22,6 +23,7 @@ from app.modules.parkings.schemas import (
 )
 from app.modules.parkings.service import ParkingManagementService
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
 from app.modules.reservations.models import Reservation
@@ -138,6 +140,40 @@ async def get_my_partner_profile(
         if payment_account
         else None,
     }
+
+
+@router.get('/guide/parkings')
+async def guide_parkings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if not profile or profile.service_type not in {'tour_guide', 'tourism_company'}:
+        raise HTTPException(status_code=403, detail='Guide account required')
+    links = await db.scalars(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id))
+    linked = {link.parking_id: link.status for link in links.all()}
+    parkings = (await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all()
+    return [{'id': parking.id, 'name': parking.name, 'city': parking.city, 'status': linked.get(parking.id, 'not_linked')} for parking in parkings]
+
+
+@router.post('/guide/parkings/{parking_id}')
+async def request_guide_parking_link(
+    parking_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if not profile or profile.service_type not in {'tour_guide', 'tourism_company'}:
+        raise HTTPException(status_code=403, detail='Guide account required')
+    parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.is_active.is_(True)))
+    if parking is None:
+        raise HTTPException(status_code=404, detail='Parking not found')
+    existing = await db.scalar(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id, GuideParkingLink.parking_id == parking_id))
+    if existing is None:
+        existing = GuideParkingLink(id=str(uuid4()), guide_user_id=current_user.id, parking_id=parking_id, status='pending')
+        db.add(existing)
+        await db.commit()
+    return {'parking_id': parking_id, 'status': existing.status}
 
 
 @router.get("/parking-map")

@@ -43,6 +43,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    volumes:
+      - inspection_photos:/app/storage/inspection
     depends_on:
       mysql:
         condition: service_healthy
@@ -77,3 +79,4 @@ volumes:
   database:
   certificates:
   caddy_config:
+  inspection_photos:
