@@ -39,9 +39,9 @@ class PartnerCashReportPage extends ConsumerWidget {
                 const Card(
                   child: ListTile(
                     leading: Icon(Icons.info_outline),
-                    title: Text('Relatório básico incluído'),
+                    title: Text('Visão básica incluída no plano atual'),
                     subtitle: Text(
-                      'Entradas, saídas, reservas pagas e fechamento operacional. Gestão financeira avançada fica no plano Pro.',
+                      'Entradas, saídas, reservas pagas e fechamento operacional. O Financeiro Pro é um complemento opcional.',
                     ),
                   ),
                 ),

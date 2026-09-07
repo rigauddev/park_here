@@ -71,6 +71,21 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              Card(
+                color: const Color(0xFFEAFBFF),
+                child: ListTile(
+                  leading: const Icon(Icons.layers_outlined),
+                  title: Text(
+                    isPt ? 'Visão básica incluída' : 'Basic view included',
+                  ),
+                  subtitle: Text(
+                    isPt
+                        ? 'Indicadores operacionais disponíveis. O Financeiro Pro complementa com repasses, taxas e análises avançadas.'
+                        : 'Operational indicators are included. Financial Pro adds settlements, fees and advanced analytics.',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
@@ -85,8 +100,12 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
                             : 'Reservation / spot type',
                       ),
                       items: ['Todos', 'hourly', 'daily', 'weekly', 'monthly']
-                          .map((value) => DropdownMenuItem(
-                              value: value, child: Text(value)))
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value),
+                            ),
+                          )
                           .toList(),
                       onChanged: (value) =>
                           setState(() => _plan = value ?? 'Todos'),
@@ -103,9 +122,11 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
                       if (range != null) setState(() => _period = range);
                     },
                     icon: const Icon(Icons.date_range),
-                    label: Text(_period == null
-                        ? (isPt ? 'Período' : 'Period')
-                        : '${_period!.start.day}/${_period!.start.month} – ${_period!.end.day}/${_period!.end.month}'),
+                    label: Text(
+                      _period == null
+                          ? (isPt ? 'Período' : 'Period')
+                          : '${_period!.start.day}/${_period!.start.month} – ${_period!.end.day}/${_period!.end.month}',
+                    ),
                   ),
                 ],
               ),
@@ -129,7 +150,11 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
                     "R\$ ${average.toStringAsFixed(2)}",
                     Icons.analytics,
                   ),
-                  _MetricCard(isPt ? 'Concluídas' : 'Completed', '$completed', Icons.check_circle),
+                  _MetricCard(
+                    isPt ? 'Concluídas' : 'Completed',
+                    '$completed',
+                    Icons.check_circle,
+                  ),
                 ],
               ),
               const SizedBox(height: 20),

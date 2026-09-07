@@ -110,7 +110,8 @@ class _PartnerManagementBody extends StatelessWidget {
             _ManagementAction(
               icon: Icons.lock_outline,
               title: 'Financeiro Pro',
-              description: 'Relatorios ficam bloqueados para o plano pago.',
+              description:
+                  'Complemento opcional com análises financeiras avançadas.',
               onTap: () => _open(context, const PartnerFinancialLockedPage()),
             ),
           ];
@@ -171,7 +172,7 @@ class _PartnerManagementBody extends StatelessWidget {
             icon: Icons.lock_outline,
             title: 'Financeiro Pro',
             description:
-                'Relatorios, repasses e comissoes entram no plano pago.',
+                'Complemento opcional: repasses, taxas, comissões e conciliação.',
             onTap: () => _open(context, const PartnerFinancialLockedPage()),
           ),
         ];
