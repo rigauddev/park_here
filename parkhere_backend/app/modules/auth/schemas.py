@@ -1,5 +1,6 @@
 import re
 
+from typing import Literal
 from pydantic import BaseModel, EmailStr, field_validator
 
 
@@ -76,8 +77,8 @@ class CustomerSignupRequest(BaseModel):
 class PartnerSignupRequest(BaseModel):
     service_type: str
     company_name: str
-    cnpj: str
-    registration_status: str
+    document_type: Literal['cpf', 'cnpj']
+    document_number: str
     responsible_name: str
     email: EmailStr
     password: str
@@ -86,10 +87,16 @@ class PartnerSignupRequest(BaseModel):
     insurance_provider: str | None = None
     instagram: str | None = None
     website: str | None = None
+    # Mantido opcional para compatibilidade com clientes antigos; não aparece na nova tela.
     social_links: str | None = None
 
-    _validate_cnpj = field_validator('cnpj')(_cnpj)
     _validate_phone = field_validator('phone')(_phone)
+
+    @field_validator('document_number')
+    @classmethod
+    def validate_document_number(cls, value: str, info) -> str:
+        document_type = info.data.get('document_type')
+        return _digits(value, document_type.upper() if document_type else 'Documento', {11} if document_type == 'cpf' else {14})
 
     @field_validator('service_type')
     @classmethod

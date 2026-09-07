@@ -6,7 +6,7 @@ Este arquivo registra os payloads que o app Flutter espera do backend. Sempre qu
 
 `POST /partners/signup` recebe `service_type` (`parking`, `car_wash`, `hotel`,
 `restaurant`, `tour_guide`, `tourism_company`, `transport` ou `other`),
-`company_name`, `cnpj`, `registration_status`, `responsible_name`, `email` e
+`company_name`, `document_type` (`cpf` ou `cnpj`), `document_number`, `responsible_name`, `email` e
 `password`. Também aceita `phone`, `has_insurance`, `insurance_provider`,
 `instagram`, `website` e `social_links`. O cadastro começa com
 `approval_status=waiting_documents` e o tipo escolhido define o painel de
@@ -15,6 +15,11 @@ serviços do parceiro.
 Durante os testes, `POST /auth/email/request-code` gera um token e o código
 fixo `000000` é aceito por `POST /auth/email/verify-code`. Esse valor deve ser
 substituído por código aleatório enviado por e-mail antes da produção.
+
+`POST /partners/me/documents?document_type=alvara|rg|cnh` recebe multipart com
+o campo `file`. Para CNPJ, o tipo aceito é `alvara`; para CPF, `rg` ou `cnh`.
+Os arquivos ficam no volume local do backend e o cadastro passa para
+`documents_submitted`.
 
 ## Busca De Estacionamentos
 

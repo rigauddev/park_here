@@ -167,8 +167,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<Map<String, dynamic>> registerPartner({
     required String serviceType,
     required String companyName,
-    required String cnpj,
-    required String registrationStatus,
+    required String documentType,
+    required String documentNumber,
     required String responsibleName,
     required String email,
     required String password,
@@ -182,8 +182,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return _api.post('/partners/signup', {
       'service_type': serviceType,
       'company_name': companyName.trim(),
-      'cnpj': cnpj,
-      'registration_status': registrationStatus.trim(),
+      'document_type': documentType,
+      'document_number': documentNumber,
       'responsible_name': responsibleName.trim(),
       'email': email.trim().toLowerCase(),
       'password': password,

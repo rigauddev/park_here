@@ -36,8 +36,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final confirmPasswordController = TextEditingController();
 
   final companyNameController = TextEditingController();
-  final cnpjController = TextEditingController();
-  final registrationStatusController = TextEditingController();
+  final documentController = TextEditingController();
   final responsibleNameController = TextEditingController();
   final phoneController = TextEditingController();
   final insuranceCompanyController = TextEditingController();
@@ -47,6 +46,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   late RegisterAccountType accountType;
   PartnerServiceType serviceType = PartnerServiceType.parking;
+  String documentType = 'cnpj';
   bool hasInsurance = false;
   bool emailVerified = false;
   String? emailToken;
@@ -92,8 +92,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     passwordController.dispose();
     confirmPasswordController.dispose();
     companyNameController.dispose();
-    cnpjController.dispose();
-    registrationStatusController.dispose();
+    documentController.dispose();
     responsibleNameController.dispose();
     phoneController.dispose();
     insuranceCompanyController.dispose();
@@ -256,8 +255,26 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         ),
         const SizedBox(height: 12),
         _field(companyNameController, "Nome da empresa"),
-        _field(cnpjController, "CNPJ", keyboardType: TextInputType.number),
-        _field(registrationStatusController, "Situação cadastral"),
+        DropdownButtonFormField<String>(
+          initialValue: documentType,
+          decoration: const InputDecoration(
+            labelText: "Documento do parceiro / Partner document",
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'cnpj', child: Text('CNPJ')),
+            DropdownMenuItem(value: 'cpf', child: Text('CPF')),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => documentType = value);
+          },
+        ),
+        const SizedBox(height: 12),
+        _field(
+          documentController,
+          documentType == 'cnpj' ? "CNPJ" : "CPF",
+          keyboardType: TextInputType.number,
+        ),
         _field(responsibleNameController, "Responsável legal"),
         _field(
           phoneController,
@@ -387,8 +404,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             .registerPartner(
               serviceType: serviceTypeApiValue,
               companyName: companyNameController.text,
-              cnpj: cnpjController.text,
-              registrationStatus: registrationStatusController.text,
+              documentType: documentType,
+              documentNumber: documentController.text,
               responsibleName: responsibleNameController.text,
               email: emailController.text,
               password: passwordController.text,
@@ -481,8 +498,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     final requiredControllers = isPartner
         ? [
             companyNameController,
-            cnpjController,
-            registrationStatusController,
+            documentController,
             responsibleNameController,
             phoneController,
             emailController,

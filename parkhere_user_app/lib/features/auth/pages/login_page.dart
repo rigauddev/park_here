@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
+import '../../../core/i18n/app_language.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
 
@@ -43,6 +44,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final globalLocale = ref.watch(appLanguageProvider);
+    language = globalLocale.languageCode == 'en'
+        ? LoginLanguage.en
+        : LoginLanguage.ptBr;
     final authState = ref.watch(authProvider);
     final isMfaStep = authState.status == AuthStatus.mfaRequired;
     final displayedLoginMode = isMfaStep
@@ -91,7 +96,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   padding: const EdgeInsets.all(18),
                   child: _LanguageFlagButton(
                     language: language,
-                    onChanged: (value) => setState(() => language = value),
+                    onChanged: (value) {
+                      setState(() => language = value);
+                      ref
+                          .read(appLanguageProvider.notifier)
+                          .setLanguage(
+                            value == LoginLanguage.en
+                                ? const Locale('en')
+                                : const Locale('pt', 'BR'),
+                          );
+                    },
                   ),
                 ),
               ),

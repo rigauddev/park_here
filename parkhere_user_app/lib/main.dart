@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/i18n/app_language.dart';
 import 'features/auth/pages/auth_gate.dart';
 
 Future<void> main() async {
@@ -19,14 +20,18 @@ Future<void> main() async {
   runApp(const ProviderScope(child: ParkFinderApp()));
 }
 
-class ParkFinderApp extends StatelessWidget {
+class ParkFinderApp extends ConsumerWidget {
   const ParkFinderApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locale = ref.watch(appLanguageProvider);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
+      locale: locale,
+      supportedLocales: const [Locale('pt', 'BR'), Locale('en')],
+      title: appNameFor(locale),
       home: const AuthGate(),
     );
   }

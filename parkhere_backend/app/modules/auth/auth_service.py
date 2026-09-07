@@ -87,7 +87,7 @@ class AuthService:
 
         tenant = Tenant(
             name=data.company_name,
-            cnpj=data.cnpj,
+            cnpj=data.document_number,
             email=normalized_email,
             plan=PlanEnum.FREE,
             status=TenantStatusEnum.TRIAL,

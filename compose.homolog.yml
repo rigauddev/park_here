@@ -45,6 +45,7 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     volumes:
       - inspection_photos:/app/storage/inspection
+      - partner_documents:/app/storage/partner_documents
     depends_on:
       mysql:
         condition: service_healthy
@@ -80,3 +81,4 @@ volumes:
   certificates:
   caddy_config:
   inspection_photos:
+  partner_documents:

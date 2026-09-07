@@ -4,7 +4,8 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 from math import ceil
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import func
@@ -24,6 +25,7 @@ from app.modules.parkings.schemas import (
 from app.modules.parkings.service import ParkingManagementService
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
 from app.modules.reservations.models import Reservation
@@ -31,6 +33,8 @@ from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
 router = APIRouter(prefix="/partners", tags=["Partners"])
+
+PARTNER_DOCUMENT_TYPES = {'alvara', 'rg', 'cnh'}
 
 FREE_OPERATOR_LIMIT = 2
 OPERATOR_PERMISSION_LABELS = {
@@ -82,8 +86,10 @@ async def partner_signup(
         tenant_id=user.tenant_id,
         service_type=data.service_type,
         company_name=data.company_name,
-        cnpj=data.cnpj,
-        registration_status=data.registration_status,
+        cnpj=data.document_number,
+        document_type=data.document_type,
+        document_number=data.document_number,
+        registration_status="pending",
         responsible_name=data.responsible_name,
         has_insurance=data.has_insurance,
         insurance_provider=data.insurance_provider,
@@ -128,6 +134,8 @@ async def get_my_partner_profile(
         "available_operator_permissions": OPERATOR_PERMISSION_LABELS,
         "user_email": current_user.email,
         "service_type": profile.service_type if profile else None,
+        "document_type": profile.document_type if profile else None,
+        "document_number": profile.document_number if profile else None,
         "company_name": profile.company_name if profile else None,
         "approval_status": profile.approval_status
         if profile
@@ -139,6 +147,51 @@ async def get_my_partner_profile(
         }
         if payment_account
         else None,
+    }
+
+
+@router.post('/me/documents', status_code=201)
+async def upload_partner_document(
+    document_type: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    document_type = document_type.strip().lower()
+    if document_type not in PARTNER_DOCUMENT_TYPES:
+        raise HTTPException(status_code=422, detail='Invalid partner document type')
+    if file.content_type not in {'application/pdf', 'image/jpeg', 'image/png'}:
+        raise HTTPException(status_code=422, detail='Document must be PDF, JPG or PNG')
+
+    profile = await db.scalar(
+        select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id)
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail='Partner profile not found')
+    expected = {'cnpj': {'alvara'}, 'cpf': {'rg', 'cnh'}}.get(profile.document_type)
+    if expected and document_type not in expected:
+        raise HTTPException(status_code=422, detail='Document type does not match the partner document')
+
+    safe_name = Path(file.filename or 'document').name
+    target_dir = Path('/app/storage/partner_documents') / current_user.tenant_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / safe_name
+    target.write_bytes(await file.read())
+    document = PartnerDocument(
+        tenant_id=current_user.tenant_id,
+        document_type=document_type,
+        file_name=safe_name,
+        storage_path=str(target),
+    )
+    db.add(document)
+    profile.approval_status = 'documents_submitted'
+    await db.commit()
+    return {
+        'id': document.id,
+        'document_type': document_type,
+        'file_name': safe_name,
+        'approval_status': profile.approval_status,
     }
 
 
