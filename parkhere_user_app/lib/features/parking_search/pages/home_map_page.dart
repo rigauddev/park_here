@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,6 +72,17 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       setState(
         () => userLocation = LatLng(position.latitude, position.longitude),
       );
+      final parkings = await ref.read(parkingProvider.future);
+      if (!mounted || parkings.isEmpty) return;
+      final nearest = parkings.reduce((a, b) {
+        final distanceA = math.pow(a.lat - position.latitude, 2) +
+            math.pow(a.lng - position.longitude, 2);
+        final distanceB = math.pow(b.lat - position.latitude, 2) +
+            math.pow(b.lng - position.longitude, 2);
+        return distanceA < distanceB ? a : b;
+      });
+      ref.read(selectedCityProvider.notifier).state = nearest.city;
+      await ref.read(parkingProvider.notifier).searchByCity(nearest.city);
     } catch (_) {
       if (!mounted) return;
       setState(() => userLocation = _valencaCenter);
