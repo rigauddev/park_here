@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../../features/partner_management/pages/parking_dashboard_page.dart';
 import '../../features/partner_management/pages/guide_affiliations_page.dart';
 import '../../features/partner_management/pages/guide_dashboard_page.dart';
+import '../../features/partner_management/pages/admin_management_page.dart';
 
 enum _MainArea {
   menu,
@@ -59,6 +60,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     final isPartner = auth.isPartnerSession;
     final isPartnerOwner = auth.isPartnerOwner;
     final isGuide = auth.isTourGuide;
+    final isAdmin = auth.role == 'super_admin';
     if (isGuide &&
         (_selectedArea == _MainArea.financial ||
             _selectedArea == _MainArea.reservations)) {
@@ -71,8 +73,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     final page = Navigator(
       key: ValueKey('${_selectedArea.name}:$_servicesInitialIndex'),
       onGenerateRoute: (_) => MaterialPageRoute<void>(
-        builder: (_) =>
-            _pageFor(_selectedArea, isPartner, isPartnerOwner, isGuide),
+        builder: (_) => _pageFor(
+          _selectedArea,
+          isPartner,
+          isPartnerOwner,
+          isGuide,
+          isAdmin,
+        ),
       ),
     );
     final topBar = AppBar(
@@ -223,7 +230,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isPartner,
     bool isPartnerOwner,
     bool isGuide,
+    bool isAdmin,
   ) {
+    if (isAdmin) return const AdminManagementPage();
     switch (area) {
       case _MainArea.menu:
         return const _MenuHubPage();
@@ -366,6 +375,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 
   _MainArea _initialArea() {
     final auth = ref.read(authProvider);
+    if (auth.role == 'super_admin') return _MainArea.management;
     if (!auth.isPartnerSession) return _MainArea.map;
     return auth.isTourGuide || auth.isPartnerOwner
         ? _MainArea.management

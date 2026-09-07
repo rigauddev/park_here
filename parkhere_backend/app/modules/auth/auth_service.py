@@ -253,7 +253,6 @@ class AuthService:
 
         if account_type == "partner" and user.role in {
             UserRoleEnum.CUSTOMER,
-            UserRoleEnum.SUPER_ADMIN,
         }:
             return None
 

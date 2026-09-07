@@ -15,6 +15,23 @@ import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
 
+Future<void> _showCenteredError(BuildContext context, String message) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      icon: const Icon(Icons.error_outline, color: Colors.red, size: 42),
+      title: const Text('Não foi possível concluir'),
+      content: Text(message, textAlign: TextAlign.center),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Entendi'),
+        ),
+      ],
+    ),
+  );
+}
+
 class PartnerParkingMapPage extends ConsumerStatefulWidget {
   const PartnerParkingMapPage({super.key});
 
@@ -333,6 +350,18 @@ class _CashShiftCard extends StatefulWidget {
 
 class _CashShiftCardState extends State<_CashShiftCard> {
   double? opening;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOpening();
+  }
+
+  Future<void> _loadOpening() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getDouble('cash_shift_opening');
+    if (mounted && value != null) setState(() => opening = value);
+  }
 
   Future<void> _openShift() async {
     final controller = TextEditingController();
@@ -1685,9 +1714,7 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erro no caixa: $error')));
+      await _showCenteredError(context, 'Erro no caixa: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }
@@ -1826,9 +1853,7 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
       ).showSnackBar(const SnackBar(content: Text('Check-in realizado.')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao realizar check-in: $error')),
-      );
+      await _showCenteredError(context, 'Erro ao realizar check-in: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }
@@ -1969,9 +1994,7 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
       ).showSnackBar(const SnackBar(content: Text('Checkout realizado.')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao realizar checkout: $error')),
-      );
+      await _showCenteredError(context, 'Erro ao realizar checkout: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }

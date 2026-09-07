@@ -126,7 +126,12 @@ class ApiService {
       Uri.parse('${ApiConstants.baseUrl}$endpoint'),
     )..headers.addAll(_authorizedHeaders(token));
     request.files.add(
-      http.MultipartFile.fromBytes('file', bytes, filename: fileName),
+      http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: fileName,
+        contentType: _imageMediaType(fileName),
+      ),
     );
     final response = await http.Response.fromStream(await request.send());
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -134,6 +139,17 @@ class ApiService {
     }
     await _handleUnauthorized(response);
     throw Exception(_errorMessage(response));
+  }
+
+  http.MediaType _imageMediaType(String fileName) {
+    final extension = fileName.toLowerCase().split('.').last;
+    return switch (extension) {
+      'png' => http.MediaType('image', 'png'),
+      'webp' => http.MediaType('image', 'webp'),
+      'heic' => http.MediaType('image', 'heic'),
+      'heif' => http.MediaType('image', 'heif'),
+      _ => http.MediaType('image', 'jpeg'),
+    };
   }
 
   String _errorMessage(http.Response response) {

@@ -52,8 +52,12 @@ async def upload_reservation_photo(
         raise HTTPException(status_code=403, detail='Reservation not allowed')
     if kind not in {'front', 'rear', 'left', 'right'}:
         raise HTTPException(status_code=422, detail='Invalid photo kind')
-    if file.content_type not in {None, 'image/jpeg', 'image/png'}:
-        raise HTTPException(status_code=415, detail='Only JPEG or PNG photos are accepted')
+    allowed_types = {None, 'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp'}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail='Formato de imagem não suportado. Use JPG, PNG, HEIC ou WEBP.')
+    payload = await file.read()
+    if len(payload) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail='A foto deve ter no máximo 30 MB')
     PHOTO_ROOT.mkdir(parents=True, exist_ok=True)
     cutoff = datetime.utcnow() - timedelta(days=7)
     for old in PHOTO_ROOT.glob('*/*'):
@@ -61,9 +65,10 @@ async def upload_reservation_photo(
             old.unlink(missing_ok=True)
     folder = PHOTO_ROOT / reservation_id
     folder.mkdir(parents=True, exist_ok=True)
-    target = folder / f'{kind}.jpg'
-    target.write_bytes(await file.read())
-    return {'reservation_id': reservation_id, 'kind': kind, 'retention_days': 7}
+    extension = {'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif'}.get(file.content_type or '', 'jpg')
+    target = folder / f'{kind}.{extension}'
+    target.write_bytes(payload)
+    return {'reservation_id': reservation_id, 'kind': kind, 'retention_days': 7, 'content_type': file.content_type}
 
 
 @router.post("/{reservation_id}/checkout", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
