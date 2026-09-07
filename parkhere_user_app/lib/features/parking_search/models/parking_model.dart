@@ -8,6 +8,13 @@ class ParkingModel {
   final double lng;
   final double rating;
   final int availableSpots;
+  final int coveredSpots,
+      uncoveredSpots,
+      vipSpots,
+      largeSpots,
+      busSpots,
+      pickupSpots,
+      motoHomeSpots;
 
   // ✅ Precificação completa
   final ParkingPricing pricing;
@@ -31,6 +38,13 @@ class ParkingModel {
     required this.lng,
     required this.rating,
     required this.availableSpots,
+    this.coveredSpots = 0,
+    this.uncoveredSpots = 0,
+    this.vipSpots = 0,
+    this.largeSpots = 0,
+    this.busSpots = 0,
+    this.pickupSpots = 0,
+    this.motoHomeSpots = 0,
     required this.pricing,
     required this.hasCarWash,
     required this.hasTourGuide,
@@ -51,6 +65,13 @@ class ParkingModel {
       lng: (json["lng"] as num).toDouble(),
       rating: (json["rating"] as num).toDouble(),
       availableSpots: json["availableSpots"],
+      coveredSpots: json["coveredSpots"] ?? 0,
+      uncoveredSpots: json["uncoveredSpots"] ?? 0,
+      vipSpots: json["vipSpots"] ?? 0,
+      largeSpots: json["largeSpots"] ?? 0,
+      busSpots: json["busSpots"] ?? 0,
+      pickupSpots: json["pickupSpots"] ?? 0,
+      motoHomeSpots: json["motoHomeSpots"] ?? 0,
       hasCoveredArea: json["hasCoveredArea"],
       hasVipSpots: json["hasVipSpots"],
       hasCarWash: json["hasCarWash"],

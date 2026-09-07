@@ -120,6 +120,7 @@ class ParkingManagementService:
         parking.large_spots = data.large_spots
         parking.bus_spots = data.bus_spots
         parking.pickup_spots = data.pickup_spots
+        parking.moto_home_spots = data.moto_home_spots
         parking.first_hour_price = uncovered.first_hour_price
         parking.additional_hour_price = uncovered.additional_hour_price
         parking.daily_price = uncovered.daily_price
@@ -199,7 +200,11 @@ def _validate_capacity(data: ParkingManagementRequest) -> None:
         )
 
     special_total = (
-        data.vip_spots + data.large_spots + data.bus_spots + data.pickup_spots
+        data.vip_spots
+        + data.large_spots
+        + data.bus_spots
+        + data.pickup_spots
+        + data.moto_home_spots
     )
     if special_total > data.total_spots:
         raise HTTPException(
@@ -248,6 +253,7 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
         large_spots=parking.large_spots,
         bus_spots=parking.bus_spots,
         pickup_spots=parking.pickup_spots,
+        moto_home_spots=getattr(parking, 'moto_home_spots', 0),
         has_covered_area=parking.has_covered_area,
         has_vip_spots=parking.has_vip_spots,
         has_24h_gate=parking.has_24h_gate,

@@ -37,7 +37,7 @@ class ReservationPricing:
 
 
 class ReservationService:
-    VALID_SPOT_TYPES = {"uncovered", "covered", "vip", "large", "bus", "pickup"}
+    VALID_SPOT_TYPES = {"uncovered", "covered", "vip", "large", "bus", "pickup", "motorhome"}
     VALID_PLANS = {"hourly", "daily", "weekly", "monthly"}
     FREE_CANCELLATION_MINUTES = 5
     CHECKOUT_GRACE_MINUTES = 15
@@ -421,7 +421,8 @@ def _arrival_estimate(data: PreCheckinReservationRequest) -> datetime:
 def physical_spot_type(index, parking):
     limit = 0
     for kind, count in [("vip", parking.vip_spots), ("bus", parking.bus_spots),
-                        ("large", parking.large_spots), ("pickup", parking.pickup_spots)]:
+                        ("large", parking.large_spots), ("pickup", parking.pickup_spots),
+                        ("motorhome", getattr(parking, 'moto_home_spots', 0))]:
         limit += count
         if index <= limit:
             return kind

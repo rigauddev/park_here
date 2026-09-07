@@ -307,7 +307,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
     final pre = widget.preCheckin;
 
     final reservation = ReservationModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: pre.reservationId ?? DateTime.now().millisecondsSinceEpoch.toString(),
       parkingName: pre.parking.name,
       plan: pre.plan,
       status: ReservationStatus.open,

@@ -480,3 +480,14 @@ conciliacao e split precisam ser concluidos antes de conectar o transporte as ro
 `POST /customer-assets/vehicles` recebe `nickname`, `plate`, `brand`, `model`, `color`, `vehicle_document` (PDF), `ownership_type` e `is_active`. Ao ativar um veiculo, os demais ficam inativos.
 
 Pre-reservas usam o tempo estimado da rota mais cinco minutos de tolerancia no MVP. A atualizacao do mapa entre operador e cliente usa o endpoint de mapa com recarga; webhook fica reservado para confirmacao externa do Mercado Pago.
+
+## Tipos de vaga e disponibilidade — 07/09/2026
+
+`GET /parkings` e `GET /parkings/{parking_id}` retornam a quantidade disponivel por categoria:
+`coveredSpots`, `uncoveredSpots`, `vipSpots`, `largeSpots`, `pickupSpots`, `motoHomeSpots` e `busSpots`.
+Os precos diarios e da primeira hora por area ficam em `coveredDailyPrice`,
+`uncoveredDailyPrice` e nos campos correspondentes de `pricing`. O cliente deve
+ocultar categorias com quantidade zero e enviar `spot_type` (`covered`, `uncovered`,
+`vip`, `large`, `pickup`, `motorhome`, `bus` ou `any`) ao criar a pre-reserva.
+O campo `moto_home_spots` foi adicionado ao request de gestao e exige migration
+`e7f8a9b0c1d2_add_moto_home_spots`.

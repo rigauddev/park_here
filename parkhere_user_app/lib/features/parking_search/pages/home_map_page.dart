@@ -336,22 +336,57 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                     ),
                     const SizedBox(height: 10),
                     SegmentedButton<AreaPreference>(
-                      segments: const [
-                        ButtonSegment(
+                      multiSelectionEnabled: false,
+                      segments: [
+                        const ButtonSegment(
                           value: AreaPreference.any,
-                          label: Text('Sem preferência'),
+                          label: Text('Qualquer'),
                           icon: Icon(Icons.pending_outlined),
                         ),
-                        ButtonSegment(
-                          value: AreaPreference.covered,
-                          label: Text('Coberta'),
-                          icon: Icon(Icons.roofing_outlined),
-                        ),
-                        ButtonSegment(
-                          value: AreaPreference.uncovered,
-                          label: Text('Descoberta'),
-                          icon: Icon(Icons.sunny_snowing),
-                        ),
+                        if (parking.coveredSpots > 0)
+                          ButtonSegment(
+                            value: AreaPreference.covered,
+                            label: Text('Coberta (${parking.coveredSpots})'),
+                            icon: const Icon(Icons.roofing_outlined),
+                          ),
+                        if (parking.uncoveredSpots > 0)
+                          ButtonSegment(
+                            value: AreaPreference.uncovered,
+                            label: Text(
+                              'Descoberta (${parking.uncoveredSpots})',
+                            ),
+                            icon: const Icon(Icons.sunny_snowing),
+                          ),
+                        if (parking.hasVipSpots && parking.vipSpots > 0)
+                          ButtonSegment(
+                            value: AreaPreference.vip,
+                            label: Text('VIP (${parking.vipSpots})'),
+                            icon: const Icon(Icons.star),
+                          ),
+                        if (parking.largeSpots > 0)
+                          ButtonSegment(
+                            value: AreaPreference.large,
+                            label: Text('Grande (${parking.largeSpots})'),
+                            icon: const Icon(Icons.local_shipping),
+                          ),
+                        if (parking.motoHomeSpots > 0)
+                          ButtonSegment(
+                            value: AreaPreference.motorhome,
+                            label: Text('Motorhome (${parking.motoHomeSpots})'),
+                            icon: const Icon(Icons.rv_hookup),
+                          ),
+                        if (parking.busSpots > 0)
+                          ButtonSegment(
+                            value: AreaPreference.bus,
+                            label: Text('Ônibus (${parking.busSpots})'),
+                            icon: const Icon(Icons.directions_bus),
+                          ),
+                        if (parking.pickupSpots > 0)
+                          ButtonSegment(
+                            value: AreaPreference.pickup,
+                            label: Text('Pickup (${parking.pickupSpots})'),
+                            icon: const Icon(Icons.local_shipping_outlined),
+                          ),
                       ],
                       selected: {areaPreference},
                       onSelectionChanged: (value) {
@@ -428,10 +463,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
             switch (plan) {
               case PlanType.hourly:
-                total = parking.pricing.firstHourPrice;
+                total = _priceForArea(parking, areaPreference, hourly: true);
                 break;
               case PlanType.daily:
-                total = parking.pricing.dailyPrice * dailyDays;
+                total = _priceForArea(parking, areaPreference) * dailyDays;
                 break;
               case PlanType.monthly:
                 total = parking.pricing.monthlyPrice;
@@ -1216,11 +1251,16 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                 'route_minutes': minutes,
                 'estimated_total': total,
                 'vehicle_id': activeVehicle.id,
-                'spot_type': areaPreference == AreaPreference.covered
-                    ? 'covered'
-                    : areaPreference == AreaPreference.uncovered
-                    ? 'uncovered'
-                    : 'any',
+                'spot_type': switch (areaPreference) {
+                  AreaPreference.covered => 'covered',
+                  AreaPreference.uncovered => 'uncovered',
+                  AreaPreference.vip => 'vip',
+                  AreaPreference.large => 'large',
+                  AreaPreference.motorhome => 'motorhome',
+                  AreaPreference.bus => 'bus',
+                  AreaPreference.pickup => 'pickup',
+                  AreaPreference.any => 'any',
+                },
                 'area_preference': areaPreference.name,
                 'pricing_plan': plan.name,
                 'duration_hours': plan == PlanType.daily ? dailyDays * 24 : 1,
@@ -1238,6 +1278,25 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
         ),
       ),
     );
+  }
+
+  double _priceForArea(
+    ParkingModel parking,
+    AreaPreference area, {
+    bool hourly = false,
+  }) {
+    if (hourly) {
+      return area == AreaPreference.covered
+          ? parking.pricing.coveredFirstHourPrice
+          : area == AreaPreference.uncovered
+          ? parking.pricing.uncoveredFirstHourPrice
+          : parking.pricing.firstHourPrice;
+    }
+    return area == AreaPreference.covered
+        ? parking.pricing.coveredDailyPrice
+        : area == AreaPreference.uncovered
+        ? parking.pricing.uncoveredDailyPrice
+        : parking.pricing.dailyPrice;
   }
 }
 

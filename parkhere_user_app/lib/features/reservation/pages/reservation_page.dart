@@ -386,6 +386,19 @@ class _ReservationCard extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _InfoPill(
+                  label: 'Vagas disponíveis',
+                  value: '${reservation.preCheckin.parking.availableSpots}',
+                ),
+                if (reservation.tourGuide)
+                  const _InfoPill(label: 'Guia', value: 'Indicado'),
+              ],
+            ),
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,

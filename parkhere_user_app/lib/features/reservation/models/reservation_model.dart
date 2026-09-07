@@ -1,5 +1,6 @@
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../parking_search/models/payment_plan_enum.dart';
+import '../../parking_search/models/parking_model.dart';
 import 'reservation_enum.dart';
 
 class ReservationModel {
@@ -83,6 +84,118 @@ class ReservationModel {
       parkingRating: parkingRating ?? this.parkingRating,
       appRating: appRating ?? this.appRating,
       ratingComment: ratingComment ?? this.ratingComment,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'parkingName': parkingName,
+    'plan': plan.name,
+    'status': status.name,
+    'checkinAt': checkinAt.toIso8601String(),
+    'checkoutAt': checkoutAt?.toIso8601String(),
+    'estimatedValue': estimatedValue,
+    'finalValue': finalValue,
+    'firstHourPrice': firstHourPrice,
+    'additionalHourPrice': additionalHourPrice,
+    'checkinTime': checkinTime.toIso8601String(),
+    'hasUnpaidServices': hasUnpaidServices,
+    'unpaidServicesValue': unpaidServicesValue,
+    'validUntil': validUntil.toIso8601String(),
+    'carWash': carWash,
+    'tourGuide': tourGuide,
+    'transport': transport,
+    'parking': {
+      'id': preCheckin.parking.id,
+      'name': preCheckin.parking.name,
+      'city': preCheckin.parking.city,
+      'lat': preCheckin.parking.lat,
+      'lng': preCheckin.parking.lng,
+      'rating': preCheckin.parking.rating,
+      'availableSpots': preCheckin.parking.availableSpots,
+      'coveredSpots': preCheckin.parking.coveredSpots,
+      'uncoveredSpots': preCheckin.parking.uncoveredSpots,
+      'vipSpots': preCheckin.parking.vipSpots,
+      'largeSpots': preCheckin.parking.largeSpots,
+      'busSpots': preCheckin.parking.busSpots,
+      'pickupSpots': preCheckin.parking.pickupSpots,
+      'motoHomeSpots': preCheckin.parking.motoHomeSpots,
+      'hasCoveredArea': preCheckin.parking.hasCoveredArea,
+      'hasVipSpots': preCheckin.parking.hasVipSpots,
+      'hasCarWash': preCheckin.parking.hasCarWash,
+      'hasTourGuide': preCheckin.parking.hasTourGuide,
+      'hasTransportService': preCheckin.parking.hasTransportService,
+      'carWashPrice': preCheckin.parking.carWashPrice,
+      'tourGuidePrice': preCheckin.parking.tourGuidePrice,
+      'transportPrice': preCheckin.parking.transportPrice,
+      'pricing': {
+        'firstHourPrice': preCheckin.parking.pricing.firstHourPrice,
+        'additionalHourPrice': preCheckin.parking.pricing.additionalHourPrice,
+        'dailyPrice': preCheckin.parking.pricing.dailyPrice,
+        'monthlyPrice': preCheckin.parking.pricing.monthlyPrice,
+        'weeklyPrice': preCheckin.parking.pricing.weeklyPrice,
+        'coveredDailyPrice': preCheckin.parking.pricing.coveredDailyPrice,
+        'uncoveredDailyPrice': preCheckin.parking.pricing.uncoveredDailyPrice,
+        'coveredFirstHourPrice':
+            preCheckin.parking.pricing.coveredFirstHourPrice,
+        'uncoveredFirstHourPrice':
+            preCheckin.parking.pricing.uncoveredFirstHourPrice,
+      },
+    },
+    'userLocationLat': preCheckin.userLocationLat,
+    'userLocationLng': preCheckin.userLocationLng,
+    'platformFeeAmount': preCheckin.platformFeeAmount,
+  };
+
+  factory ReservationModel.fromJson(Map<String, dynamic> json) {
+    final parking = ParkingModel.fromJson(
+      json['parking'] as Map<String, dynamic>,
+    );
+    final planName = json['plan'] as String? ?? PlanType.hourly.name;
+    final statusName = json['status'] as String? ?? ReservationStatus.open.name;
+    return ReservationModel(
+      id: json['id'] as String,
+      parkingName: json['parkingName'] as String? ?? parking.name,
+      plan: PlanType.values.firstWhere(
+        (value) => value.name == planName,
+        orElse: () => PlanType.hourly,
+      ),
+      status: ReservationStatus.values.firstWhere(
+        (value) => value.name == statusName,
+        orElse: () => ReservationStatus.open,
+      ),
+      checkinAt: DateTime.parse(json['checkinAt'] as String),
+      checkoutAt: (json['checkoutAt'] as String?) == null
+          ? null
+          : DateTime.parse(json['checkoutAt'] as String),
+      estimatedValue: (json['estimatedValue'] as num?)?.toDouble() ?? 0,
+      finalValue: (json['finalValue'] as num?)?.toDouble(),
+      carWash: json['carWash'] as bool? ?? false,
+      tourGuide: json['tourGuide'] as bool? ?? false,
+      transport: json['transport'] as bool? ?? false,
+      firstHourPrice: (json['firstHourPrice'] as num?)?.toDouble() ?? 0,
+      additionalHourPrice:
+          (json['additionalHourPrice'] as num?)?.toDouble() ?? 0,
+      checkinTime: DateTime.parse(json['checkinTime'] as String),
+      hasUnpaidServices: json['hasUnpaidServices'] as bool? ?? false,
+      unpaidServicesValue:
+          (json['unpaidServicesValue'] as num?)?.toDouble() ?? 0,
+      validUntil: DateTime.parse(json['validUntil'] as String),
+      preCheckin: PreCheckinModel(
+        parking: parking,
+        plan: PlanType.values.firstWhere(
+          (value) => value.name == planName,
+          orElse: () => PlanType.hourly,
+        ),
+        carWash: json['carWash'] as bool? ?? false,
+        tourGuide: json['tourGuide'] as bool? ?? false,
+        transport: json['transport'] as bool? ?? false,
+        total: (json['estimatedValue'] as num?)?.toDouble() ?? 0,
+        reservationId: json['id'] as String?,
+        platformFeeAmount: (json['platformFeeAmount'] as num?)?.toDouble() ?? 0,
+        userLocationLat: (json['userLocationLat'] as num?)?.toDouble() ?? 0,
+        userLocationLng: (json['userLocationLng'] as num?)?.toDouble() ?? 0,
+      ),
     );
   }
 }

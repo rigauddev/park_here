@@ -23,6 +23,10 @@ class ParkingPricingResponse(BaseModel):
     dailyPrice: float
     weeklyPrice: float = 0
     monthlyPrice: float
+    coveredDailyPrice: float = 0
+    uncoveredDailyPrice: float = 0
+    coveredFirstHourPrice: float = 0
+    uncoveredFirstHourPrice: float = 0
 
 
 class ParkingAreaPricing(BaseModel):
@@ -47,6 +51,7 @@ class ParkingManagementRequest(BaseModel):
     large_spots: int = 0
     bus_spots: int = 0
     pickup_spots: int = 0
+    moto_home_spots: int = 0
     available_spots: int | None = None
     has_vip_spots: bool = False
     has_24h_gate: bool = False
@@ -85,6 +90,7 @@ class ParkingManagementResponse(BaseModel):
     large_spots: int
     bus_spots: int
     pickup_spots: int
+    moto_home_spots: int = 0
     has_covered_area: bool
     has_vip_spots: bool
     has_24h_gate: bool
@@ -111,6 +117,19 @@ class ParkingResponse(BaseModel):
     hasTransportService: bool
     hasCoveredArea: bool
     hasVipSpots: bool
+    coveredSpots: int = 0
+    uncoveredSpots: int = 0
+    vipSpots: int = 0
+    largeSpots: int = 0
+    busSpots: int = 0
+    pickupSpots: int = 0
+    motoHomeSpots: int = 0
+    coveredDailyPrice: float = 0
+    uncoveredDailyPrice: float = 0
+    vipDailyPrice: float = 0
+    largeDailyPrice: float = 0
+    busDailyPrice: float = 0
+    pickupDailyPrice: float = 0
     carWashPrice: float
     tourGuidePrice: float
     transportPrice: float
