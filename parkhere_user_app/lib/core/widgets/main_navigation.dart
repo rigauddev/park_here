@@ -254,7 +254,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         if (isPartner) return const ProfilePage();
         return const VehiclesPage();
       case _MainArea.wallet:
-        if (isPartner) return const ProfilePage();
         return const WalletPage();
       case _MainArea.management:
         if (isGuide) return const GuideDashboardPage();

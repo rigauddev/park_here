@@ -6,6 +6,9 @@ import '../../reservation/providers/reservation_provider.dart';
 import '../models/pre_checkin_model.dart';
 import '../../payments/pages/payment_page.dart';
 import '../providers/checkout_privider.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/location_service.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class CheckinPage extends ConsumerStatefulWidget {
   final PreCheckinModel preCheckin;
@@ -333,7 +336,8 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
           amount: widget.preCheckin.total,
           reservationId: widget.preCheckin.reservationId,
           payNow: true,
-          onPaymentSuccess: () {
+          onPaymentSuccess: () async {
+            await _confirmBackendCheckin();
             _createReservation();
             ref.read(checkoutProvider.notifier).paymentSuccess();
             if (mounted) {
@@ -343,5 +347,34 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmBackendCheckin() async {
+    final reservationId = widget.preCheckin.reservationId;
+    final token = ref.read(authProvider).accessToken;
+    if (reservationId == null || token == null) return;
+    try {
+      final position = await LocationService().getCurrentLocation();
+      await ApiService().postAuthorized(
+        '/reservations/$reservationId/checkin?latitude=${position.latitude}&longitude=${position.longitude}',
+        {},
+        token,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Check-in não concluído'),
+          content: Text('$error', textAlign: TextAlign.center),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Entendi'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 }

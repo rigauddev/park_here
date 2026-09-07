@@ -47,7 +47,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tenantId: tenantId,
         clearMfaToken: true,
       );
-    } else {
+    } else if (state.status == AuthStatus.initial ||
+        state.status == AuthStatus.loading) {
+      // Do not overwrite a login/MFA transition that completed while the
+      // asynchronous startup token check was still running.
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
   }

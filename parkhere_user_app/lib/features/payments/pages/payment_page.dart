@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -14,7 +16,7 @@ class PaymentPage extends ConsumerStatefulWidget {
   final double amount;
   final String? reservationId;
   final bool payNow;
-  final VoidCallback onPaymentSuccess;
+  final FutureOr<void> Function() onPaymentSuccess;
 
   const PaymentPage({
     super.key,
@@ -109,7 +111,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             ),
           ),
         );
-        widget.onPaymentSuccess();
+        await widget.onPaymentSuccess();
 
         if (mounted) {
           Navigator.pop(context);

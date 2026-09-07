@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from math import ceil
+from math import ceil, radians, sin, cos, asin, sqrt
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -146,9 +146,18 @@ class ReservationService:
         db: AsyncSession,
         reservation_id: str,
         current_user: User,
+        latitude: float | None = None,
+        longitude: float | None = None,
     ) -> ReservationResponse:
         reservation, parking = await _get_reservation_with_parking(db, reservation_id)
         _ensure_reservation_access(current_user, reservation, parking)
+
+        if current_user.role == UserRoleEnum.CUSTOMER:
+            if latitude is None or longitude is None:
+                raise HTTPException(status_code=422, detail="Location is required for customer check-in")
+            distance = _distance_meters(latitude, longitude, parking.lat, parking.lng)
+            if distance > 150:
+                raise HTTPException(status_code=403, detail="You must be inside the parking to check in")
 
         if reservation.status == "pre_reserved" and reservation.hold_expires_at <= datetime.utcnow():
             raise HTTPException(status_code=409, detail="Pre-reservation expired")
@@ -335,10 +344,7 @@ def _ensure_reservation_access(
         return
 
     if current_user.role == UserRoleEnum.OPERATOR:
-        if (
-            current_user.tenant_id != parking.tenant_id
-            or reservation.user_id != current_user.id
-        ):
+        if current_user.tenant_id != parking.tenant_id:
             raise HTTPException(status_code=403, detail="Reservation not allowed")
         return
 
@@ -594,6 +600,14 @@ def _additional_hour_price(parking: Parking, spot_type: str) -> float:
     if spot_type in {"covered", "vip"}:
         return parking.covered_additional_hour_price or parking.additional_hour_price
     return parking.uncovered_additional_hour_price or parking.additional_hour_price
+
+
+def _distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius = 6371000
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return earth_radius * 2 * asin(sqrt(a))
 
 
 def _selected_services(

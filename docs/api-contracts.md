@@ -289,6 +289,12 @@ Regras:
 - Reserva agendada futura deve validar horario de funcionamento, antecedencia maxima e politica de cancelamento antes da confirmacao.
 - Politica de cancelamento deve explicitar prazo sem taxa, taxa do estacionamento, taxa ParkHere e regra de credito em carteira.
 
+No check-in do cliente, `POST /reservations/{reservation_id}/checkin` recebe
+`latitude` e `longitude` atuais na query. O servidor valida distância máxima de
+150 metros do estacionamento e grava o horário e o usuário autenticado que
+realizou a ação. Gestores e operadores continuam autorizados para a portaria do
+próprio tenant.
+
 Quando o cliente contratar o serviço de guia, o app pode consultar
 `GET /parkings/{parking_id}/guides` e enviar o `guide_user_id` escolhido. A lista
 contém apenas guias com afiliação aprovada pelo estacionamento. Se o identificador
