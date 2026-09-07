@@ -44,8 +44,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final globalLocale = ref.watch(appLanguageProvider);
-    language = globalLocale.languageCode == 'en'
+    final locale = Localizations.localeOf(context);
+    language = locale.languageCode == 'en'
         ? LoginLanguage.en
         : LoginLanguage.ptBr;
     final authState = ref.watch(authProvider);
