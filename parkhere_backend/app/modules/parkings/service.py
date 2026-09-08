@@ -292,6 +292,7 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
             key: ParkingAreaPricing(**value)
             for key, value in json.loads(parking.category_pricing or '{}').items()
         },
+        blocked_spots=json.loads(parking.blocked_spots or "[]"),
         services=[
             ParkingServiceResponse(
                 id=service.id,

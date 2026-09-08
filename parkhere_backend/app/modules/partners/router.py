@@ -486,6 +486,29 @@ async def get_partner_parking_map(
     }
 
 
+@router.post("/parking-map/{parking_id}/slots/{slot_code}/block")
+async def toggle_parking_slot_block(
+    parking_id: str,
+    slot_code: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_staff(db, current_user)
+    parking = await db.get(Parking, parking_id)
+    if parking is None or parking.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
+    blocked = set(json.loads(parking.blocked_spots or "[]"))
+    status = "available"
+    if slot_code in blocked:
+        blocked.remove(slot_code)
+    else:
+        blocked.add(slot_code)
+        status = "blocked"
+    parking.blocked_spots = json.dumps(sorted(blocked))
+    await db.commit()
+    return {"slot_code": slot_code, "status": status}
+
+
 @router.get("/reservations")
 async def list_partner_reservations(
     db: AsyncSession = Depends(get_db),
@@ -875,6 +898,7 @@ def _parking_layout_payload(
 
     for index in range(1, parking.total_spots + 1):
         code = f"V{index:03d}"
+        blocked_codes = set(parking.blocked_spots)
         assigned = active_by_slot.get(code)
         if assigned is None and fallback_index < len(fallback_reservations):
             assigned = fallback_reservations[fallback_index]
@@ -886,7 +910,7 @@ def _parking_layout_payload(
                 {
                     "code": code,
                     "type": slot_type,
-                    "status": "free",
+                    "status": "blocked" if code in blocked_codes else "free",
                     "reservation": None,
                 }
             )

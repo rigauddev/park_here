@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart';
 
@@ -30,6 +34,7 @@ class RegisterPage extends ConsumerStatefulWidget {
 
 class _RegisterPageState extends ConsumerState<RegisterPage> {
   final nameController = TextEditingController();
+  final cpfController = TextEditingController();
   final emailController = TextEditingController();
   final emailCodeController = TextEditingController();
   final passwordController = TextEditingController();
@@ -51,6 +56,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   bool emailVerified = false;
   String? emailToken;
   bool isLoading = false;
+  bool obscurePassword = true;
+  bool obscureConfirmation = true;
+  Uint8List? profilePhoto;
 
   bool get needsInsuranceInfo =>
       accountType == RegisterAccountType.partner &&
@@ -87,6 +95,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   @override
   void dispose() {
     nameController.dispose();
+    cpfController.dispose();
     emailController.dispose();
     emailCodeController.dispose();
     passwordController.dispose();
@@ -203,7 +212,24 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   }
 
   Widget _customerFields() {
-    return Column(children: [_field(nameController, "Nome completo")]);
+    return Column(children: [
+      _field(nameController, "Nome completo"),
+      _field(cpfController, "CPF", keyboardType: TextInputType.number),
+      _field(phoneController, "Telefone", keyboardType: TextInputType.phone),
+      OutlinedButton.icon(
+        onPressed: isLoading ? null : _pickProfilePhoto,
+        icon: const Icon(Icons.photo_camera_outlined),
+        label: Text(profilePhoto == null ? 'Adicionar foto de perfil (opcional)' : 'Foto selecionada'),
+      ),
+    ]);
+  }
+
+  Future<void> _pickProfilePhoto() async {
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (file != null) {
+      final bytes = await file.readAsBytes();
+      if (mounted) setState(() => profilePhoto = bytes);
+    }
   }
 
   Widget _partnerFields() {
@@ -314,8 +340,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   Widget _passwordFields() {
     return Column(
       children: [
-        _field(passwordController, "Senha", obscureText: true),
-        _field(confirmPasswordController, "Confirmar senha", obscureText: true),
+        _field(passwordController, "Senha (mín. 8, maiúscula, minúscula e símbolo)", obscureText: obscurePassword,
+          suffixIcon: IconButton(icon: Icon(obscurePassword ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => obscurePassword = !obscurePassword))),
+        _field(confirmPasswordController, "Confirmar senha", obscureText: obscureConfirmation,
+          suffixIcon: IconButton(icon: Icon(obscureConfirmation ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => obscureConfirmation = !obscureConfirmation))),
       ],
     );
   }
@@ -376,6 +404,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     bool obscureText = false,
     TextInputType? keyboardType,
     int maxLines = 1,
+    Widget? suffixIcon,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -386,6 +415,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         maxLines: obscureText ? 1 : maxLines,
         decoration: InputDecoration(
           labelText: label,
+          suffixIcon: suffixIcon,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
@@ -417,7 +447,17 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               socialLinks: socialLinksController.text,
             );
       } else {
-        await Future.delayed(const Duration(milliseconds: 300));
+        await ref.read(authProvider.notifier).registerCustomer(
+          name: nameController.text,
+          cpf: cpfController.text,
+          email: emailController.text,
+          password: passwordController.text,
+          phone: phoneController.text,
+        );
+        if (profilePhoto != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('profile_avatar_${emailController.text.trim().toLowerCase()}', base64Encode(profilePhoto!));
+        }
       }
 
       if (!mounted) return;
@@ -507,6 +547,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           ]
         : [
             nameController,
+            cpfController,
+            phoneController,
             emailController,
             passwordController,
             confirmPasswordController,

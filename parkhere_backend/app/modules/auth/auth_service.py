@@ -109,7 +109,8 @@ class AuthService:
             ),
         )
         db.add(partner_user)
-
+        await db.commit()
+        await db.refresh(partner_user)
         return partner_user
     
     @staticmethod
@@ -142,7 +143,10 @@ class AuthService:
         return access_token, refresh_token
     @staticmethod
     async def CustomerSignup(db: AsyncSession, data):
-
+        existing = await db.execute(select(User).where(User.email == data.email.strip().lower()))
+        if existing.scalar_one_or_none():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=409, detail="E-mail já cadastrado")
         # Criar customer
         user = User(
             name=data.name,
@@ -151,6 +155,7 @@ class AuthService:
             email=data.email,
             password_hash=hash_password(data.password),
             role=UserRoleEnum.CUSTOMER
+            ,cpf=data.cpf
         )
         db.add(user)
 

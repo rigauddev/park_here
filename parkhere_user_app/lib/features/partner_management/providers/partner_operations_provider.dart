@@ -73,6 +73,18 @@ Future<void> cancelOperationalReservation({
   }, token);
 }
 
+Future<void> toggleParkingSlotBlock({
+  required String token,
+  required String parkingId,
+  required String slotCode,
+}) async {
+  await ApiService().postAuthorized(
+    '/partners/parking-map/$parkingId/slots/$slotCode/block',
+    {},
+    token,
+  );
+}
+
 Future<Map<String, dynamic>> createOperationalPaymentIntent({
   required String token,
   required String reservationId,

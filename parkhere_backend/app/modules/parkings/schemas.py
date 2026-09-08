@@ -102,6 +102,7 @@ class ParkingManagementResponse(BaseModel):
     uncovered_pricing: ParkingAreaPricing
     covered_pricing: ParkingAreaPricing
     category_pricing: dict[str, ParkingAreaPricing] = Field(default_factory=dict)
+    blocked_spots: list[str] = Field(default_factory=list)
     services: list[ParkingServiceResponse]
 
 

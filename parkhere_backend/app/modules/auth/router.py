@@ -48,13 +48,10 @@ async def register_parking(
 #         "refresh_token": tokens[1],
 #     }
 
-# @router.post("/customer-signup", response_model=TokenResponse)
-# async def CustomerSignup(data: CustomerSignupRequest, db: AsyncSession = Depends(get_db)):
-#     tokens = await AuthService.CustomerSignup(db, data)
-#     return {
-#         "access_token": tokens[0],
-#         "refresh_token": tokens[1],
-    # }
+@router.post("/customer-signup", response_model=TokenResponse)
+async def customer_signup(data: CustomerSignupRequest, db: AsyncSession = Depends(get_db)):
+    tokens = await AuthService.CustomerSignup(db, data)
+    return {"access_token": tokens[0], "refresh_token": tokens[1]}
 
 @router.post("/login")
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):

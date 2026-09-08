@@ -24,6 +24,7 @@ class Parking(BaseModel):
     bus_spots = Column(Integer, nullable=False, default=0)
     pickup_spots = Column(Integer, nullable=False, default=0)
     moto_home_spots = Column(Integer, nullable=False, default=0)
+    blocked_spots = Column(Text, nullable=True)
     first_hour_price = Column(Float, nullable=False, default=0)
     additional_hour_price = Column(Float, nullable=False, default=0)
     daily_price = Column(Float, nullable=False, default=0)

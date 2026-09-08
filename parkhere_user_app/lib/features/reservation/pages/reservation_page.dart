@@ -48,7 +48,7 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
               loading: () => null,
               error: (_, __) => null,
             );
-            final allReservations = [
+            final allReservations = <ReservationModel>[
               if (preReservation != null)
                 ReservationModel(
                   id: preReservation.id,
@@ -107,7 +107,7 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                     userLocationLng: 0,
                   ),
                 ),
-              ...reservations,
+              ...reservations.where((item) => preReservation == null || item.id != preReservation.id),
             ];
 
             if (allReservations.isEmpty) {

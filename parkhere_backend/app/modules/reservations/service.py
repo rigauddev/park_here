@@ -465,6 +465,7 @@ async def expire_parking_reservations(db, parking):
 
 
 async def allocate_spot(db, parking, requested, kind):
+    blocked = set(json.loads(getattr(parking, "blocked_spots", None) or "[]"))
     occupied = (await db.scalars(select(Reservation.spot_code).where(
         Reservation.parking_id == parking.id,
         Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
@@ -485,9 +486,11 @@ async def allocate_spot(db, parking, requested, kind):
             raise HTTPException(status_code=422, detail="Spot code/type does not match parking configuration")
         if requested in used:
             raise HTTPException(status_code=409, detail="Spot already reserved")
+        if requested in blocked:
+            raise HTTPException(status_code=409, detail="Esta vaga está bloqueada para manutenção")
         return requested
     for code, actual_kind in valid.items():
-        if actual_kind == kind and code not in used:
+        if actual_kind == kind and code not in used and code not in blocked:
             return code
     raise HTTPException(status_code=409, detail="No available spots of requested type")
 

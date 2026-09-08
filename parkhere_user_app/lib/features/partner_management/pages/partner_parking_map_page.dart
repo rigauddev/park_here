@@ -471,14 +471,20 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
     final color = switch (slot.status) {
       'occupied' => AppTheme.primary,
       'pre_reserved' => Colors.orange,
+      'blocked' => Colors.grey,
       _ => AppTheme.success,
     };
     final slotTypeLabel = _slotTypeLabel(slot.type);
 
     return InkWell(
       onTap: slot.reservation == null
-          ? () => _showCreateReservation(context, widget.parkingId, slot)
+          ? slot.status == 'blocked'
+              ? null
+              : () => _showCreateReservation(context, widget.parkingId, slot)
           : () => _showReservation(context, ref, slot),
+      onLongPress: slot.reservation == null
+          ? () => _toggleBlocked(context, slot)
+          : null,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
@@ -534,6 +540,13 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
         ),
       ),
     );
+  }
+
+  Future<void> _toggleBlocked(BuildContext context, PartnerParkingSlot slot) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    await toggleParkingSlotBlock(token: token, parkingId: widget.parkingId, slotCode: slot.code);
+    ref.invalidate(partnerParkingMapProvider);
   }
 
   String _timePreview(PartnerSlotReservation reservation) {
