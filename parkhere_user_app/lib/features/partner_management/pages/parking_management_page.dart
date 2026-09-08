@@ -241,10 +241,36 @@ class _ParkingManagementFormPageState
   List<ManagedParkingServiceModel> services = [];
   bool isSaving = false;
 
+  int _sumSpots() => [
+    coveredController,
+    uncoveredController,
+    vipController,
+    largeController,
+    busController,
+    pickupController,
+  ].fold(0, (sum, controller) => sum + (int.tryParse(controller.text) ?? 0));
+
+  void _refreshTotal() {
+    final total = _sumSpots();
+    if (totalController.text != total.toString()) {
+      totalController.text = total.toString();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     final parking = widget.parking;
+    for (final controller in [
+      coveredController,
+      uncoveredController,
+      vipController,
+      largeController,
+      busController,
+      pickupController,
+    ]) {
+      controller.addListener(_refreshTotal);
+    }
     if (parking == null) {
       cityController.text = 'Valenca';
       latController.text = '-13.3703';
@@ -374,7 +400,9 @@ class _ParkingManagementFormPageState
             children: [
               Row(
                 children: [
-                  Expanded(child: _field(totalController, 'Total')),
+                  Expanded(
+                    child: _field(totalController, 'Total', readOnly: true),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(child: _field(availableController, 'Disponíveis')),
                 ],
@@ -542,7 +570,11 @@ class _ParkingManagementFormPageState
     );
   }
 
-  Widget _field(TextEditingController controller, String label) {
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    bool readOnly = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
@@ -554,6 +586,7 @@ class _ParkingManagementFormPageState
                 label == 'Nome do serviço'
             ? TextInputType.text
             : const TextInputType.numberWithOptions(decimal: true),
+        readOnly: readOnly,
         decoration: InputDecoration(labelText: label),
       ),
     );
@@ -609,7 +642,7 @@ class _ParkingManagementFormPageState
   }
 
   ManagedParkingModel _buildParking() {
-    final total = _int(totalController, 'Total');
+    final total = _sumSpots();
     final covered = _int(coveredController, 'Cobertas');
     final uncovered = _int(uncoveredController, 'Descobertas');
     final available = _int(availableController, 'Disponíveis');
@@ -624,14 +657,6 @@ class _ParkingManagementFormPageState
 
     if (total <= 0 || available > total) {
       throw Exception('Informe total positivo e disponibilidade até o total.');
-    }
-
-    if (covered + uncovered != total) {
-      throw Exception('Cobertas + descobertas deve ser igual ao total.');
-    }
-
-    if (vip + large + bus + pickup > total) {
-      throw Exception('Tipos especiais não podem passar o total de vagas.');
     }
 
     if (arrivalTolerance < 1 || arrivalTolerance > 120) {

@@ -85,16 +85,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     );
     final topBar = AppBar(
       title: const Text('ParkHere'),
-      actions: [
-        if (!isWebLayout && _menuExpanded)
-          Builder(
-            builder: (context) => IconButton(
-              tooltip: 'Navegação',
-              icon: const Icon(Icons.dashboard_outlined),
-              onPressed: () => Scaffold.of(context).openDrawer(),
-            ),
-          ),
-      ],
+      actions: const [],
       leading: isWebLayout
           ? IconButton(
               tooltip: _menuExpanded ? 'Ocultar menu' : 'Mostrar menu',
@@ -203,6 +194,12 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               selectedIcon: Icon(Icons.map),
               label: 'Mapa',
             ),
+          if (!isPartner)
+            const NavigationDestination(
+              icon: Icon(Icons.confirmation_number_outlined),
+              selectedIcon: Icon(Icons.confirmation_number),
+              label: 'Reservas',
+            ),
           if (!isPartner || isGuide)
             const NavigationDestination(
               icon: Icon(Icons.person_outline),
@@ -307,8 +304,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return isPartner ? 1 : 2;
       case _MainArea.services:
         return isPartner ? 1 : 1;
-      case _MainArea.reservations:
-        return isPartner ? 2 : 3;
       case _MainArea.vehicles:
       case _MainArea.wallet:
         return isPartner ? 4 : 2;
@@ -321,7 +316,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.dashboard:
         return isPartner ? 0 : 2;
       case _MainArea.profile:
-        return isPartner ? 4 : 3;
+        return isPartner ? 4 : 4;
+      case _MainArea.reservations:
+        return isPartner ? 2 : 3;
     }
   }
 
@@ -357,7 +354,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case 2:
         return isPartner ? _MainArea.reservations : _MainArea.map;
       case 3:
-        return isPartner ? _MainArea.financial : _MainArea.profile;
+        return isPartner ? _MainArea.financial : _MainArea.reservations;
       case 4:
         return _MainArea.profile;
       default:

@@ -294,6 +294,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             final plan = ref.watch(selectedPlanProvider);
             final selected = ref.watch(selectedServicesProvider);
             final areaPreference = ref.watch(selectedAreaPreferenceProvider);
+            final selectedArea = areaPreference == AreaPreference.any
+                ? _firstAvailableArea(parking)
+                : areaPreference;
 
             // ===============================
             // ✅ ETAPA 1 — Escolher Plano
@@ -336,17 +339,13 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<AreaPreference>(
-                      initialValue: areaPreference,
+                      initialValue: selectedArea,
                       isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Tipo de vaga',
                         prefixIcon: Icon(Icons.local_parking_outlined),
                       ),
                       items: [
-                        DropdownMenuItem(
-                          value: AreaPreference.any,
-                          child: Text('Qualquer (${parking.availableSpots})'),
-                        ),
                         if (parking.coveredSpots > 0)
                           DropdownMenuItem(
                             value: AreaPreference.covered,
@@ -463,10 +462,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
             switch (plan) {
               case PlanType.hourly:
-                total = _priceForArea(parking, areaPreference, hourly: true);
+                total = _priceForArea(parking, selectedArea, hourly: true);
                 break;
               case PlanType.daily:
-                total = _priceForArea(parking, areaPreference) * dailyDays;
+                total = _priceForArea(parking, selectedArea) * dailyDays;
                 break;
               case PlanType.monthly:
                 total = parking.pricing.monthlyPrice;
@@ -1136,7 +1135,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required double userLocationLat,
     required double userLocationLng,
   }) async {
-    final areaPreference = ref.read(selectedAreaPreferenceProvider);
+    final configuredArea = ref.read(selectedAreaPreferenceProvider);
+    final areaPreference = configuredArea == AreaPreference.any
+        ? _firstAvailableArea(parking)
+        : configuredArea;
     String? guideUserId;
     if (selected.tourGuide) {
       try {
@@ -1297,6 +1299,16 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
         : area == AreaPreference.uncovered
         ? parking.pricing.uncoveredDailyPrice
         : parking.pricing.dailyPrice;
+  }
+
+  AreaPreference _firstAvailableArea(ParkingModel parking) {
+    if (parking.coveredSpots > 0) return AreaPreference.covered;
+    if (parking.uncoveredSpots > 0) return AreaPreference.uncovered;
+    if (parking.hasVipSpots && parking.vipSpots > 0) return AreaPreference.vip;
+    if (parking.largeSpots > 0) return AreaPreference.large;
+    if (parking.motoHomeSpots > 0) return AreaPreference.motorhome;
+    if (parking.busSpots > 0) return AreaPreference.bus;
+    return AreaPreference.pickup;
   }
 }
 
