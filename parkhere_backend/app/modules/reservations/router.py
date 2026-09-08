@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,7 +12,8 @@ from app.modules.reservations.schemas import (
     PreCheckinReservationRequest,
     ReservationResponse,
 )
-from app.modules.reservations.service import ReservationService, _get_reservation_with_parking
+from app.modules.reservations.service import ReservationService, _get_reservation_with_parking, to_response
+from app.modules.reservations.models import Reservation
 from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
@@ -19,6 +21,33 @@ PHOTO_ROOT = Path('/app/storage/inspection')
 
 
 _PRIVATE_GUIDE_FIELDS = {"guide_user_id", "guide_commission_amount", "guide_platform_fee_amount", "guide_payout_amount"}
+
+
+@router.get("", response_model=list[ReservationResponse], response_model_exclude=_PRIVATE_GUIDE_FIELDS)
+async def list_my_reservations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the customer's complete history, including expired reservations."""
+    result = await db.execute(
+        select(Reservation)
+        .where(Reservation.user_id == current_user.id)
+        .order_by(Reservation.created_at.desc())
+    )
+    reservations = list(result.scalars().all())
+    now = datetime.utcnow()
+    changed = False
+    for reservation in reservations:
+        if (
+            reservation.status == "pre_reserved"
+            and reservation.hold_expires_at.replace(tzinfo=None) <= now
+        ):
+            reservation.status = "expired"
+            reservation.payment_status = "expired"
+            changed = True
+    if changed:
+        await db.commit()
+    return [to_response(reservation) for reservation in reservations]
 
 
 @router.post("/pre-checkin", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
