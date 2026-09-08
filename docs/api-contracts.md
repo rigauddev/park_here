@@ -492,6 +492,12 @@ ocultar categorias com quantidade zero e enviar `spot_type` (`covered`, `uncover
 O campo `moto_home_spots` foi adicionado ao request de gestao e exige migration
 `e7f8a9b0c1d2_add_moto_home_spots`.
 
+O cadastro de estacionamento exige que `total_spots` seja exatamente a soma
+das categorias informadas. `category_pricing` permite enviar tarifas próprias
+por categoria (`covered`, `uncovered`, `vip`, `large`, `pickup`, `bus`,
+`motorhome`), cada uma com primeira hora, hora adicional, diária, semanal e
+mensal. A migration `f1a2b3c4d5e6` cria o armazenamento desses preços.
+
 `GET /reservations` retorna o histórico do cliente autenticado, incluindo
 pré-reservas expiradas, canceladas, confirmadas, em check-in e concluídas.
 Pré-reservas vencidas são marcadas como `expired` durante a consulta.

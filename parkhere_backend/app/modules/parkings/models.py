@@ -47,6 +47,7 @@ class Parking(BaseModel):
     has_automatic_access = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     guide_commission_terms = Column(Text, nullable=True)
+    category_pricing = Column(Text, nullable=True)
 
     services = relationship("ParkingService", back_populates="parking")
 

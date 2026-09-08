@@ -1,3 +1,5 @@
+import json
+
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +40,10 @@ class ParkingManagementService:
         uncovered = data.uncovered_pricing
         covered = data.covered_pricing or ParkingAreaPricing()
 
+        category_total = sum([
+            data.covered_spots, data.uncovered_spots, data.vip_spots,
+            data.large_spots, data.bus_spots, data.pickup_spots, data.moto_home_spots,
+        ])
         parking = Parking(
             tenant_id=tenant_id,
             arrival_tolerance_minutes=data.arrival_tolerance_minutes,
@@ -46,16 +52,18 @@ class ParkingManagementService:
             city=data.city,
             lat=data.lat,
             lng=data.lng,
-            total_spots=data.total_spots,
+            total_spots=category_total,
             available_spots=data.available_spots
             if data.available_spots is not None
-            else data.total_spots,
+            else category_total,
             covered_spots=data.covered_spots,
             uncovered_spots=data.uncovered_spots,
             vip_spots=data.vip_spots,
             large_spots=data.large_spots,
             bus_spots=data.bus_spots,
             pickup_spots=data.pickup_spots,
+            moto_home_spots=data.moto_home_spots,
+            category_pricing=json.dumps({key: value.model_dump() for key, value in data.category_pricing.items()}),
             first_hour_price=uncovered.first_hour_price,
             additional_hour_price=uncovered.additional_hour_price,
             daily_price=uncovered.daily_price,
@@ -109,7 +117,10 @@ class ParkingManagementService:
         parking.city = data.city
         parking.lat = data.lat
         parking.lng = data.lng
-        parking.total_spots = data.total_spots
+        parking.total_spots = sum([
+            data.covered_spots, data.uncovered_spots, data.vip_spots,
+            data.large_spots, data.bus_spots, data.pickup_spots, data.moto_home_spots,
+        ])
         if data.available_spots is None:
             parking.available_spots = min(parking.available_spots, data.total_spots)
         else:
@@ -121,6 +132,9 @@ class ParkingManagementService:
         parking.bus_spots = data.bus_spots
         parking.pickup_spots = data.pickup_spots
         parking.moto_home_spots = data.moto_home_spots
+        parking.category_pricing = json.dumps(
+            {key: value.model_dump() for key, value in data.category_pricing.items()}
+        )
         parking.first_hour_price = uncovered.first_hour_price
         parking.additional_hour_price = uncovered.additional_hour_price
         parking.daily_price = uncovered.daily_price
@@ -179,7 +193,11 @@ async def _get_owned_parking(
 
 
 def _validate_capacity(data: ParkingManagementRequest) -> None:
-    if data.total_spots <= 0:
+    category_total = sum([
+        data.covered_spots, data.uncovered_spots, data.vip_spots,
+        data.large_spots, data.bus_spots, data.pickup_spots, data.moto_home_spots,
+    ])
+    if category_total <= 0:
         raise HTTPException(status_code=422, detail="Total spots must be greater than zero")
 
     if data.covered_spots < 0 or data.uncovered_spots < 0:
@@ -190,13 +208,14 @@ def _validate_capacity(data: ParkingManagementRequest) -> None:
         or data.large_spots < 0
         or data.bus_spots < 0
         or data.pickup_spots < 0
+        or data.moto_home_spots < 0
     ):
         raise HTTPException(status_code=422, detail="Special spot quantities cannot be negative")
 
-    if data.covered_spots + data.uncovered_spots != data.total_spots:
+    if data.total_spots != category_total:
         raise HTTPException(
             status_code=422,
-            detail="Covered plus uncovered spots must match total spots",
+            detail="Total spots must equal the sum of all categories",
         )
 
     special_total = (
@@ -206,12 +225,6 @@ def _validate_capacity(data: ParkingManagementRequest) -> None:
         + data.pickup_spots
         + data.moto_home_spots
     )
-    if special_total > data.total_spots:
-        raise HTTPException(
-            status_code=422,
-            detail="Special spot quantities cannot exceed total spots",
-        )
-
     if data.available_spots is not None and (
         data.available_spots < 0 or data.available_spots > data.total_spots
     ):
@@ -275,6 +288,10 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
             weekly_price=parking.covered_weekly_price,
             monthly_price=parking.covered_monthly_price,
         ),
+        category_pricing={
+            key: ParkingAreaPricing(**value)
+            for key, value in json.loads(parking.category_pricing or '{}').items()
+        },
         services=[
             ParkingServiceResponse(
                 id=service.id,

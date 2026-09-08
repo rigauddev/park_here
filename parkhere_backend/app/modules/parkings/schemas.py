@@ -60,6 +60,7 @@ class ParkingManagementRequest(BaseModel):
     has_automatic_access: bool = False
     uncovered_pricing: ParkingAreaPricing
     covered_pricing: ParkingAreaPricing | None = None
+    category_pricing: dict[str, ParkingAreaPricing] = Field(default_factory=dict)
     services: list[ParkingServiceInput] = Field(default_factory=list)
     is_active: bool = True
 
@@ -100,6 +101,7 @@ class ParkingManagementResponse(BaseModel):
     is_active: bool
     uncovered_pricing: ParkingAreaPricing
     covered_pricing: ParkingAreaPricing
+    category_pricing: dict[str, ParkingAreaPricing] = Field(default_factory=dict)
     services: list[ParkingServiceResponse]
 
 
