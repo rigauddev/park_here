@@ -492,6 +492,10 @@ ocultar categorias com quantidade zero e enviar `spot_type` (`covered`, `uncover
 O campo `moto_home_spots` foi adicionado ao request de gestao e exige migration
 `e7f8a9b0c1d2_add_moto_home_spots`.
 
+`GET /reservations` retorna o histórico do cliente autenticado, incluindo
+pré-reservas expiradas, canceladas, confirmadas, em check-in e concluídas.
+Pré-reservas vencidas são marcadas como `expired` durante a consulta.
+
 ## Carteira e fotos de inspeção — 07/09/2026
 
 Clientes cadastram somente cartões na carteira; pagamentos Pix geram o QR Code
