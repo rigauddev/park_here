@@ -455,24 +455,6 @@ class _ReservationCard extends StatelessWidget {
     );
   }
 
-  void _showScheduleDialog(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agendar reserva / Schedule'),
-        content: const Text(
-          'Escolha a data e informe o horário de chegada. O pagamento antecipado de 50% será habilitado na próxima etapa do Mercado Pago.\n\nChoose the date and arrival time. The 50% prepayment will be enabled in the next Mercado Pago step.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar / Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   (String, Color) _statusInfo(ReservationStatus status) {
     switch (status) {
       case ReservationStatus.open:
