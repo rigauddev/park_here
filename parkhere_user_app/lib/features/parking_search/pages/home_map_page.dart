@@ -616,6 +616,27 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       },
                     ),
 
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.calendar_month_outlined),
+                      label: const Text('Agendar reserva'),
+                      onPressed: () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          initialDate: DateTime.now(),
+                        );
+                        if (date != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Chegada agendada para ${date.day}/${date.month}/${date.year}.')),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+
                   const SizedBox(height: 15),
 
                   // Total estimado
@@ -1241,6 +1262,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                   parkingId: parking.id,
                   parkingName: parking.name,
                   routeMinutes: minutes,
+                  plan: plan.name,
+                  spotType: areaPreference.name,
+                  total: total,
+                  availableSpots: parking.availableSpots,
                 );
             final token = ref.read(authProvider).accessToken;
             if (token == null) {

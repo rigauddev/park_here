@@ -53,12 +53,15 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                 ReservationModel(
                   id: preReservation.id,
                   parkingName: preReservation.parkingName,
-                  plan: PlanType.hourly,
+                  plan: PlanType.values.firstWhere(
+                    (value) => value.name == preReservation.plan,
+                    orElse: () => PlanType.hourly,
+                  ),
                   status: preReservation.active && !preReservation.isExpired
                       ? ReservationStatus.open
                       : ReservationStatus.expired,
                   checkinAt: preReservation.createdAt,
-                  estimatedValue: 0,
+                  estimatedValue: preReservation.total,
                   carWash: false,
                   tourGuide: false,
                   transport: false,
@@ -76,7 +79,7 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                       lat: 0,
                       lng: 0,
                       rating: 0,
-                      availableSpots: 0,
+                      availableSpots: preReservation.availableSpots,
                       pricing: ParkingPricing(
                         firstHourPrice: 0,
                         additionalHourPrice: 0,
@@ -92,11 +95,14 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                       tourGuidePrice: 0,
                       transportPrice: 0,
                     ),
-                    plan: PlanType.hourly,
+                    plan: PlanType.values.firstWhere(
+                      (value) => value.name == preReservation.plan,
+                      orElse: () => PlanType.hourly,
+                    ),
                     carWash: false,
                     tourGuide: false,
                     transport: false,
-                    total: 0,
+                    total: preReservation.total,
                     userLocationLat: 0,
                     userLocationLng: 0,
                   ),
@@ -413,7 +419,7 @@ class _ReservationCard extends StatelessWidget {
                 spacing: 8,
                 children: [
                   if (reservation.status == ReservationStatus.open &&
-                      reservation.checkedIn)
+                      !reservation.checkedIn)
                     OutlinedButton.icon(
                       onPressed: () {
                         Navigator.push(
@@ -427,11 +433,6 @@ class _ReservationCard extends StatelessWidget {
                       icon: const Icon(Icons.login),
                       label: const Text('Check-in'),
                     ),
-                  IconButton(
-                    tooltip: 'Agendar reserva / Schedule reservation',
-                    onPressed: () => _showScheduleDialog(context),
-                    icon: const Icon(Icons.calendar_month_outlined),
-                  ),
                   TextButton.icon(
                     onPressed: () {
                       Navigator.push(

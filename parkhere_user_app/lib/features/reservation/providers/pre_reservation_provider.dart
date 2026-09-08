@@ -44,6 +44,10 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
     required String parkingId,
     required String parkingName,
     required int routeMinutes,
+    String plan = 'hourly',
+    String spotType = 'uncovered',
+    double total = 0,
+    int availableSpots = 0,
   }) async {
     final now = DateTime.now();
     final expires = now.add(Duration(minutes: routeMinutes + 5));
@@ -55,6 +59,10 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
       createdAt: now,
       expiresAt: expires,
       active: true,
+      plan: plan,
+      spotType: spotType,
+      total: total,
+      availableSpots: availableSpots,
     );
 
     state = AsyncData(pre);

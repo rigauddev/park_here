@@ -52,3 +52,13 @@ Funcionalidade:
 Use $parkhere-product-owner e considere as skills $parkhere-backend-api, $parkhere-flutter-app e $parkhere-qa-reviewer.
 Monte uma sprint de uma semana para o MVP do ParkHere. Separe tarefas por backend, Flutter, QA e documentacao. Inclua dependencias e ordem recomendada.
 ```
+
+## Regras obrigatórias de execução
+
+```text
+Priorize sempre a experiência mobile e valide também larguras comuns de tablet e web.
+Após alterações grandes ou que afetem dependências, rebuildar os containers com docker compose up -d --build.
+Quando houver alteração de modelo ou schema, executar as migrations Alembic e confirmar a revisão atual.
+Rodar flutter analyze, flutter test e validações do backend antes do commit. Separar commits por bloco funcional.
+No MVP da VPS, arquivos e fotos devem ser gravados no volume persistente local do Docker e o caminho relativo salvo no banco; manter a estrutura preparada para futura migração para object storage.
+```
