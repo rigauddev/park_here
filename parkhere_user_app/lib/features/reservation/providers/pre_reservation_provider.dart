@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/pre_reservation_model.dart';
 
@@ -13,7 +15,29 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
 
   @override
   Future<PreReservationModel?> build() async {
-    return null;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('parkhere_pre_reservation');
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final pre = PreReservationModel.fromJson(data);
+      if (pre.active && !pre.isExpired) {
+        _startExpirationTimer(
+          pre.expiresAt.difference(DateTime.now()).inSeconds,
+        );
+      } else if (pre.active) {
+        final expired = pre.copyWith(active: false);
+        state = AsyncData(expired);
+        await prefs.setString(
+          'parkhere_pre_reservation',
+          jsonEncode(expired.toJson()),
+        );
+        return expired;
+      }
+      return pre;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> createPreReservation({
@@ -34,6 +58,8 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
     );
 
     state = AsyncData(pre);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('parkhere_pre_reservation', jsonEncode(pre.toJson()));
 
     _startExpirationTimer(routeMinutes + 5);
   }
@@ -46,6 +72,12 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
 
       if (current != null) {
         state = AsyncData(current.copyWith(active: false));
+        SharedPreferences.getInstance().then(
+          (prefs) => prefs.setString(
+            'parkhere_pre_reservation',
+            jsonEncode(current.copyWith(active: false).toJson()),
+          ),
+        );
       }
     });
   }
@@ -53,5 +85,8 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
   void cancelPreReservation() {
     _timer?.cancel();
     state = const AsyncData(null);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.remove('parkhere_pre_reservation'),
+    );
   }
 }

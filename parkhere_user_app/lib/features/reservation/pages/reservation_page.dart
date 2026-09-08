@@ -49,12 +49,14 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
               error: (_, __) => null,
             );
             final allReservations = [
-              if (preReservation != null && preReservation.active)
+              if (preReservation != null)
                 ReservationModel(
                   id: preReservation.id,
                   parkingName: preReservation.parkingName,
                   plan: PlanType.hourly,
-                  status: ReservationStatus.open,
+                  status: preReservation.active && !preReservation.isExpired
+                      ? ReservationStatus.open
+                      : ReservationStatus.expired,
                   checkinAt: preReservation.createdAt,
                   estimatedValue: 0,
                   carWash: false,
@@ -405,7 +407,8 @@ class _ReservationCard extends StatelessWidget {
               child: Wrap(
                 spacing: 8,
                 children: [
-                  if (reservation.status == ReservationStatus.open)
+                  if (reservation.status == ReservationStatus.open &&
+                      reservation.checkedIn)
                     OutlinedButton.icon(
                       onPressed: () {
                         Navigator.push(

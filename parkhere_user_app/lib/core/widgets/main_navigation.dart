@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/account/pages/vehicles_page.dart';
@@ -47,6 +48,20 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   late _MainArea _selectedArea;
   int _servicesInitialIndex = 0;
   bool _menuExpanded = true;
+  DateTime? _lastBackPress;
+
+  Future<bool> _handleBack() async {
+    final now = DateTime.now();
+    if (_lastBackPress == null ||
+        now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+      _lastBackPress = now;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pressione voltar novamente para sair.')),
+      );
+      return false;
+    }
+    return true;
+  }
 
   @override
   void initState() {
@@ -96,129 +111,141 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     );
 
     if (isWebLayout) {
-      return Scaffold(
-        appBar: topBar,
-        body: Row(
-          children: [
-            _WebMenu(
-              expanded: _menuExpanded,
-              selectedArea: _selectedArea,
-              isPartner: isPartner,
-              isPartnerOwner: isPartnerOwner,
-              isGuide: isGuide,
-              onSelected: _selectArea,
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(child: page),
-          ],
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (_, __) async {
+          if (await _handleBack()) SystemNavigator.pop();
+        },
+        child: Scaffold(
+          appBar: topBar,
+          body: Row(
+            children: [
+              _WebMenu(
+                expanded: _menuExpanded,
+                selectedArea: _selectedArea,
+                isPartner: isPartner,
+                isPartnerOwner: isPartnerOwner,
+                isGuide: isGuide,
+                onSelected: _selectArea,
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(child: page),
+            ],
+          ),
         ),
       );
     }
 
-    return Scaffold(
-      appBar: topBar,
-      drawer: _MobileDrawer(
-        isPartner: isPartner,
-        isPartnerOwner: isPartnerOwner,
-        isGuide: isGuide,
-        onSelected: (area, [serviceTabIndex]) {
-          Navigator.pop(context);
-          _selectArea(area, serviceTabIndex);
-        },
-      ),
-      body: Row(
-        children: [
-          if (!_menuExpanded)
-            _WebMenu(
-              expanded: false,
-              selectedArea: _selectedArea,
-              isPartner: isPartner,
-              isPartnerOwner: isPartnerOwner,
-              isGuide: isGuide,
-              onSelected: _selectArea,
-            ),
-          Expanded(child: page),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _mobileIndexFor(
-          _selectedArea,
-          isPartner,
-          isPartnerOwner,
-          isGuide,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (_, __) async {
+        if (await _handleBack()) SystemNavigator.pop();
+      },
+      child: Scaffold(
+        appBar: topBar,
+        drawer: _MobileDrawer(
+          isPartner: isPartner,
+          isPartnerOwner: isPartnerOwner,
+          isGuide: isGuide,
+          onSelected: (area, [serviceTabIndex]) {
+            Navigator.pop(context);
+            _selectArea(area, serviceTabIndex);
+          },
         ),
-        onDestinationSelected: (index) {
-          setState(
-            () => _selectedArea = _areaForMobileIndex(
-              index,
-              isPartner,
-              isPartnerOwner,
-              isGuide,
-            ),
-          );
-        },
-        destinations: [
-          if (!isPartner)
-            const NavigationDestination(
-              icon: Icon(Icons.menu),
-              selectedIcon: Icon(Icons.menu_open),
-              label: 'Menu',
-            ),
-          if (isPartner && (isPartnerOwner || isGuide))
-            const NavigationDestination(
-              icon: Icon(Icons.business_center_outlined),
-              selectedIcon: Icon(Icons.business_center),
-              label: 'Gestão',
-            ),
-          if (isPartner)
-            NavigationDestination(
-              icon: const Icon(Icons.local_parking_outlined),
-              selectedIcon: const Icon(Icons.local_parking),
-              label: isGuide ? 'Estacionamentos' : 'Vagas',
-            )
-          else
-            const NavigationDestination(
-              icon: Icon(Icons.widgets_outlined),
-              selectedIcon: Icon(Icons.widgets),
-              label: 'Serviços',
-            ),
-          if (isPartner && !isGuide)
-            const NavigationDestination(
-              icon: Icon(Icons.confirmation_number_outlined),
-              selectedIcon: Icon(Icons.confirmation_number),
-              label: 'Reservas',
-            ),
-          if (!isPartner)
-            const NavigationDestination(
-              icon: Icon(Icons.map_outlined),
-              selectedIcon: Icon(Icons.map),
-              label: 'Mapa',
-            ),
-          if (!isPartner)
-            const NavigationDestination(
-              icon: Icon(Icons.confirmation_number_outlined),
-              selectedIcon: Icon(Icons.confirmation_number),
-              label: 'Reservas',
-            ),
-          if (!isPartner || isGuide)
-            const NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Perfil',
-            ),
-          if (isPartner && isPartnerOwner && !isGuide)
-            const NavigationDestination(
-              icon: Icon(Icons.lock_outline),
-              selectedIcon: Icon(Icons.lock),
-              label: 'Financeiro',
-            ),
-          if (isPartner && !isGuide)
-            const NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Perfil',
-            ),
-        ],
+        body: Row(
+          children: [
+            if (!_menuExpanded)
+              _WebMenu(
+                expanded: false,
+                selectedArea: _selectedArea,
+                isPartner: isPartner,
+                isPartnerOwner: isPartnerOwner,
+                isGuide: isGuide,
+                onSelected: _selectArea,
+              ),
+            Expanded(child: page),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _mobileIndexFor(
+            _selectedArea,
+            isPartner,
+            isPartnerOwner,
+            isGuide,
+          ),
+          onDestinationSelected: (index) {
+            setState(
+              () => _selectedArea = _areaForMobileIndex(
+                index,
+                isPartner,
+                isPartnerOwner,
+                isGuide,
+              ),
+            );
+          },
+          destinations: [
+            if (!isPartner)
+              const NavigationDestination(
+                icon: Icon(Icons.menu),
+                selectedIcon: Icon(Icons.menu_open),
+                label: 'Menu',
+              ),
+            if (isPartner && (isPartnerOwner || isGuide))
+              const NavigationDestination(
+                icon: Icon(Icons.business_center_outlined),
+                selectedIcon: Icon(Icons.business_center),
+                label: 'Gestão',
+              ),
+            if (isPartner)
+              NavigationDestination(
+                icon: const Icon(Icons.local_parking_outlined),
+                selectedIcon: const Icon(Icons.local_parking),
+                label: isGuide ? 'Estacionamentos' : 'Vagas',
+              )
+            else
+              const NavigationDestination(
+                icon: Icon(Icons.widgets_outlined),
+                selectedIcon: Icon(Icons.widgets),
+                label: 'Serviços',
+              ),
+            if (isPartner && !isGuide)
+              const NavigationDestination(
+                icon: Icon(Icons.confirmation_number_outlined),
+                selectedIcon: Icon(Icons.confirmation_number),
+                label: 'Reservas',
+              ),
+            if (!isPartner)
+              const NavigationDestination(
+                icon: Icon(Icons.map_outlined),
+                selectedIcon: Icon(Icons.map),
+                label: 'Mapa',
+              ),
+            if (!isPartner)
+              const NavigationDestination(
+                icon: Icon(Icons.confirmation_number_outlined),
+                selectedIcon: Icon(Icons.confirmation_number),
+                label: 'Reservas',
+              ),
+            if (!isPartner || isGuide)
+              const NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Perfil',
+              ),
+            if (isPartner && isPartnerOwner && !isGuide)
+              const NavigationDestination(
+                icon: Icon(Icons.lock_outline),
+                selectedIcon: Icon(Icons.lock),
+                label: 'Financeiro',
+              ),
+            if (isPartner && !isGuide)
+              const NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Perfil',
+              ),
+          ],
+        ),
       ),
     );
   }

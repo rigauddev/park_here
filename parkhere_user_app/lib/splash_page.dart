@@ -17,9 +17,6 @@ class _SplashPageState extends ConsumerState<SplashPage> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
-      ref.read(authProvider.notifier).checkAuthOnStartup();
-    });
   }
 
   @override

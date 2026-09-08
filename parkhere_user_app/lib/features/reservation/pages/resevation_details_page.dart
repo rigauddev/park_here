@@ -172,7 +172,8 @@ class _ReservationDetailsPageState
           ),
         ],
       ),
-      bottomNavigationBar: reservation.status == ReservationStatus.open
+      bottomNavigationBar: reservation.status == ReservationStatus.open &&
+              reservation.checkedIn
           ? Padding(
               padding: const EdgeInsets.all(20),
               child: FilledButton.icon(

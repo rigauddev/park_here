@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 import '../../../core/theme/app_theme.dart';
 import '../../account/pages/account_setup_page.dart';
@@ -26,6 +28,19 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   String phone = '(71) 98888-7777';
   _MfaPreference mfaPreference = _MfaPreference.email;
   Uint8List? avatarBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvatar();
+  }
+
+  Future<void> _loadAvatar() async {
+    final email = ref.read(authProvider).userEmail ?? 'default';
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('profile_avatar_$email');
+    if (raw != null && mounted) setState(() => avatarBytes = base64Decode(raw));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -345,6 +360,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final bytes = await image.readAsBytes();
     if (!mounted) return;
     setState(() => avatarBytes = bytes);
+    final email = ref.read(authProvider).userEmail ?? 'default';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('profile_avatar_$email', base64Encode(bytes));
   }
 
   Future<void> _changePassword() async {

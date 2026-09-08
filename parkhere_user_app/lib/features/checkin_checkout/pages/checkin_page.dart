@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../reservation/models/reservation_enum.dart';
 import '../../reservation/models/reservation_model.dart';
 import '../../reservation/providers/reservation_provider.dart';
@@ -25,12 +26,52 @@ class CheckinPage extends ConsumerStatefulWidget {
 }
 
 class _CheckinPageState extends ConsumerState<CheckinPage> {
+  final _picker = ImagePicker();
+  final Map<String, XFile?> _captured = {};
   bool frontPhoto = false;
   bool leftPhoto = false;
   bool rightPhoto = false;
   bool backPhoto = false;
 
   bool get allPhotosDone => frontPhoto && leftPhoto && rightPhoto && backPhoto;
+
+  Future<void> _capture(String kind, VoidCallback markDone) async {
+    final photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
+    if (photo == null) return;
+    _captured[kind] = photo;
+    markDone();
+    final token = ref.read(authProvider).accessToken;
+    final reservationId = widget.preCheckin.reservationId;
+    if (token != null && reservationId != null) {
+      try {
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/$reservationId/photos?kind=$kind',
+          token,
+          photo.name,
+          await photo.readAsBytes(),
+        );
+      } catch (error) {
+        if (mounted) {
+          await showDialog<void>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Foto não enviada'),
+              content: Text('$error', textAlign: TextAlign.center),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    }
+  }
 
   void _showServiceSummary(BuildContext context) {
     final pre = widget.preCheckin;
@@ -238,21 +279,29 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
 
             const SizedBox(height: 15),
 
-            _photoItem("Frontal", frontPhoto, () {
-              setState(() => frontPhoto = true);
-            }),
+            _photoItem(
+              "Frontal",
+              frontPhoto,
+              () => _capture('front', () => setState(() => frontPhoto = true)),
+            ),
 
-            _photoItem("Lateral esquerda", leftPhoto, () {
-              setState(() => leftPhoto = true);
-            }),
+            _photoItem(
+              "Lateral esquerda",
+              leftPhoto,
+              () => _capture('left', () => setState(() => leftPhoto = true)),
+            ),
 
-            _photoItem("Lateral direita", rightPhoto, () {
-              setState(() => rightPhoto = true);
-            }),
+            _photoItem(
+              "Lateral direita",
+              rightPhoto,
+              () => _capture('right', () => setState(() => rightPhoto = true)),
+            ),
 
-            _photoItem("Traseira", backPhoto, () {
-              setState(() => backPhoto = true);
-            }),
+            _photoItem(
+              "Traseira",
+              backPhoto,
+              () => _capture('rear', () => setState(() => backPhoto = true)),
+            ),
 
             const Spacer(),
 
@@ -311,6 +360,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       parkingName: pre.parking.name,
       plan: pre.plan,
       status: ReservationStatus.open,
+      checkedIn: true,
       checkinAt: DateTime.now(),
       estimatedValue: pre.total,
       carWash: pre.carWash,

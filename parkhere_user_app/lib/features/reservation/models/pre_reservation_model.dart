@@ -27,4 +27,23 @@ class PreReservationModel {
       active: active ?? this.active,
     );
   }
+
+  factory PreReservationModel.fromJson(Map<String, dynamic> json) =>
+      PreReservationModel(
+        id: json['id'] as String,
+        parkingId: json['parkingId'] as String,
+        parkingName: json['parkingName'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        expiresAt: DateTime.parse(json['expiresAt'] as String),
+        active: json['active'] as bool? ?? false,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'parkingId': parkingId,
+    'parkingName': parkingName,
+    'createdAt': createdAt.toIso8601String(),
+    'expiresAt': expiresAt.toIso8601String(),
+    'active': active,
+  };
 }
