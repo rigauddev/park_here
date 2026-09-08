@@ -1,6 +1,7 @@
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../parking_search/models/payment_plan_enum.dart';
 import '../../parking_search/models/parking_model.dart';
+import '../../parking_search/models/parking_pricing.dart';
 import 'reservation_enum.dart';
 
 class ReservationModel {
@@ -201,6 +202,78 @@ class ReservationModel {
         userLocationLat: (json['userLocationLat'] as num?)?.toDouble() ?? 0,
         userLocationLng: (json['userLocationLng'] as num?)?.toDouble() ?? 0,
       ),
+    );
+  }
+
+  factory ReservationModel.fromApi(Map<String, dynamic> json) {
+    final total = (json['final_total'] as num?)?.toDouble() ??
+        (json['estimated_total'] as num?)?.toDouble() ?? 0;
+    final plan = PlanType.values.firstWhere(
+      (value) => value.name == json['pricing_plan'],
+      orElse: () => PlanType.hourly,
+    );
+    final status = json['status'] == 'completed'
+        ? ReservationStatus.finished
+        : json['status'] == 'expired'
+        ? ReservationStatus.expired
+        : json['status'] == 'cancelled'
+        ? ReservationStatus.cancelled
+        : ReservationStatus.open;
+    final parking = ParkingModel(
+      id: json['parking_id'] as String,
+      name: json['parking_name'] as String? ?? 'Estacionamento',
+      city: json['parking_city'] as String? ?? '',
+      lat: (json['parking_lat'] as num?)?.toDouble() ?? 0,
+      lng: (json['parking_lng'] as num?)?.toDouble() ?? 0,
+      rating: 0,
+      availableSpots: (json['available_spots'] as num?)?.toInt() ?? 0,
+      pricing: ParkingPricing(
+        firstHourPrice: (json['base_amount'] as num?)?.toDouble() ?? 0,
+        additionalHourPrice: 0,
+        dailyPrice: total,
+        monthlyPrice: total,
+      ),
+      hasCarWash: false,
+      hasTourGuide: json['guide_user_id'] != null,
+      hasTransportService: false,
+      carWashPrice: 0,
+      tourGuidePrice: 0,
+      transportPrice: 0,
+      hasCoveredArea: false,
+      hasVipSpots: false,
+    );
+    final created = DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now();
+    final expires = DateTime.tryParse(json['hold_expires_at'] as String? ?? '') ?? created.add(const Duration(hours: 12));
+    return ReservationModel(
+      id: json['id'] as String,
+      parkingName: parking.name,
+      plan: plan,
+      status: status,
+      checkinAt: DateTime.tryParse(json['checked_in_at'] as String? ?? '') ?? created,
+      checkoutAt: DateTime.tryParse(json['checked_out_at'] as String? ?? ''),
+      estimatedValue: total,
+      finalValue: (json['final_total'] as num?)?.toDouble(),
+      carWash: false,
+      tourGuide: json['guide_user_id'] != null,
+      transport: false,
+      firstHourPrice: (json['base_amount'] as num?)?.toDouble() ?? 0,
+      additionalHourPrice: 0,
+      checkinTime: created,
+      hasUnpaidServices: false,
+      unpaidServicesValue: 0,
+      validUntil: expires,
+      preCheckin: PreCheckinModel(
+        parking: parking,
+        plan: plan,
+        carWash: false,
+        tourGuide: json['guide_user_id'] != null,
+        transport: false,
+        total: total,
+        reservationId: json['id'] as String,
+        userLocationLat: 0,
+        userLocationLng: 0,
+      ),
+      checkedIn: json['checked_in_at'] != null,
     );
   }
 }

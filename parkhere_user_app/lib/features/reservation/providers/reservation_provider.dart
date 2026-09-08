@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/local_storage_service.dart';
 
 import '../../parking_search/models/payment_plan_enum.dart';
 import '../models/reservation_enum.dart';
@@ -14,6 +16,20 @@ final reservationsProvider =
 class ReservationsNotifier extends AsyncNotifier<List<ReservationModel>> {
   @override
   Future<List<ReservationModel>> build() async {
+    final tokens = await LocalStorageService().getTokens();
+    final token = tokens['access'];
+    if (token != null) {
+      try {
+        final remote = await ApiService().getAuthorized('/reservations', token);
+        final reservations = remote
+            .map((item) => ReservationModel.fromApi(item as Map<String, dynamic>))
+            .toList();
+        await _persist(reservations);
+        return _applyBusinessRules(reservations);
+      } catch (_) {
+        // Keep the local cache available while the API is temporarily offline.
+      }
+    }
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('parkhere_reservations');
     if (raw == null || raw.isEmpty) return [];
