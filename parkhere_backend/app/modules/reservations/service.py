@@ -154,10 +154,19 @@ class ReservationService:
 
         if current_user.role == UserRoleEnum.CUSTOMER:
             if latitude is None or longitude is None:
-                raise HTTPException(status_code=422, detail="Location is required for customer check-in")
+                raise HTTPException(
+                    status_code=422,
+                    detail="Ative a localização para fazer check-in. É necessário informar sua posição.",
+                )
             distance = _distance_meters(latitude, longitude, parking.lat, parking.lng)
             if distance > 150:
-                raise HTTPException(status_code=403, detail="You must be inside the parking to check in")
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Você precisa estar dentro do estacionamento para fazer check-in. "
+                        "Ative a localização e tente novamente."
+                    ),
+                )
 
         if reservation.status == "pre_reserved" and reservation.hold_expires_at <= datetime.utcnow():
             raise HTTPException(status_code=409, detail="Pre-reservation expired")
@@ -534,8 +543,17 @@ def _validate_request(data: PreCheckinReservationRequest, parking: Parking) -> N
     if data.spot_code is not None and not data.spot_code.strip():
         raise HTTPException(status_code=422, detail="Invalid spot code")
 
-    if data.spot_type == "covered" and parking.covered_spots <= 0:
-        raise HTTPException(status_code=422, detail="Covered area is not available")
+    counts = {
+        "covered": parking.covered_spots,
+        "uncovered": parking.uncovered_spots,
+        "vip": parking.vip_spots,
+        "large": parking.large_spots,
+        "pickup": parking.pickup_spots,
+        "bus": parking.bus_spots,
+        "motorhome": getattr(parking, "moto_home_spots", 0),
+    }
+    if counts.get(data.spot_type, 0) <= 0:
+        raise HTTPException(status_code=422, detail="Este tipo de vaga não está disponível neste estacionamento")
 
 
 async def _ensure_spot_available(
@@ -560,7 +578,14 @@ def _base_amount(
     pricing_plan: str,
     duration_hours: int,
 ) -> float:
-    if spot_type in {"covered", "vip"}:
+    configured = json.loads(getattr(parking, "category_pricing", None) or "{}").get(spot_type)
+    if configured:
+        first_hour = configured.get("first_hour_price", 0)
+        additional_hour = configured.get("additional_hour_price", 0)
+        daily = configured.get("daily_price", 0)
+        weekly = configured.get("weekly_price", 0)
+        monthly = configured.get("monthly_price", 0)
+    elif spot_type in {"covered", "vip"}:
         first_hour = parking.covered_first_hour_price
         additional_hour = parking.covered_additional_hour_price
         daily = parking.covered_daily_price
@@ -611,6 +636,9 @@ def calculate_checkout_excess(
 
 
 def _additional_hour_price(parking: Parking, spot_type: str) -> float:
+    configured = json.loads(getattr(parking, "category_pricing", None) or "{}").get(spot_type)
+    if configured:
+        return configured.get("additional_hour_price", 0) or configured.get("first_hour_price", 0)
     if spot_type in {"covered", "vip"}:
         return parking.covered_additional_hour_price or parking.additional_hour_price
     return parking.uncovered_additional_hour_price or parking.additional_hour_price

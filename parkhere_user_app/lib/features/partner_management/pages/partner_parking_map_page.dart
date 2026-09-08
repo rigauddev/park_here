@@ -197,7 +197,11 @@ class _ParkingLayoutPanel extends ConsumerWidget {
                 ),
                 itemBuilder: (context, index) {
                   final slot = layout.slots[index];
-                  return _ParkingSlotTile(parkingId: layout.id, slot: slot);
+                  return _ParkingSlotTile(
+                    parkingId: layout.id,
+                    slot: slot,
+                    pricing: layout.pricingFor(slot.type),
+                  );
                 },
               ),
             ),
@@ -421,8 +425,9 @@ class _CashShiftCardState extends State<_CashShiftCard> {
 class _ParkingSlotTile extends ConsumerStatefulWidget {
   final String parkingId;
   final PartnerParkingSlot slot;
+  final Map<String, double> pricing;
 
-  const _ParkingSlotTile({required this.parkingId, required this.slot});
+  const _ParkingSlotTile({required this.parkingId, required this.slot, required this.pricing});
 
   @override
   ConsumerState<_ParkingSlotTile> createState() => _ParkingSlotTileState();
@@ -574,6 +579,7 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
         parkingId: parkingId,
         slotCode: slot.code,
         slotType: slot.type,
+        pricing: widget.pricing,
       ),
     );
   }
@@ -857,11 +863,13 @@ class _FreeSlotReservationDialog extends ConsumerStatefulWidget {
   final String parkingId;
   final String slotCode;
   final String slotType;
+  final Map<String, double> pricing;
 
   const _FreeSlotReservationDialog({
     required this.parkingId,
     required this.slotCode,
     required this.slotType,
+    required this.pricing,
   });
 
   @override
@@ -1058,6 +1066,11 @@ class _FreeSlotReservationDialogState
                           });
                         },
                 ),
+                const SizedBox(height: 8),
+                _OperationalPricePreview(
+                  plan: pricingPlan,
+                  pricing: widget.pricing,
+                ),
                 const SizedBox(height: 12),
                 SegmentedButton<_OperationalPayTiming>(
                   segments: const [
@@ -1093,6 +1106,24 @@ class _FreeSlotReservationDialogState
                       style: TextStyle(color: AppTheme.textMuted),
                     ),
                   ),
+              ],
+              if (mode == _OperationalReservationMode.preReserve) ...[
+                const SizedBox(height: 14),
+                DropdownButtonFormField<_OperationalPricingPlan>(
+                  initialValue: pricingPlan,
+                  decoration: const InputDecoration(labelText: 'Modalidade'),
+                  items: const [
+                    DropdownMenuItem(value: _OperationalPricingPlan.hourly, child: Text('Por hora')),
+                    DropdownMenuItem(value: _OperationalPricingPlan.daily, child: Text('Diária')),
+                    DropdownMenuItem(value: _OperationalPricingPlan.weekly, child: Text('Semanal')),
+                    DropdownMenuItem(value: _OperationalPricingPlan.monthly, child: Text('Mensal')),
+                  ],
+                  onChanged: isSubmitting ? null : (value) {
+                    if (value != null) setState(() => pricingPlan = value);
+                  },
+                ),
+                const SizedBox(height: 8),
+                _OperationalPricePreview(plan: pricingPlan, pricing: widget.pricing),
               ],
               if (mode == _OperationalReservationMode.paidReservation &&
                   payTiming == _OperationalPayTiming.now) ...[
@@ -1265,9 +1296,7 @@ class _FreeSlotReservationDialogState
               parkingId: widget.parkingId,
               spotCode: widget.slotCode,
               spotType: widget.slotType,
-              pricingPlan: mode == _OperationalReservationMode.paidReservation
-                  ? pricingPlan.apiValue
-                  : _OperationalPricingPlan.hourly.apiValue,
+              pricingPlan: pricingPlan.apiValue,
               durationHours: 1,
               arrivalEstimateAt: arrivalNow
                   ? DateTime.now()
@@ -1359,6 +1388,33 @@ class _FreeSlotReservationDialogState
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '${hour}h$minute';
+  }
+}
+
+class _OperationalPricePreview extends StatelessWidget {
+  final _OperationalPricingPlan plan;
+  final Map<String, double> pricing;
+
+  const _OperationalPricePreview({required this.plan, required this.pricing});
+
+  @override
+  Widget build(BuildContext context) {
+    final value = pricing[plan.apiValue];
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'Valor cadastrado para esta modalidade',
+        prefixIcon: Icon(Icons.sell_outlined),
+      ),
+      child: Text(
+        value == null
+            ? 'Não configurado para este tipo de vaga'
+            : 'R\$ ${value.toStringAsFixed(2)}',
+        style: TextStyle(
+          color: value == null ? AppTheme.textMuted : AppTheme.primary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }
 

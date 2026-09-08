@@ -901,6 +901,21 @@ def _parking_layout_payload(
     return {
         "id": parking.id,
         "name": parking.name,
+        "uncovered_pricing": {
+            "first_hour_price": parking.uncovered_first_hour_price,
+            "additional_hour_price": parking.uncovered_additional_hour_price,
+            "daily_price": parking.uncovered_daily_price,
+            "weekly_price": parking.uncovered_weekly_price,
+            "monthly_price": parking.uncovered_monthly_price,
+        },
+        "covered_pricing": {
+            "first_hour_price": parking.covered_first_hour_price,
+            "additional_hour_price": parking.covered_additional_hour_price,
+            "daily_price": parking.covered_daily_price,
+            "weekly_price": parking.covered_weekly_price,
+            "monthly_price": parking.covered_monthly_price,
+        },
+        "category_pricing": json.loads(parking.category_pricing or "{}"),
         "total_spots": parking.total_spots,
         "available_spots": sum(1 for slot in slots if slot["status"] == "free"),
         "pre_reserved_spots": len(reserved),
@@ -1027,7 +1042,10 @@ def _checkout_excess_preview(
     if excess_minutes == 0:
         return 0, 0
 
-    if reservation.spot_type in {"covered", "vip"}:
+    configured = json.loads(getattr(parking, "category_pricing", None) or "{}").get(reservation.spot_type)
+    if configured:
+        hourly_amount = configured.get("additional_hour_price", 0) or configured.get("first_hour_price", 0)
+    elif reservation.spot_type in {"covered", "vip"}:
         hourly_amount = parking.covered_pricing.additional_hour_price
     else:
         hourly_amount = parking.uncovered_pricing.additional_hour_price

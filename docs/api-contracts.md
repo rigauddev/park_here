@@ -41,6 +41,15 @@ taxas são configuradas pelo administrador do sistema em
 `/admin/platform-fees`; o usuário vê o detalhamento antes de confirmar o
 pagamento.
 
+### Carteira no MVP
+
+Os cartões cadastrados pelo cliente e a chave Pix de repasse do parceiro são
+persistidos atualmente no dispositivo Flutter em `SharedPreferences`, no campo
+`account_wallet_methods`. Eles são recuperados ao abrir a carteira e removidos
+no logout. Nenhum número completo de cartão é enviado para a API neste MVP;
+antes da produção, a carteira deve ser migrada para tokenização do provedor de
+pagamentos e armazenamento seguro no backend.
+
 O administrador do sistema gerencia essas regras com `GET /admin/platform-fees`
 e `PUT /admin/platform-fees/{service_type}`. Esses endpoints exigem o papel
 `SUPER_ADMIN`; gestores de estacionamento e guias não alteram taxas globais.
@@ -102,6 +111,11 @@ Observacoes:
 `POST /partners/parking-management`
 
 `PUT /partners/parking-management/{parking_id}`
+
+O mapa operacional (`GET /partners/parking-map`) devolve `category_pricing` e
+as tarifas de cada categoria (`uncovered_pricing`, `covered_pricing`). Ao criar
+uma reserva operacional, o app apenas envia `spot_type` e `pricing_plan`; o
+backend calcula o preço usando a tarifa cadastrada para aquela categoria.
 
 Request:
 
