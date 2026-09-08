@@ -625,12 +625,18 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                         final date = await showDatePicker(
                           context: context,
                           firstDate: DateTime.now(),
-                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 365),
+                          ),
                           initialDate: DateTime.now(),
                         );
                         if (date != null && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Chegada agendada para ${date.day}/${date.month}/${date.year}.')),
+                            SnackBar(
+                              content: Text(
+                                'Chegada agendada para ${date.day}/${date.month}/${date.year}.',
+                              ),
+                            ),
                           );
                         }
                       },

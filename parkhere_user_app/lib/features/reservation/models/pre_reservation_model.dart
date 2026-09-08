@@ -56,10 +56,10 @@ class PreReservationModel {
     'parkingName': parkingName,
     'createdAt': createdAt.toIso8601String(),
     'expiresAt': expiresAt.toIso8601String(),
-        'active': active,
-        'plan': plan,
-        'spotType': spotType,
-        'total': total,
-        'availableSpots': availableSpots,
+    'active': active,
+    'plan': plan,
+    'spotType': spotType,
+    'total': total,
+    'availableSpots': availableSpots,
   };
 }
