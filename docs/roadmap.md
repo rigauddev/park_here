@@ -206,6 +206,9 @@ incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao 
 
 ## Fase 4: Escala
 
+- Multiestacionamento por empresa: cada gestor pode cadastrar unidades com endereços distintos. A criação de uma nova unidade será liberada após pagamento da taxa de ativação; cada unidade inclui duas vagas de usuário por padrão.
+- Associação e escala de operadores por unidade, com isolamento de dados no mapa, reservas, caixa e relatórios. Filtros universais permitirão selecionar todos ou uma unidade e indicar o operador do plantão.
+
 - Multi-cidade.
 - Ranking e recomendacao.
 - Preco dinamico.
