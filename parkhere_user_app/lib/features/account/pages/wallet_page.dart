@@ -119,6 +119,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(19),
+                _CardNumberFormatter(),
               ],
               decoration: const InputDecoration(
                 labelText: 'Numero do cartao',
@@ -129,6 +130,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
             TextField(
               controller: expiryController,
               keyboardType: TextInputType.datetime,
+              inputFormatters: [_ExpiryFormatter()],
               decoration: const InputDecoration(
                 labelText: 'Validade MM/AA',
                 prefixIcon: Icon(Icons.event_outlined),
@@ -211,6 +213,41 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     if (digits.startsWith('3')) return 'Amex';
     if (digits.startsWith('6')) return 'Elo';
     return 'Cartao';
+  }
+}
+
+class _CardNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(oldValue, newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final groups = <String>[];
+    for (var i = 0; i < digits.length; i += 4) {
+      groups.add(digits.substring(i, (i + 4).clamp(0, digits.length)));
+    }
+    final text = groups.join(' ');
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
+
+class _ExpiryFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(oldValue, newValue) {
+    final digits = newValue.text
+        .replaceAll(RegExp(r'\D'), '')
+        .substring(
+          0,
+          newValue.text.replaceAll(RegExp(r'\D'), '').length.clamp(0, 4),
+        );
+    final text = digits.length > 2
+        ? '${digits.substring(0, 2)}/${digits.substring(2)}'
+        : digits;
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 }
 

@@ -87,6 +87,10 @@ class _ReservationDetailsPageState
                 "Hora adicional",
                 "R\$ ${reservation.additionalHourPrice.toStringAsFixed(2)}",
               ),
+              _DetailRow(
+                "Taxa administrativa do app",
+                "R\$ ${reservation.preCheckin.platformFeeAmount.toStringAsFixed(2)}",
+              ),
             ],
           ),
           if (reservation.status == ReservationStatus.open &&
@@ -172,8 +176,8 @@ class _ReservationDetailsPageState
           ),
         ],
       ),
-      bottomNavigationBar: reservation.status == ReservationStatus.open &&
-              reservation.checkedIn
+      bottomNavigationBar:
+          reservation.status == ReservationStatus.open && reservation.checkedIn
           ? Padding(
               padding: const EdgeInsets.all(20),
               child: FilledButton.icon(
