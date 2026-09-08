@@ -120,12 +120,17 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
 
             return TabBarView(
               children: [
-                ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: ordered.length,
-                  itemBuilder: (context, index) {
-                    return _ReservationCard(reservation: ordered[index]);
+                RefreshIndicator(
+                  onRefresh: () async {
+                    ref.invalidate(reservationsProvider);
+                    await ref.read(reservationsProvider.future);
                   },
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: ordered.length,
+                    itemBuilder: (context, index) =>
+                        _ReservationCard(reservation: ordered[index]),
+                  ),
                 ),
                 ListView(
                   padding: const EdgeInsets.all(16),
