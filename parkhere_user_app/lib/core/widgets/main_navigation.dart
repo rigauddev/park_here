@@ -126,6 +126,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isPartner: isPartner,
                 isPartnerOwner: isPartnerOwner,
                 isGuide: isGuide,
+                isAdmin: isAdmin,
                 onSelected: _selectArea,
               ),
               const VerticalDivider(width: 1),
@@ -147,6 +148,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           isPartner: isPartner,
           isPartnerOwner: isPartnerOwner,
           isGuide: isGuide,
+          isAdmin: isAdmin,
           onSelected: (area, [serviceTabIndex]) {
             Navigator.pop(context);
             _selectArea(area, serviceTabIndex);
@@ -161,6 +163,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isPartner: isPartner,
                 isPartnerOwner: isPartnerOwner,
                 isGuide: isGuide,
+                isAdmin: isAdmin,
                 onSelected: _selectArea,
               ),
             Expanded(child: page),
@@ -172,6 +175,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             isPartner,
             isPartnerOwner,
             isGuide,
+            isAdmin,
           ),
           onDestinationSelected: (index) {
             setState(
@@ -180,23 +184,29 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isPartner,
                 isPartnerOwner,
                 isGuide,
+                isAdmin,
               ),
             );
           },
           destinations: [
-            if (!isPartner)
+            if (isAdmin) ...[
+              const NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Visão geral'),
+              const NavigationDestination(icon: Icon(Icons.approval_outlined), label: 'Aprovações'),
+              const NavigationDestination(icon: Icon(Icons.payments_outlined), label: 'Taxas e planos'),
+              const NavigationDestination(icon: Icon(Icons.people_outline), label: 'Usuários'),
+            ] else if (!isPartner)
               const NavigationDestination(
                 icon: Icon(Icons.menu),
                 selectedIcon: Icon(Icons.menu_open),
                 label: 'Menu',
               ),
-            if (isPartner && (isPartnerOwner || isGuide))
+            if (!isAdmin && isPartner && (isPartnerOwner || isGuide))
               const NavigationDestination(
                 icon: Icon(Icons.business_center_outlined),
                 selectedIcon: Icon(Icons.business_center),
                 label: 'Gestão',
               ),
-            if (isPartner)
+            if (!isAdmin && isPartner)
               NavigationDestination(
                 icon: const Icon(Icons.local_parking_outlined),
                 selectedIcon: const Icon(Icons.local_parking),
@@ -208,37 +218,37 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 selectedIcon: Icon(Icons.widgets),
                 label: 'Serviços',
               ),
-            if (isPartner && !isGuide)
+            if (!isAdmin && isPartner && !isGuide)
               const NavigationDestination(
                 icon: Icon(Icons.confirmation_number_outlined),
                 selectedIcon: Icon(Icons.confirmation_number),
                 label: 'Reservas',
               ),
-            if (!isPartner)
+            if (!isAdmin && !isPartner)
               const NavigationDestination(
                 icon: Icon(Icons.map_outlined),
                 selectedIcon: Icon(Icons.map),
                 label: 'Mapa',
               ),
-            if (!isPartner)
+            if (!isAdmin && !isPartner)
               const NavigationDestination(
                 icon: Icon(Icons.confirmation_number_outlined),
                 selectedIcon: Icon(Icons.confirmation_number),
                 label: 'Reservas',
               ),
-            if (!isPartner || isGuide)
+            if (!isAdmin && (!isPartner || isGuide))
               const NavigationDestination(
                 icon: Icon(Icons.person_outline),
                 selectedIcon: Icon(Icons.person),
                 label: 'Perfil',
               ),
-            if (isPartner && isPartnerOwner && !isGuide)
+            if (!isAdmin && isPartner && isPartnerOwner && !isGuide)
               const NavigationDestination(
                 icon: Icon(Icons.lock_outline),
                 selectedIcon: Icon(Icons.lock),
                 label: 'Financeiro',
               ),
-            if (isPartner && !isGuide)
+            if (!isAdmin && isPartner && !isGuide)
               const NavigationDestination(
                 icon: Icon(Icons.person_outline),
                 selectedIcon: Icon(Icons.person),
@@ -307,7 +317,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isPartner,
     bool isPartnerOwner,
     bool isGuide,
+    bool isAdmin,
   ) {
+    if (isAdmin) return 0;
     if (isGuide) return area == _MainArea.map ? 1 : 0;
     if (isPartner && !isPartnerOwner) {
       switch (area) {
@@ -354,7 +366,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isPartner,
     bool isPartnerOwner,
     bool isGuide,
+    bool isAdmin,
   ) {
+    if (isAdmin) return _MainArea.management;
     if (isGuide) {
       if (index == 1) return _MainArea.map;
       if (index == 2) return _MainArea.profile;
@@ -414,6 +428,7 @@ class _WebMenu extends ConsumerWidget {
   final bool isPartner;
   final bool isPartnerOwner;
   final bool isGuide;
+  final bool isAdmin;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _WebMenu({
@@ -422,6 +437,7 @@ class _WebMenu extends ConsumerWidget {
     required this.isPartner,
     required this.isPartnerOwner,
     required this.isGuide,
+    required this.isAdmin,
     required this.onSelected,
   });
 
@@ -434,6 +450,23 @@ class _WebMenu extends ConsumerWidget {
         child: ListView(
           padding: EdgeInsets.all(expanded ? 16 : 4),
           children: [
+            if (isAdmin)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Gestão do sistema',
+                items: const [
+                  _MenuItem(Icons.dashboard_outlined, 'Visão geral', _MainArea.management),
+                  _MenuItem(Icons.approval_outlined, 'Aprovar parceiros', _MainArea.management),
+                  _MenuItem(Icons.payments_outlined, 'Taxas e planos', _MainArea.management),
+                  _MenuItem(Icons.extension_outlined, 'Funcionalidades pagas', _MainArea.management),
+                  _MenuItem(Icons.business_outlined, 'Estacionamentos', _MainArea.management),
+                  _MenuItem(Icons.people_outline, 'Usuários e permissões', _MainArea.management),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (isAdmin)
+              const Divider(height: 24),
             if (expanded)
               Text('ParkHere', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 18),
@@ -585,12 +618,14 @@ class _MobileDrawer extends StatelessWidget {
   final bool isPartner;
   final bool isPartnerOwner;
   final bool isGuide;
+  final bool isAdmin;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _MobileDrawer({
     required this.isPartner,
     required this.isPartnerOwner,
     required this.isGuide,
+    required this.isAdmin,
     required this.onSelected,
   });
 
