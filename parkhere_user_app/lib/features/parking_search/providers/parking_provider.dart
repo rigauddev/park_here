@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/services/api_service.dart';
 import '../models/parking_model.dart';
-import '../models/parking_pricing.dart';
 
 /// Provider global
 final selectedParkingProvider = StateProvider<ParkingModel?>((ref) => null);
@@ -25,25 +24,32 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
     return fetchParkings();
   }
 
-  Future<List<ParkingModel>> fetchParkings() async {
+  Future<List<ParkingModel>> fetchParkings({String? city}) async {
     final api = ref.read(apiServiceProvider);
+    final normalizedCity = city?.trim();
+    final endpoint = normalizedCity != null && normalizedCity.length >= 2
+        ? "/parkings?city=${Uri.encodeQueryComponent(normalizedCity)}"
+        : "/parkings";
 
     try {
-      final data = await api.get("/parkings");
+      final data = await api.get(endpoint);
       return data
           .map((item) => ParkingModel.fromJson(item as Map<String, dynamic>))
           .toList();
     } catch (_) {
-      // Fallback local para continuar testando o app sem backend.
-      await Future.delayed(const Duration(milliseconds: 500));
+      if (normalizedCity != null && normalizedCity.isNotEmpty) {
+        return const <ParkingModel>[];
+      }
+      // Sem API, nao exibimos vagas inventadas.
+      return const <ParkingModel>[];
     }
-
-    return [
+    /* return [
       ParkingModel(
         id: "1",
         name: "Estacionamento Central",
-        lat: -12.9704,
-        lng: -38.5124,
+        city: "Valenca",
+        lat: -13.3703,
+        lng: -39.0731,
         rating: 4.9,
         availableSpots: 12,
         hasCoveredArea: true,
@@ -68,8 +74,9 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
       ParkingModel(
         id: "2",
         name: "Estacionamento VIP",
-        lat: -12.9712,
-        lng: -38.5150,
+        city: "Valenca",
+        lat: -13.3668,
+        lng: -39.0705,
         rating: 4.6,
         availableSpots: 5,
 
@@ -89,7 +96,7 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
         tourGuidePrice: 100,
         transportPrice: 50,
       ),
-    ];
+    ]; */
 
     // Quando backend estiver pronto:
     /*
@@ -97,5 +104,10 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
 
     return data.map((e) => ParkingModel.fromJson(e)).toList();
     */
+  }
+
+  Future<void> searchByCity(String query) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() => fetchParkings(city: query));
   }
 }

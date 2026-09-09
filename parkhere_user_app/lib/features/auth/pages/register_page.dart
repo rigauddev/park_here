@@ -10,8 +10,10 @@ enum PartnerServiceType {
   carWash,
   hotel,
   restaurant,
-  tourism,
+  tourGuide,
+  tourismCompany,
   transport,
+  other,
 }
 
 class RegisterPage extends ConsumerStatefulWidget {
@@ -34,9 +36,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final confirmPasswordController = TextEditingController();
 
   final companyNameController = TextEditingController();
-  final cnpjController = TextEditingController();
-  final registrationStatusController = TextEditingController();
+  final documentController = TextEditingController();
   final responsibleNameController = TextEditingController();
+  final phoneController = TextEditingController();
   final insuranceCompanyController = TextEditingController();
   final instagramController = TextEditingController();
   final websiteController = TextEditingController();
@@ -44,6 +46,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   late RegisterAccountType accountType;
   PartnerServiceType serviceType = PartnerServiceType.parking;
+  String documentType = 'cnpj';
   bool hasInsurance = false;
   bool emailVerified = false;
   String? emailToken;
@@ -53,6 +56,27 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       accountType == RegisterAccountType.partner &&
       (serviceType == PartnerServiceType.parking ||
           serviceType == PartnerServiceType.carWash);
+
+  String get serviceTypeApiValue {
+    switch (serviceType) {
+      case PartnerServiceType.parking:
+        return 'parking';
+      case PartnerServiceType.carWash:
+        return 'car_wash';
+      case PartnerServiceType.hotel:
+        return 'hotel';
+      case PartnerServiceType.restaurant:
+        return 'restaurant';
+      case PartnerServiceType.tourGuide:
+        return 'tour_guide';
+      case PartnerServiceType.tourismCompany:
+        return 'tourism_company';
+      case PartnerServiceType.transport:
+        return 'transport';
+      case PartnerServiceType.other:
+        return 'other';
+    }
+  }
 
   @override
   void initState() {
@@ -68,9 +92,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     passwordController.dispose();
     confirmPasswordController.dispose();
     companyNameController.dispose();
-    cnpjController.dispose();
-    registrationStatusController.dispose();
+    documentController.dispose();
     responsibleNameController.dispose();
+    phoneController.dispose();
     insuranceCompanyController.dispose();
     instagramController.dispose();
     websiteController.dispose();
@@ -209,12 +233,20 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               child: Text("Restaurante"),
             ),
             DropdownMenuItem(
-              value: PartnerServiceType.tourism,
-              child: Text("Turismo"),
+              value: PartnerServiceType.tourGuide,
+              child: Text("Guia turístico / Tourist guide"),
+            ),
+            DropdownMenuItem(
+              value: PartnerServiceType.tourismCompany,
+              child: Text("Empresa de turismo / Tourism company"),
             ),
             DropdownMenuItem(
               value: PartnerServiceType.transport,
               child: Text("Transporte"),
+            ),
+            DropdownMenuItem(
+              value: PartnerServiceType.other,
+              child: Text("Outro serviço / Other service"),
             ),
           ],
           onChanged: (value) {
@@ -223,9 +255,32 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         ),
         const SizedBox(height: 12),
         _field(companyNameController, "Nome da empresa"),
-        _field(cnpjController, "CNPJ", keyboardType: TextInputType.number),
-        _field(registrationStatusController, "Situação cadastral"),
+        DropdownButtonFormField<String>(
+          initialValue: documentType,
+          decoration: const InputDecoration(
+            labelText: "Documento do parceiro / Partner document",
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'cnpj', child: Text('CNPJ')),
+            DropdownMenuItem(value: 'cpf', child: Text('CPF')),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => documentType = value);
+          },
+        ),
+        const SizedBox(height: 12),
+        _field(
+          documentController,
+          documentType == 'cnpj' ? "CNPJ" : "CPF",
+          keyboardType: TextInputType.number,
+        ),
         _field(responsibleNameController, "Responsável legal"),
+        _field(
+          phoneController,
+          "Telefone de contato / Contact phone",
+          keyboardType: TextInputType.phone,
+        ),
         if (needsInsuranceInfo) ...[
           SwitchListTile(
             value: hasInsurance,
@@ -289,7 +344,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               controller: emailCodeController,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: "Codigo recebido por e-mail",
+                labelText: "Código recebido (teste: 000000)",
                 prefixIcon: Icon(Icons.verified_user_outlined),
               ),
             ),
@@ -343,7 +398,27 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     try {
       _validate();
 
-      await Future.delayed(const Duration(seconds: 1));
+      if (accountType == RegisterAccountType.partner) {
+        await ref
+            .read(authProvider.notifier)
+            .registerPartner(
+              serviceType: serviceTypeApiValue,
+              companyName: companyNameController.text,
+              documentType: documentType,
+              documentNumber: documentController.text,
+              responsibleName: responsibleNameController.text,
+              email: emailController.text,
+              password: passwordController.text,
+              phone: phoneController.text,
+              hasInsurance: hasInsurance,
+              insuranceProvider: insuranceCompanyController.text,
+              instagram: instagramController.text,
+              website: websiteController.text,
+              socialLinks: socialLinksController.text,
+            );
+      } else {
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
 
       if (!mounted) return;
 
@@ -423,9 +498,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     final requiredControllers = isPartner
         ? [
             companyNameController,
-            cnpjController,
-            registrationStatusController,
+            documentController,
             responsibleNameController,
+            phoneController,
             emailController,
             passwordController,
             confirmPasswordController,

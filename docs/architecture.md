@@ -94,7 +94,7 @@ Projetar V2 para novos metodos de validacao:
 - `AuthService` usa funcoes/imports que nao aparecem no arquivo lido (`select`, `verify_password`, criacao/verificacao de tokens, `jwt`, `settings`, `SMSService`).
 - `verify_mfa` no router passa um objeto `MFARequest`, mas o service espera `mfa_token` e `code`.
 - Campo `firt_name` parece typo de `first_name`; corrigir exige migration cuidadosa.
-- `current_user.role != "PARKING_ADMIN"` compara enum/string de forma possivelmente incorreta.
+- Comparacoes de perfil devem usar `UserRoleEnum`; `SUPER_ADMIN` e `PARTNER_MANAGER` sao papeis distintos.
 - App Flutter ainda usa mocks para estacionamentos e pagamento.
 - Ha arquivos gerados no workspace atual (`build/`, `Pods/`, `__pycache__`) que nao devem entrar em Git.
 
@@ -102,7 +102,7 @@ Projetar V2 para novos metodos de validacao:
 
 Implementado parcialmente:
 
-- Backend possui `tenants`, `users`, papel `PARKING_ADMIN` e cadastro inicial de estacionamento em `/auth/register-parking`.
+- Backend possui `tenants`, `users`, papel `PARTNER_MANAGER` para gestores de parceiro, `SUPER_ADMIN` para admin master e cadastro inicial de estacionamento em `/auth/register-parking`.
 - Backend possui `parkings` e `parking_services` para listar estacionamentos e servicos no app.
 - Seed cria admin de estacionamento, cliente, estacionamentos, servicos e carteira de teste.
 

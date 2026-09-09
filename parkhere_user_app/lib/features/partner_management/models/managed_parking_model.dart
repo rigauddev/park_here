@@ -65,15 +65,21 @@ class ManagedParkingServiceModel {
 }
 
 class ManagedParkingModel {
+  final int arrivalToleranceMinutes;
   final String? id;
   final String name;
   final String address;
+  final String city;
   final double lat;
   final double lng;
   final int totalSpots;
   final int availableSpots;
   final int coveredSpots;
   final int uncoveredSpots;
+  final int vipSpots;
+  final int largeSpots;
+  final int busSpots;
+  final int pickupSpots;
   final bool hasVipSpots;
   final bool has24hGate;
   final bool hasSecuritySystem;
@@ -85,15 +91,21 @@ class ManagedParkingModel {
   final List<ManagedParkingServiceModel> services;
 
   const ManagedParkingModel({
+    this.arrivalToleranceMinutes = 15,
     this.id,
     required this.name,
     required this.address,
+    required this.city,
     required this.lat,
     required this.lng,
     required this.totalSpots,
     required this.availableSpots,
     required this.coveredSpots,
     required this.uncoveredSpots,
+    required this.vipSpots,
+    required this.largeSpots,
+    required this.busSpots,
+    required this.pickupSpots,
     required this.hasVipSpots,
     required this.has24hGate,
     required this.hasSecuritySystem,
@@ -107,15 +119,21 @@ class ManagedParkingModel {
 
   factory ManagedParkingModel.fromJson(Map<String, dynamic> json) {
     return ManagedParkingModel(
+      arrivalToleranceMinutes: json['arrival_tolerance_minutes'] as int? ?? 15,
       id: json['id'] as String?,
       name: json['name'] as String,
       address: json['address'] as String,
+      city: json['city'] as String? ?? 'Valenca',
       lat: (json['lat'] as num).toDouble(),
       lng: (json['lng'] as num).toDouble(),
       totalSpots: json['total_spots'] as int,
       availableSpots: json['available_spots'] as int,
       coveredSpots: json['covered_spots'] as int,
       uncoveredSpots: json['uncovered_spots'] as int,
+      vipSpots: json['vip_spots'] as int? ?? 0,
+      largeSpots: json['large_spots'] as int? ?? 0,
+      busSpots: json['bus_spots'] as int? ?? 0,
+      pickupSpots: json['pickup_spots'] as int? ?? 0,
       hasVipSpots: json['has_vip_spots'] as bool? ?? false,
       has24hGate: json['has_24h_gate'] as bool? ?? false,
       hasSecuritySystem: json['has_security_system'] as bool? ?? false,
@@ -139,12 +157,18 @@ class ManagedParkingModel {
     return {
       'name': name,
       'address': address,
+      'city': city,
       'lat': lat,
       'lng': lng,
+      'arrival_tolerance_minutes': arrivalToleranceMinutes,
       'total_spots': totalSpots,
       'available_spots': availableSpots,
       'covered_spots': coveredSpots,
       'uncovered_spots': uncoveredSpots,
+      'vip_spots': vipSpots,
+      'large_spots': largeSpots,
+      'bus_spots': busSpots,
+      'pickup_spots': pickupSpots,
       'has_vip_spots': hasVipSpots,
       'has_24h_gate': has24hGate,
       'has_security_system': hasSecuritySystem,

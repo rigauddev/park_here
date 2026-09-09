@@ -8,7 +8,7 @@ class PartnerFinancialLockedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Financeiro')),
+      appBar: AppBar(title: const Text('Financeiro e complementos')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
@@ -29,20 +29,24 @@ class PartnerFinancialLockedPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 18),
                     Text(
-                      'Modulo financeiro Pro',
+                      'Financeiro Pro (complemento)',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      'Relatorios de repasse, comissoes de guias, conciliacao e indicadores financeiros entram no plano pago.',
+                      'O caixa e a visão operacional básica já estão incluídos. Este complemento adiciona análises e controles financeiros avançados.',
                       style: TextStyle(color: AppTheme.textMuted),
                     ),
                     const SizedBox(height: 16),
                     const Divider(),
                     const SizedBox(height: 12),
                     _FeatureLine(
+                      icon: Icons.check_circle_outline,
+                      label: 'Caixa, entradas, saídas e recebimentos incluídos',
+                    ),
+                    _FeatureLine(
                       icon: Icons.receipt_long_outlined,
-                      label: 'Relatorio financeiro por periodo',
+                      label: 'Relatório financeiro avançado por período',
                     ),
                     _FeatureLine(
                       icon: Icons.tour_outlined,
@@ -50,13 +54,13 @@ class PartnerFinancialLockedPage extends StatelessWidget {
                     ),
                     _FeatureLine(
                       icon: Icons.account_balance_wallet_outlined,
-                      label: 'Repasses e taxas da plataforma',
+                      label: 'Repasses, taxas e conciliação da plataforma',
                     ),
                     const SizedBox(height: 18),
                     FilledButton.icon(
                       onPressed: null,
                       icon: const Icon(Icons.workspace_premium_outlined),
-                      label: const Text('Disponivel no plano Pro'),
+                      label: const Text('Solicitar complemento Pro'),
                     ),
                   ],
                 ),

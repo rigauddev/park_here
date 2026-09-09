@@ -1,27 +1,86 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../payments/pages/payment_page.dart';
 import '../../reservation/models/reservation_model.dart';
 import '../../reservation/pages/incident_dailog_page.dart';
 import '../providers/checkout_privider.dart';
+import '../../../core/services/api_service.dart';
+import '../../auth/providers/auth_provider.dart';
 // import '../services/checkout_service.dart';
 import 'checkout_qrcode_page.dart';
 
 class CheckoutPage extends ConsumerStatefulWidget {
   final ReservationModel reservation;
 
-  const CheckoutPage({
-    super.key,
-    required this.reservation,
-  });
+  const CheckoutPage({super.key, required this.reservation});
 
   @override
   ConsumerState<CheckoutPage> createState() => _CheckoutPageState();
 }
 
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
+  final _picker = ImagePicker();
+  final Map<String, XFile?> _photos = {
+    'front': null,
+    'rear': null,
+    'left': null,
+    'right': null,
+  };
+  bool _uploadingPhotos = false;
 
+  Future<void> _capturePhoto(String kind) async {
+    final photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
+    if (photo == null) return;
+    setState(() => _photos[kind] = photo);
+  }
+
+  Future<bool> _uploadCheckoutPhotos() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null || widget.reservation.id.isEmpty) return true;
+    if (_photos.values.any((photo) => photo == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Capture as quatro fotos do checkout.')),
+      );
+      return false;
+    }
+    setState(() => _uploadingPhotos = true);
+    try {
+      for (final entry in _photos.entries) {
+        final photo = entry.value!;
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/${widget.reservation.id}/photos?kind=${entry.key}',
+          token,
+          photo.name,
+          await photo.readAsBytes(),
+        );
+      }
+      return true;
+    } catch (error) {
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Fotos não enviadas'),
+            content: Text('$error', textAlign: TextAlign.center),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _uploadingPhotos = false);
+    }
+  }
   // void initState() {
   //   super.initState();
 
@@ -97,21 +156,17 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     );
 
     if (confirmed == true) {
-      ref
-          .read(checkoutProvider.notifier)
-          .validate(widget.reservation);
+      ref.read(checkoutProvider.notifier).validate(widget.reservation);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(checkoutProvider);
-    
-    ref.listen<CheckoutState>(
-    checkoutProvider,
-    (previous, next) {
 
-      if (next.status == CheckoutStatus.requiresPayment && next.amount != null) {
+    ref.listen<CheckoutState>(checkoutProvider, (previous, next) {
+      if (next.status == CheckoutStatus.requiresPayment &&
+          next.amount != null) {
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -129,9 +184,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
       if (next.status == CheckoutStatus.generatingQr) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const CheckoutQRCodePage(),
-          ),
+          MaterialPageRoute(builder: (_) => const CheckoutQRCodePage()),
         );
 
         ref.read(checkoutProvider.notifier).complete();
@@ -142,28 +195,64 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           SnackBar(content: Text(next.error ?? "Erro inesperado")),
         );
       }
-    },
-  );
+    });
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Checkout"),
-      ),
+      appBar: AppBar(title: const Text("Checkout")),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-
             /// 🔹 Informações da reserva
             Card(
               child: ListTile(
                 title: Text("Plano: ${widget.reservation.plan.name}"),
-                subtitle: Text(
-                  "Check-in: ${widget.reservation.checkinTime}",
-                ),
+                subtitle: Text("Check-in: ${widget.reservation.checkinTime}"),
               ),
             ),
 
             const SizedBox(height: 20),
+
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Fotos do checkout',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const Text(
+                      'As fotos substituem as do check-in e ficam armazenadas por 7 dias.',
+                    ),
+                    for (final entry in {
+                      'front': 'Frente',
+                      'rear': 'Traseira',
+                      'left': 'Lateral esquerda',
+                      'right': 'Lateral direita',
+                    }.entries)
+                      ListTile(
+                        dense: true,
+                        title: Text(entry.value),
+                        leading: Icon(
+                          _photos[entry.key] == null
+                              ? Icons.camera_alt
+                              : Icons.check_circle,
+                          color: _photos[entry.key] == null
+                              ? null
+                              : Colors.green,
+                        ),
+                        trailing: IconButton(
+                          onPressed: _uploadingPhotos
+                              ? null
+                              : () => _capturePhoto(entry.key),
+                          icon: const Icon(Icons.camera_alt_outlined),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
 
             /// 🔄 Loading
             if (state.status == CheckoutStatus.validating)
@@ -192,10 +281,18 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: state.status == CheckoutStatus.validating
+                onPressed:
+                    state.status == CheckoutStatus.validating ||
+                        _uploadingPhotos
                     ? null
-                    : _confirmVehicleCheck,
-                child: const Text("Finalizar Checkout"),
+                    : () async {
+                        if (await _uploadCheckoutPhotos()) {
+                          _confirmVehicleCheck();
+                        }
+                      },
+                child: Text(
+                  _uploadingPhotos ? 'Enviando fotos...' : 'Finalizar Checkout',
+                ),
               ),
             ),
           ],

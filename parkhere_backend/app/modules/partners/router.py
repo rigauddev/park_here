@@ -1,7 +1,11 @@
 import json
 import re
+from uuid import uuid4
+from datetime import datetime, timedelta
+from math import ceil
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import func
@@ -20,12 +24,18 @@ from app.modules.parkings.schemas import (
 )
 from app.modules.parkings.service import ParkingManagementService
 from app.modules.partners.models import PartnerProfile
-from app.modules.payments.models import PartnerPaymentAccount
+from app.modules.partners.guide_models import GuideParkingLink, GuideReview
+from app.modules.partners.guide_service_models import GuideService
+from app.modules.partners.document_models import PartnerDocument
+from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
+from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
 from app.modules.reservations.models import Reservation
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
 router = APIRouter(prefix="/partners", tags=["Partners"])
+
+PARTNER_DOCUMENT_TYPES = {'alvara', 'rg', 'cnh'}
 
 FREE_OPERATOR_LIMIT = 2
 OPERATOR_PERMISSION_LABELS = {
@@ -66,6 +76,26 @@ class PartnerOperatorResponse(BaseModel):
     created_at: str
 
 
+class GuideCommissionRequest(BaseModel):
+    commission_type: str = 'percentage'
+    commission_value: float = 0
+    terms: dict[str, dict[str, str | float]] | None = None
+
+
+class GuideReviewRequest(BaseModel):
+    rating: int
+    comment: str | None = None
+
+
+class GuideServiceRequest(BaseModel):
+    name: str
+    description: str | None = None
+    price: float = 0
+    duration_minutes: str | None = None
+    is_active: bool = True
+    schedule: dict[str, str] | None = None
+
+
 @router.post("/signup")
 async def partner_signup(
     data: PartnerSignupRequest,
@@ -77,8 +107,10 @@ async def partner_signup(
         tenant_id=user.tenant_id,
         service_type=data.service_type,
         company_name=data.company_name,
-        cnpj=data.cnpj,
-        registration_status=data.registration_status,
+        cnpj=data.document_number,
+        document_type=data.document_type,
+        document_number=data.document_number,
+        registration_status="pending",
         responsible_name=data.responsible_name,
         has_insurance=data.has_insurance,
         insurance_provider=data.insurance_provider,
@@ -123,6 +155,8 @@ async def get_my_partner_profile(
         "available_operator_permissions": OPERATOR_PERMISSION_LABELS,
         "user_email": current_user.email,
         "service_type": profile.service_type if profile else None,
+        "document_type": profile.document_type if profile else None,
+        "document_number": profile.document_number if profile else None,
         "company_name": profile.company_name if profile else None,
         "approval_status": profile.approval_status
         if profile
@@ -137,31 +171,308 @@ async def get_my_partner_profile(
     }
 
 
+@router.post('/me/documents', status_code=201)
+async def upload_partner_document(
+    document_type: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    document_type = document_type.strip().lower()
+    if document_type not in PARTNER_DOCUMENT_TYPES:
+        raise HTTPException(status_code=422, detail='Invalid partner document type')
+    if file.content_type not in {'application/pdf', 'image/jpeg', 'image/png'}:
+        raise HTTPException(status_code=422, detail='Document must be PDF, JPG or PNG')
+
+    profile = await db.scalar(
+        select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id)
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail='Partner profile not found')
+    expected = {'cnpj': {'alvara'}, 'cpf': {'rg', 'cnh'}}.get(profile.document_type)
+    if expected and document_type not in expected:
+        raise HTTPException(status_code=422, detail='Document type does not match the partner document')
+
+    safe_name = Path(file.filename or 'document').name
+    target_dir = Path('/app/storage/partner_documents') / current_user.tenant_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / safe_name
+    target.write_bytes(await file.read())
+    document = PartnerDocument(
+        tenant_id=current_user.tenant_id,
+        document_type=document_type,
+        file_name=safe_name,
+        storage_path=str(target),
+    )
+    db.add(document)
+    profile.approval_status = 'documents_submitted'
+    await db.commit()
+    return {
+        'id': document.id,
+        'document_type': document_type,
+        'file_name': safe_name,
+        'approval_status': profile.approval_status,
+    }
+
+
+@router.get('/guide/parkings')
+async def guide_parkings(
+    city: str | None = Query(default=None, min_length=2),
+    latitude: float | None = Query(default=None),
+    longitude: float | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type not in {'tour_guide', 'tourism_company'}):
+        raise HTTPException(status_code=403, detail='Guide account required')
+    links = (await db.scalars(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id))).all()
+    linked = {link.parking_id: link for link in links}
+    parkings = list((await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all())
+    if city:
+        city_key = city.strip().casefold()
+        parkings = [parking for parking in parkings if city_key in parking.city.casefold()]
+    if latitude is not None and longitude is not None:
+        parkings.sort(key=lambda parking: (parking.lat - latitude) ** 2 + (parking.lng - longitude) ** 2)
+    return [
+        {
+            'id': parking.id,
+            'name': parking.name,
+            'city': parking.city,
+            'status': linked[parking.id].status if parking.id in linked else 'not_linked',
+            'link_id': linked[parking.id].id if parking.id in linked else None,
+            'commission_type': linked[parking.id].commission_type if parking.id in linked else None,
+            'commission_value': float(linked[parking.id].commission_value) if parking.id in linked and linked[parking.id].commission_value else None,
+            'commission_terms': json.loads(linked[parking.id].commission_terms) if parking.id in linked and linked[parking.id].commission_terms else {},
+            'offer_terms': json.loads(parking.guide_commission_terms) if parking.guide_commission_terms else {},
+        }
+        for parking in parkings
+    ]
+
+
+@router.post('/guide/parkings/{parking_id}')
+async def request_guide_parking_link(
+    parking_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type not in {'tour_guide', 'tourism_company'}):
+        raise HTTPException(status_code=403, detail='Guide account required')
+    parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.is_active.is_(True)))
+    if parking is None:
+        raise HTTPException(status_code=404, detail='Parking not found')
+    existing = await db.scalar(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id, GuideParkingLink.parking_id == parking_id))
+    if existing is None:
+        existing = GuideParkingLink(id=str(uuid4()), guide_user_id=current_user.id, parking_id=parking_id, status='pending')
+        db.add(existing)
+        await db.commit()
+    return {'parking_id': parking_id, 'status': existing.status}
+
+
+@router.put('/parking-management/{parking_id}/guide-offer')
+async def update_guide_offer(
+    parking_id: str,
+    data: GuideCommissionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.tenant_id == current_user.tenant_id))
+    if parking is None:
+        raise HTTPException(status_code=404, detail='Parking not found')
+    terms = data.terms or {'long_term': {'commission_type': data.commission_type, 'commission_value': data.commission_value}}
+    for period, term in terms.items():
+        if period not in {'daily', 'weekly', 'monthly', 'long_term'} or term.get('commission_type') not in {'percentage', 'fixed'}:
+            raise HTTPException(status_code=422, detail='Invalid commission offer')
+        value = float(term.get('commission_value', 0))
+        if value < 0 or (term.get('commission_type') == 'percentage' and value > 100):
+            raise HTTPException(status_code=422, detail='Invalid commission offer value')
+    parking.guide_commission_terms = json.dumps(terms)
+    await db.commit()
+    return {'parking_id': parking.id, 'offer_terms': terms}
+
+
+@router.get('/guide/services')
+async def list_guide_services(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type != 'tour_guide'):
+        raise HTTPException(status_code=403, detail='Guide account required')
+    services = (await db.scalars(select(GuideService).where(GuideService.guide_user_id == current_user.id).order_by(GuideService.created_at.desc()))).all()
+    return [_guide_service_payload(service) for service in services]
+
+
+@router.post('/guide/services', status_code=201)
+async def create_guide_service(
+    data: GuideServiceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type != 'tour_guide'):
+        raise HTTPException(status_code=403, detail='Guide account required')
+    if not data.name.strip() or data.price < 0:
+        raise HTTPException(status_code=422, detail='Invalid guide service')
+    service = GuideService(
+        guide_user_id=current_user.id,
+        name=data.name.strip(),
+        description=data.description.strip() if data.description else None,
+        price=data.price,
+        duration_minutes=data.duration_minutes,
+        schedule=json.dumps(data.schedule or {}),
+        is_active=data.is_active,
+    )
+    db.add(service)
+    await db.commit()
+    await db.refresh(service)
+    return _guide_service_payload(service)
+
+
+@router.post('/guide/links/{link_id}/approve')
+async def approve_guide_parking_link(
+    link_id: str,
+    data: GuideCommissionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    if data.commission_type not in {'percentage', 'fixed'} or data.commission_value < 0:
+        raise HTTPException(status_code=422, detail='Invalid commission terms')
+    link = await db.scalar(select(GuideParkingLink).where(GuideParkingLink.id == link_id))
+    if link is None:
+        raise HTTPException(status_code=404, detail='Affiliation request not found')
+    parking = await db.scalar(select(Parking).where(Parking.id == link.parking_id, Parking.tenant_id == current_user.tenant_id))
+    if parking is None:
+        raise HTTPException(status_code=403, detail='Parking does not belong to this partner')
+    if data.commission_type == 'percentage' and data.commission_value > 100:
+        raise HTTPException(status_code=422, detail='Percentage commission cannot exceed 100')
+    link.status = 'approved'
+    link.commission_type = data.commission_type
+    link.commission_value = str(data.commission_value)
+    terms = data.terms or (json.loads(parking.guide_commission_terms) if parking.guide_commission_terms else {})
+    for period, term in terms.items():
+        if period not in {'daily', 'weekly', 'monthly', 'long_term'}:
+            raise HTTPException(status_code=422, detail='Invalid commission period')
+        if term.get('commission_type') not in {'percentage', 'fixed'} or float(term.get('commission_value', 0)) < 0:
+            raise HTTPException(status_code=422, detail='Invalid commission period value')
+        if term.get('commission_type') == 'percentage' and float(term.get('commission_value', 0)) > 100:
+            raise HTTPException(status_code=422, detail='Percentage commission cannot exceed 100')
+    link.commission_terms = json.dumps(terms) if terms else None
+    await db.commit()
+    return {
+        'id': link.id,
+        'parking_id': link.parking_id,
+        'status': link.status,
+        'commission_type': link.commission_type,
+        'commission_value': float(link.commission_value),
+        'commission_terms': terms,
+    }
+
+
+@router.get('/guide/requests')
+async def list_guide_requests(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    result = await db.execute(
+        select(GuideParkingLink, User, Parking)
+        .join(User, User.id == GuideParkingLink.guide_user_id)
+        .join(Parking, Parking.id == GuideParkingLink.parking_id)
+        .where(Parking.tenant_id == current_user.tenant_id)
+        .order_by(GuideParkingLink.created_at.desc())
+    )
+    return [
+        {
+            'id': link.id,
+            'guide_name': guide.name,
+            'guide_email': guide.email,
+            'parking_id': parking.id,
+            'parking_name': parking.name,
+            'status': link.status,
+            'commission_type': link.commission_type,
+            'commission_value': float(link.commission_value) if link.commission_value else None,
+            'commission_terms': json.loads(link.commission_terms) if link.commission_terms else {},
+        }
+        for link, guide, parking in result.all()
+    ]
+
+
+@router.get('/guide/dashboard')
+async def guide_dashboard(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.TOUR_GUIDE:
+        raise HTTPException(status_code=403, detail='Guide account required')
+    indications = await db.scalar(select(func.count(Reservation.id)).where(Reservation.guide_user_id == current_user.id)) or 0
+    reviews = (await db.scalars(select(GuideReview).where(GuideReview.guide_user_id == current_user.id))).all()
+    average = round(sum(float(review.rating) for review in reviews) / len(reviews), 2) if reviews else 0
+    payout = await db.scalar(select(func.coalesce(func.sum(Reservation.guide_payout_amount), 0)).where(Reservation.guide_user_id == current_user.id)) or 0
+    return {'indications': indications, 'rating': average, 'review_count': len(reviews), 'total_payout': round(float(payout), 2)}
+
+
+@router.post('/guide/reviews/{reservation_id}')
+async def review_guide(
+    reservation_id: str,
+    data: GuideReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not 1 <= data.rating <= 5:
+        raise HTTPException(status_code=422, detail='Rating must be between 1 and 5')
+    reservation = await db.scalar(select(Reservation).where(Reservation.id == reservation_id, Reservation.user_id == current_user.id))
+    if reservation is None or reservation.guide_user_id is None or reservation.status not in {'checked_out', 'completed'}:
+        raise HTTPException(status_code=422, detail='Only completed guide reservations can be reviewed')
+    existing = await db.scalar(select(GuideReview).where(GuideReview.reservation_id == reservation_id))
+    if existing:
+        raise HTTPException(status_code=409, detail='Reservation already reviewed')
+    review = GuideReview(guide_user_id=reservation.guide_user_id, reservation_id=reservation.id, customer_user_id=current_user.id, rating=str(data.rating), comment=data.comment)
+    db.add(review)
+    await db.commit()
+    return {'rating': data.rating, 'status': 'recorded'}
+
+
 @router.get("/parking-map")
 async def get_partner_parking_map(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    owned = (await db.scalars(select(Parking).where(Parking.tenant_id == current_user.tenant_id).order_by(Parking.id).with_for_update())).all()
+    for parking in owned:
+        await expire_parking_reservations(db, parking)
+    await db.commit()
     parkings = await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
     if not parkings:
         return {"parkings": []}
 
     parking_ids = [parking.id for parking in parkings]
     reservations_result = await db.execute(
-        select(Reservation, Vehicle)
+        select(Reservation, Vehicle, User)
         .join(Parking, Parking.id == Reservation.parking_id)
         .outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id)
+        .outerjoin(User, User.id == Reservation.user_id)
         .where(Parking.tenant_id == current_user.tenant_id)
         .where(Reservation.parking_id.in_(parking_ids))
-        .where(Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]))
+        .where(
+            Reservation.status.in_(
+                ["pre_reserved", "confirmed", "checked_in", "cancelled"]
+            )
+        )
         .order_by(Reservation.created_at.desc())
     )
 
-    reservations_by_parking: dict[str, list[tuple[Reservation, Vehicle | None]]] = {}
-    for reservation, vehicle in reservations_result.all():
+    reservations_by_parking: dict[
+        str, list[tuple[Reservation, Vehicle | None, User | None]]
+    ] = {}
+    for reservation, vehicle, customer in reservations_result.all():
         reservations_by_parking.setdefault(reservation.parking_id, []).append(
-            (reservation, vehicle)
+            (reservation, vehicle, customer)
         )
 
     return {
@@ -194,8 +505,8 @@ async def list_partner_reservations(
         {
             "id": reservation.id,
             "parking_name": parking.name,
-            "customer_name": customer.name if customer else "Cliente nao informado",
-            "vehicle_plate": vehicle.plate if vehicle else None,
+            "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),
+            "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "status": reservation.status,
             "payment_status": reservation.payment_status,
@@ -203,9 +514,17 @@ async def list_partner_reservations(
             "spot_type": reservation.spot_type,
             "pricing_plan": reservation.pricing_plan,
             "route_minutes": reservation.route_minutes,
-            "hold_expires_at": reservation.hold_expires_at.isoformat(),
+            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
+            "base_amount": reservation.base_amount,
+            "services_amount": reservation.services_amount,
+            "platform_fee_amount": reservation.platform_fee_amount,
+            "guide_user_id": reservation.guide_user_id,
+            "guide_commission_amount": reservation.guide_commission_amount,
+            "guide_platform_fee_amount": reservation.guide_platform_fee_amount,
+            "guide_payout_amount": reservation.guide_payout_amount,
             "final_total": reservation.final_total,
-            "created_at": reservation.created_at.isoformat(),
+            "selected_services": _reservation_services(reservation),
+            "created_at": reservation.created_at.isoformat() + "Z",
         }
         for reservation, parking, customer, vehicle in result.all()
     ]
@@ -369,7 +688,10 @@ async def update_managed_parking(
 
 
 def _ensure_parking_manager(user: User):
-    if user.role != UserRoleEnum.PARKING_ADMIN:
+    if user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+    }:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     if not user.tenant_id:
@@ -385,12 +707,28 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
         role=user.role.value,
         permissions=_user_permissions(user),
         is_active=user.is_active,
-        created_at=user.created_at.isoformat(),
+        created_at=user.created_at.isoformat() + "Z",
     )
 
 
+def _guide_service_payload(service: GuideService) -> dict:
+    return {
+        'id': service.id,
+        'name': service.name,
+        'description': service.description,
+        'price': service.price,
+        'duration_minutes': service.duration_minutes,
+        'schedule': json.loads(service.schedule) if service.schedule else {},
+        'is_active': service.is_active,
+    }
+
+
 def _user_permissions(user: User) -> list[str]:
-    if user.role in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.SUPER_ADMIN}:
+    if user.role in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+        UserRoleEnum.SUPER_ADMIN,
+    }:
         return OWNER_PERMISSIONS
 
     if user.role == UserRoleEnum.OPERATOR:
@@ -437,7 +775,11 @@ async def _ensure_parking_partner(db: AsyncSession, user: User):
 
 
 async def _ensure_parking_staff(db: AsyncSession, user: User):
-    if user.role not in {UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+    if user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+        UserRoleEnum.OPERATOR,
+    }:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     if not user.tenant_id:
@@ -461,51 +803,140 @@ async def _ensure_parking_profile(db: AsyncSession, user: User):
 
 def _parking_layout_payload(
     parking: ParkingManagementResponse,
-    reservations: list[tuple[Reservation, Vehicle | None]],
+    reservations: list[tuple[Reservation, Vehicle | None, User | None]],
 ):
-    reserved = [item for item in reservations if item[0].status != "checked_in"]
-    occupied = [item for item in reservations if item[0].status == "checked_in"]
-    occupied_count = len(occupied)
-    reserved_count = len(reserved)
-    free_count = max(parking.total_spots - occupied_count - reserved_count, 0)
+    active_reservations = [
+        item
+        for item in reservations
+        if item[0].status in {"pre_reserved", "confirmed", "checked_in"}
+    ]
+    cancelled = [item for item in reservations if item[0].status == "cancelled"]
+    active_by_slot: dict[str, tuple[Reservation, Vehicle | None, User | None]] = {}
+    fallback_reservations: list[tuple[Reservation, Vehicle | None, User | None]] = []
+    for item in active_reservations:
+        reservation = item[0]
+        if reservation.spot_code:
+            active_by_slot[reservation.spot_code] = item
+        else:
+            fallback_reservations.append(item)
+
+    reserved = [
+        item for item in active_reservations if item[0].status != "checked_in"
+    ]
+    occupied = [
+        item for item in active_reservations if item[0].status == "checked_in"
+    ]
+    pre_reserved_amount = sum(
+        item[0].final_total
+        for item in active_reservations
+        if item[0].status == "pre_reserved"
+    )
+    confirmed_amount = sum(
+        item[0].final_total
+        for item in active_reservations
+        if item[0].status == "confirmed"
+    )
+    checked_in_amount = sum(
+        item[0].final_total
+        for item in active_reservations
+        if item[0].status == "checked_in"
+    )
+    cancelled_amount = sum(item[0].final_total for item in cancelled)
+    pending_payment_amount = sum(
+        item[0].final_total
+        for item in active_reservations
+        if item[0].payment_status != "paid"
+    )
+    paid_amount = sum(
+        item[0].final_total
+        for item in active_reservations
+        if item[0].payment_status == "paid"
+    )
+    services_amount_by_status = {
+        "pre_reserved": sum(
+            item[0].services_amount
+            for item in active_reservations
+            if item[0].status == "pre_reserved"
+        ),
+        "confirmed": sum(
+            item[0].services_amount
+            for item in active_reservations
+            if item[0].status == "confirmed"
+        ),
+        "checked_in": sum(
+            item[0].services_amount
+            for item in active_reservations
+            if item[0].status == "checked_in"
+        ),
+        "cancelled": sum(item[0].services_amount for item in cancelled),
+    }
     slots = []
+    fallback_index = 0
 
-    for index, (reservation, vehicle) in enumerate(occupied, start=1):
-        slots.append(_slot_payload(index, "occupied", reservation, vehicle))
+    for index in range(1, parking.total_spots + 1):
+        code = f"V{index:03d}"
+        assigned = active_by_slot.get(code)
+        if assigned is None and fallback_index < len(fallback_reservations):
+            assigned = fallback_reservations[fallback_index]
+            fallback_index += 1
 
-    offset = len(slots)
-    for index, (reservation, vehicle) in enumerate(reserved, start=offset + 1):
-        slots.append(_slot_payload(index, "pre_reserved", reservation, vehicle))
+        slot_type = _slot_type(index, parking)
+        if assigned is None:
+            slots.append(
+                {
+                    "code": code,
+                    "type": slot_type,
+                    "status": "free",
+                    "reservation": None,
+                }
+            )
+            continue
 
-    offset = len(slots)
-    for index in range(offset + 1, offset + free_count + 1):
+        reservation, vehicle, customer = assigned
+        status = "occupied" if reservation.status == "checked_in" else "pre_reserved"
         slots.append(
-            {
-                "code": f"V{index:03d}",
-                "status": "free",
-                "reservation": None,
-            }
+            _slot_payload(code, slot_type, status, reservation, vehicle, customer, parking)
         )
 
     return {
         "id": parking.id,
         "name": parking.name,
         "total_spots": parking.total_spots,
-        "available_spots": free_count,
-        "pre_reserved_spots": reserved_count,
-        "occupied_spots": occupied_count,
-        "slots": slots[: parking.total_spots],
+        "available_spots": sum(1 for slot in slots if slot["status"] == "free"),
+        "pre_reserved_spots": len(reserved),
+        "occupied_spots": len(occupied),
+        "cancelled_spots": len(cancelled),
+        "pre_reserved_amount": pre_reserved_amount,
+        "confirmed_amount": confirmed_amount,
+        "checked_in_amount": checked_in_amount,
+        "cancelled_amount": cancelled_amount,
+        "pending_payment_amount": pending_payment_amount,
+        "paid_amount": paid_amount,
+        "services_amount_by_status": services_amount_by_status,
+        "slots": slots,
     }
 
 
 def _slot_payload(
-    index: int,
+    code: str,
+    slot_type: str,
     status: str,
     reservation: Reservation,
     vehicle: Vehicle | None,
+    customer: User | None,
+    parking: ParkingManagementResponse,
 ):
+    checkout_excess_minutes, checkout_excess_amount = _checkout_excess_preview(
+        reservation,
+        slot_type,
+        parking,
+    )
+    if reservation.checkout_excess_paid_at is not None:
+        checkout_excess_amount = reservation.checkout_excess_amount
+
     return {
-        "code": f"V{index:03d}",
+        "code": reservation.spot_code or code,
+        "type": slot_type,
         "status": status,
         "reservation": {
             "id": reservation.id,
@@ -517,13 +948,44 @@ def _slot_payload(
             "base_amount": reservation.base_amount,
             "services_amount": reservation.services_amount,
             "platform_fee_amount": reservation.platform_fee_amount,
+            "guide_user_id": reservation.guide_user_id,
+            "guide_commission_amount": reservation.guide_commission_amount,
+            "guide_platform_fee_amount": reservation.guide_platform_fee_amount,
+            "guide_payout_amount": reservation.guide_payout_amount,
             "final_total": reservation.final_total,
             "selected_services": _reservation_services(reservation),
-            "vehicle_plate": vehicle.plate if vehicle else None,
+            "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),
+            "customer_phone": reservation.walk_in_phone or (customer.phone if customer else None),
+            "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
-            "hold_expires_at": reservation.hold_expires_at.isoformat(),
+            "route_minutes": reservation.route_minutes,
+            "created_at": reservation.created_at.isoformat() + "Z",
+            "checked_in_at": reservation.checked_in_at.isoformat() + "Z"
+            if reservation.checked_in_at
+            else None,
+            "arrival_estimate_at": (
+                reservation.arrival_estimate_at
+                or reservation.created_at + timedelta(minutes=reservation.route_minutes)
+            ).isoformat() + "Z",
+            "is_manual_arrival": reservation.is_manual_arrival,
+            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
+            "cancelled_at": reservation.cancelled_at.isoformat() + "Z"
+            if reservation.cancelled_at
+            else None,
+            "cancellation_fee_amount": reservation.cancellation_fee_amount,
+            "cancellation_credit_amount": reservation.cancellation_credit_amount,
+            "checkout_grace_minutes": reservation.checkout_grace_minutes,
+            "checkout_excess_minutes": checkout_excess_minutes,
+            "checkout_excess_amount": checkout_excess_amount,
+            "checkout_excess_paid_at": reservation.checkout_excess_paid_at.isoformat() + "Z"
+            if reservation.checkout_excess_paid_at
+            else None,
         },
     }
+
+
+def _slot_type(index: int, parking: ParkingManagementResponse) -> str:
+    return physical_spot_type(index, parking)
 
 
 def _reservation_services(reservation: Reservation) -> list[dict]:
@@ -538,8 +1000,43 @@ def _reservation_services(reservation: Reservation) -> list[dict]:
     return services if isinstance(services, list) else []
 
 
+def _checkout_excess_preview(
+    reservation: Reservation,
+    slot_type: str,
+    parking: ParkingManagementResponse,
+) -> tuple[int, float]:
+    if (
+        reservation.status != "checked_in"
+        or reservation.checked_in_at is None
+        or reservation.pricing_plan != "hourly"
+    ):
+        return reservation.checkout_excess_minutes, reservation.checkout_excess_amount
+
+    elapsed_minutes = max(
+        int(
+            (
+                datetime.utcnow() - reservation.checked_in_at.replace(tzinfo=None)
+            ).total_seconds()
+            // 60
+        ),
+        0,
+    )
+    grace_minutes = reservation.checkout_grace_minutes or 15
+    included_minutes = reservation.duration_hours * 60 + grace_minutes
+    excess_minutes = max(elapsed_minutes - included_minutes, 0)
+    if excess_minutes == 0:
+        return 0, 0
+
+    if reservation.spot_type in {"covered", "vip"}:
+        hourly_amount = parking.covered_pricing.additional_hour_price
+    else:
+        hourly_amount = parking.uncovered_pricing.additional_hour_price
+    return excess_minutes, round(ceil(excess_minutes / 60) * hourly_amount, 2)
+
+
 def _ensure_partner_user(user: User):
     if user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
         UserRoleEnum.PARKING_ADMIN,
         UserRoleEnum.OPERATOR,
         UserRoleEnum.TOUR_GUIDE,
@@ -549,3 +1046,24 @@ def _ensure_partner_user(user: User):
 
     if not user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant required")
+
+
+@router.get("/fee-statement")
+async def partner_fee_statement(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    debts = (await db.scalars(select(PartnerFeeDebt).where(
+        PartnerFeeDebt.tenant_id == current_user.tenant_id
+    ).order_by(PartnerFeeDebt.created_at.desc()))).all()
+    settlements = (await db.execute(select(PartnerFeeSettlement, PartnerFeeDebt).join(
+        PartnerFeeDebt, PartnerFeeDebt.id == PartnerFeeSettlement.debt_id
+    ).where(PartnerFeeDebt.tenant_id == current_user.tenant_id))).all()
+    return {
+        "pending_total": float(sum(d.remaining_amount for d in debts)),
+        "debts": [{"id": d.id, "reservation_id": d.reservation_id,
+            "description": d.description, "amount": float(d.amount),
+            "remaining_amount": float(d.remaining_amount),
+            "created_at": d.created_at.isoformat() + "Z"} for d in debts],
+        "settlements": [{"debt_id": s.debt_id, "payment_id": s.payment_id,
+            "reservation_id": d.reservation_id, "amount": float(s.amount),
+            "created_at": s.created_at.isoformat() + "Z"} for s, d in settlements],
+    }

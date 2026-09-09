@@ -3,13 +3,10 @@ import '../../reservation/models/reservation_model.dart';
 import '../providers/checkout_strategy.dart';
 
 class CheckoutService {
-
   static double calculate(ReservationModel reservation) {
-
     late CheckoutStrategy strategy;
 
     switch (reservation.plan) {
-
       case PlanType.hourly:
         strategy = HourlyCheckoutStrategy();
         break;

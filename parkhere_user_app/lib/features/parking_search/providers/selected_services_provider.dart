@@ -12,11 +12,7 @@ class SelectedServices {
     this.transport = false,
   });
 
-  SelectedServices copyWith({
-    bool? carWash,
-    bool? tourGuide,
-    bool? transport,
-  }) {
+  SelectedServices copyWith({bool? carWash, bool? tourGuide, bool? transport}) {
     return SelectedServices(
       carWash: carWash ?? this.carWash,
       tourGuide: tourGuide ?? this.tourGuide,
@@ -26,5 +22,6 @@ class SelectedServices {
 }
 
 /// Provider global
-final selectedServicesProvider =
-    StateProvider<SelectedServices>((ref) => SelectedServices());
+final selectedServicesProvider = StateProvider<SelectedServices>(
+  (ref) => SelectedServices(),
+);

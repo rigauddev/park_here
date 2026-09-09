@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final checkinProvider =
-    AsyncNotifierProvider<CheckinNotifier, bool>(CheckinNotifier.new);
+final checkinProvider = AsyncNotifierProvider<CheckinNotifier, bool>(
+  CheckinNotifier.new,
+);
 
 class CheckinNotifier extends AsyncNotifier<bool> {
   @override

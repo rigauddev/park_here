@@ -1,0 +1,84 @@
+name: parkhere-homolog
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Generate the homolog environment first}
+      MYSQL_DATABASE: parkhere
+      MYSQL_USER: parkhere
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Generate the homolog environment first}
+    command: ["mysqld", "--innodb-buffer-pool-size=256M", "--max-connections=40", "--performance-schema=OFF"]
+    volumes:
+      - database:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h localhost -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging: *logging
+
+  api:
+    build: ./parkhere_backend
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      DATABASE_URL: mysql+aiomysql://parkhere:${DB_PASSWORD:?Required}@mysql:3306/parkhere
+      SECRET_KEY: ${SECRET_KEY:?Required}
+      JWT_SECRET: ${SECRET_KEY:?Required}
+      MFA_SECRET_KEY: ${MFA_SECRET_KEY:?Required}
+      PAYMENT_PROVIDER: mock
+      CORS_ORIGINS: https://${APP_DOMAIN:?Required}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    volumes:
+      - inspection_photos:/app/storage/inspection
+      - partner_documents:/app/storage/partner_documents
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Required}
+      PILOT_ALLOWED_IPS: ${PILOT_ALLOWED_IPS:?Set public tester IPs separated by spaces}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/web:/srv:ro
+      - certificates:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  database:
+  certificates:
+  caddy_config:
+  inspection_photos:
+  partner_documents:

@@ -1,4 +1,45 @@
-from pydantic import BaseModel, EmailStr
+import re
+
+from typing import Literal
+from pydantic import BaseModel, EmailStr, field_validator
+
+
+PARTNER_SERVICE_TYPES = {
+    'parking',
+    'car_wash',
+    'hotel',
+    'restaurant',
+    'tour_guide',
+    'tourism_company',
+    'transport',
+    'other',
+}
+
+
+def _digits(value: str, label: str, lengths: set[int]) -> str:
+    value = re.sub(r'\D', '', value or '')
+    if len(value) not in lengths or len(set(value)) == 1:
+        raise ValueError(f'{label} invalido')
+    return value
+
+
+def _phone(value: str | None) -> str | None:
+    if value is None:
+        return value
+    value = re.sub(r'\D', '', value)
+    if value.startswith('55') and len(value) in {12, 13}:
+        value = value[2:]
+    if len(value) not in {10, 11} or (len(value) == 11 and value[2] != '9'):
+        raise ValueError('Telefone brasileiro invalido')
+    return value
+
+
+def _cpf(value: str) -> str:
+    return _digits(value, 'CPF', {11})
+
+
+def _cnpj(value: str) -> str:
+    return _digits(value, 'CNPJ', {14})
 
 class RegisterParkingSchema(BaseModel):
     tenant_name: str
@@ -8,6 +49,9 @@ class RegisterParkingSchema(BaseModel):
     phone: str
     email: EmailStr
     password: str
+
+    _validate_cnpj = field_validator('cnpj')(_cnpj)
+    _validate_phone = field_validator('phone')(_phone)
 
 class CreateUserRequest(BaseModel):
     name: str
@@ -26,12 +70,15 @@ class CustomerSignupRequest(BaseModel):
     cpf: str
     phone: str
 
+    _validate_cpf = field_validator('cpf')(_cpf)
+    _validate_phone = field_validator('phone')(_phone)
+
 
 class PartnerSignupRequest(BaseModel):
     service_type: str
     company_name: str
-    cnpj: str
-    registration_status: str
+    document_type: Literal['cpf', 'cnpj']
+    document_number: str
     responsible_name: str
     email: EmailStr
     password: str
@@ -40,7 +87,24 @@ class PartnerSignupRequest(BaseModel):
     insurance_provider: str | None = None
     instagram: str | None = None
     website: str | None = None
+    # Mantido opcional para compatibilidade com clientes antigos; não aparece na nova tela.
     social_links: str | None = None
+
+    _validate_phone = field_validator('phone')(_phone)
+
+    @field_validator('document_number')
+    @classmethod
+    def validate_document_number(cls, value: str, info) -> str:
+        document_type = info.data.get('document_type')
+        return _digits(value, document_type.upper() if document_type else 'Documento', {11} if document_type == 'cpf' else {14})
+
+    @field_validator('service_type')
+    @classmethod
+    def validate_service_type(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in PARTNER_SERVICE_TYPES:
+            raise ValueError('Tipo de servico de parceiro invalido')
+        return value
     
 class LoginRequest(BaseModel):
     email: str

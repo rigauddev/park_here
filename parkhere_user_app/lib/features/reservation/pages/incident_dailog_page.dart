@@ -1,5 +1,3 @@
-
-
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -13,7 +11,6 @@ class IncidentDialog extends StatefulWidget {
 }
 
 class _IncidentDialogState extends State<IncidentDialog> {
-
   final TextEditingController _controller = TextEditingController();
   XFile? _image;
 
@@ -52,10 +49,7 @@ class _IncidentDialogState extends State<IncidentDialog> {
             if (_image != null)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
-                child: Image.file(
-                  File(_image!.path),
-                  height: 120,
-                ),
+                child: Image.file(File(_image!.path), height: 120),
               ),
           ],
         ),

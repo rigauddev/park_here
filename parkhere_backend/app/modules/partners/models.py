@@ -10,6 +10,8 @@ class PartnerProfile(BaseModel):
     service_type = Column(String(40), nullable=False)
     company_name = Column(String(255), nullable=False)
     cnpj = Column(String(20), nullable=False)
+    document_type = Column(String(10), nullable=True)
+    document_number = Column(String(20), nullable=True)
     registration_status = Column(String(80), nullable=False)
     responsible_name = Column(String(255), nullable=False)
     has_insurance = Column(Boolean, default=False)

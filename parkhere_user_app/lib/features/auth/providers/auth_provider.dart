@@ -12,6 +12,7 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
 
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(AuthState.initial()) {
+    ApiService.onUnauthorized = logout;
     checkAuthOnStartup();
   }
 
@@ -30,6 +31,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         ? AuthAccountType.partner
         : AuthAccountType.customer;
 
+    if (tokens["access"] != null && _isExpired(tokenClaims["exp"])) {
+      await logout();
+      return;
+    }
+
     if (tokens["access"] != null) {
       state = state.copyWith(
         status: AuthStatus.authenticated,
@@ -41,7 +47,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tenantId: tenantId,
         clearMfaToken: true,
       );
-    } else {
+    } else if (state.status == AuthStatus.initial ||
+        state.status == AuthStatus.loading) {
+      // Do not overwrite a login/MFA transition that completed while the
+      // asynchronous startup token check was still running.
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
   }
@@ -52,7 +61,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String password, {
     AuthAccountType accountType = AuthAccountType.customer,
   }) async {
-    state = state.copyWith(status: AuthStatus.loading);
+    state = state.copyWith(
+      status: AuthStatus.loading,
+      accountType: accountType,
+    );
 
     final normalizedEmail = email.toLowerCase();
     final accountTypeName = accountType == AuthAccountType.customer
@@ -72,6 +84,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         accountType: accountType,
         mfaToken: response["mfa_token"] as String?,
       );
+    } on ApiConnectionException {
+      state = state.copyWith(status: AuthStatus.unauthenticated);
+      throw Exception("Não foi possível conectar com a API");
     } catch (_) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
@@ -122,10 +137,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tenantId: tenantId,
         clearMfaToken: true,
       );
+    } on ApiConnectionException {
+      state = state.copyWith(status: AuthStatus.unauthenticated);
+      throw Exception("Não foi possível conectar com a API");
     } catch (_) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
     }
+  }
+
+  void resetLoginFlow() {
+    state = state.copyWith(
+      status: AuthStatus.unauthenticated,
+      clearMfaToken: true,
+    );
   }
 
   Future<String> requestEmailValidationCode(String email) async {
@@ -139,6 +164,42 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _api.post("/auth/email/verify-code", {
       "email_token": token,
       "code": code,
+    });
+  }
+
+  Future<Map<String, dynamic>> registerPartner({
+    required String serviceType,
+    required String companyName,
+    required String documentType,
+    required String documentNumber,
+    required String responsibleName,
+    required String email,
+    required String password,
+    String? phone,
+    required bool hasInsurance,
+    String? insuranceProvider,
+    String? instagram,
+    String? website,
+    String? socialLinks,
+  }) {
+    return _api.post('/partners/signup', {
+      'service_type': serviceType,
+      'company_name': companyName.trim(),
+      'document_type': documentType,
+      'document_number': documentNumber,
+      'responsible_name': responsibleName.trim(),
+      'email': email.trim().toLowerCase(),
+      'password': password,
+      'phone': phone?.trim().isEmpty == true ? null : phone?.trim(),
+      'has_insurance': hasInsurance,
+      'insurance_provider': insuranceProvider?.trim().isEmpty == true
+          ? null
+          : insuranceProvider?.trim(),
+      'instagram': instagram?.trim().isEmpty == true ? null : instagram?.trim(),
+      'website': website?.trim().isEmpty == true ? null : website?.trim(),
+      'social_links': socialLinks?.trim().isEmpty == true
+          ? null
+          : socialLinks?.trim(),
     });
   }
 
@@ -213,7 +274,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return role == null || role == 'customer' ? 'customer' : 'partner';
   }
 
-  Map<String, String?> _decodeAccessClaims(String? token) {
+  bool _isExpired(dynamic exp) {
+    if (exp == null) return false;
+    final expiresAtSeconds = exp is int ? exp : int.tryParse(exp.toString());
+    if (expiresAtSeconds == null) return false;
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return expiresAtSeconds <= nowSeconds;
+  }
+
+  Map<String, dynamic> _decodeAccessClaims(String? token) {
     if (token == null) return {};
 
     try {
@@ -227,6 +296,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return {
         'role': data['role'] as String?,
         'tenant_id': data['tenant_id'] as String?,
+        'exp': data['exp'],
       };
     } catch (_) {
       return {};

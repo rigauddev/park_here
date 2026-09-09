@@ -1,0 +1,15 @@
+{$APP_DOMAIN} {
+    encode zstd gzip
+    @outside not remote_ip {$PILOT_ALLOWED_IPS}
+    respond @outside "Homologacao restrita aos participantes do piloto." 403
+
+    handle_path /api/* {
+        reverse_proxy api:8000
+    }
+    handle {
+        root * /srv
+        header Cache-Control "no-cache"
+        try_files {path} /index.html
+        file_server
+    }
+}

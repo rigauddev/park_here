@@ -49,3 +49,8 @@ htmlcov/
 mysql_data/
 *.sqlite
 *.db
+
+# Homologation artifacts and database backups
+deploy/web/
+backups/
+*.sql.gz

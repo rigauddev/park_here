@@ -14,41 +14,29 @@ class SplashPage extends ConsumerStatefulWidget {
 }
 
 class _SplashPageState extends ConsumerState<SplashPage> {
-
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
-      ref.read(authProvider.notifier).checkAuthOnStartup();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-
     ref.listen<AuthState>(authProvider, (previous, next) {
-
       if (next.status == AuthStatus.authenticated) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const MainNavigation(),
-          ),
+          MaterialPageRoute(builder: (_) => const MainNavigation()),
         );
       }
 
       if (next.status == AuthStatus.unauthenticated) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const LoginPage(),
-          ),
+          MaterialPageRoute(builder: (_) => const LoginPage()),
         );
       }
     });
 
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

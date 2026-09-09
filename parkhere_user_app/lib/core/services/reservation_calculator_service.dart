@@ -15,8 +15,7 @@ double calculateFinalValue({
   if (reservation.plan == PlanType.hourly) {
     if (hours <= 1) return firstHourPrice;
 
-    return firstHourPrice +
-        ((hours - 1) * additionalHourPrice);
+    return firstHourPrice + ((hours - 1) * additionalHourPrice);
   }
 
   // 🔹 Plano Diária

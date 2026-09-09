@@ -7,8 +7,9 @@ class ParkingController {
       ParkingModel(
         id: "1",
         name: "Estacionamento Central",
-        lat: -12.9704,
-        lng: -38.5124,
+        city: "Valenca",
+        lat: -13.3703,
+        lng: -39.0731,
         pricing: ParkingPricing(
           firstHourPrice: 10,
           additionalHourPrice: 5,
@@ -28,9 +29,10 @@ class ParkingController {
       ),
       ParkingModel(
         id: "2",
-        name: "Parking VIP Premium",
-        lat: -12.9712,
-        lng: -38.5150,
+        name: "ParkHere Valenca VIP",
+        city: "Valenca",
+        lat: -13.3668,
+        lng: -39.0705,
         rating: 4.6,
         availableSpots: 2,
         hasCarWash: true,

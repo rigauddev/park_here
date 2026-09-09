@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/services.dart';
 
 import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
@@ -12,7 +16,7 @@ class PaymentPage extends ConsumerStatefulWidget {
   final double amount;
   final String? reservationId;
   final bool payNow;
-  final VoidCallback onPaymentSuccess;
+  final FutureOr<void> Function() onPaymentSuccess;
 
   const PaymentPage({
     super.key,
@@ -30,6 +34,28 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   PaymentMethod? _selectedMethod;
   final cvvController = TextEditingController();
   bool _isLoading = false;
+  Map<String, dynamic>? _quote;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuote();
+  }
+
+  Future<void> _loadQuote() async {
+    final reservationId = widget.reservationId;
+    final token = ref.read(authProvider).accessToken;
+    if (reservationId == null || token == null) return;
+    try {
+      final quote = await PaymentService().reservationQuote(
+        reservationId,
+        token,
+      );
+      if (mounted) setState(() => _quote = quote);
+    } catch (_) {
+      // The payment page can still use the reservation total if the quote is unavailable.
+    }
+  }
 
   @override
   void dispose() {
@@ -75,13 +101,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       );
 
       if (result.success) {
-        // 🔥 Aqui no futuro você atualiza no backend a reserva como paga
-
-        widget.onPaymentSuccess();
-
-        // ScaffoldMessenger.of(context).showSnackBar(
-        //   const SnackBar(content: Text("Pagamento realizado com sucesso!")),
-        // );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.isSimulated
+                  ? 'Pagamento simulado. Nenhuma cobrança foi realizada.'
+                  : 'Pagamento confirmado.',
+            ),
+          ),
+        );
+        await widget.onPaymentSuccess();
 
         if (mounted) {
           Navigator.pop(context);
@@ -108,137 +138,213 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Pagamento")),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            if (!account.hasActivePaymentMethod)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7E6),
-                  borderRadius: BorderRadius.circular(12),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              if (!account.hasActivePaymentMethod)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7E6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Cadastre uma forma de pagamento para continuar.",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const WalletPage(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.account_balance_wallet),
+                        label: const Text("Abrir carteira"),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Cadastre uma forma de pagamento para continuar.",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
+              if (activeMethod != null) ...[
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.account_balance_wallet),
+                    title: Text(activeMethod.label),
+                    subtitle: Text(_activeMethodDescription(activeMethod)),
+                    trailing: TextButton(
                       onPressed: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const WalletPage()),
                         );
                       },
-                      icon: const Icon(Icons.account_balance_wallet),
-                      label: const Text("Abrir carteira"),
+                      child: const Text("Trocar"),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_requiresCvv(activeMethod))
+                  TextField(
+                    controller: cvvController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(4),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: "CVV",
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                  ),
+                const SizedBox(height: 18),
+              ],
+
+              if ((_selectedMethod ??
+                      (activeMethod == null
+                          ? null
+                          : _mapMethod(activeMethod.type))) ==
+                  PaymentMethod.pix)
+                Card(
+                  color: const Color(0xFFEAFBFF),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        const Text('QR Code Pix / Pix QR Code'),
+                        QrImageView(
+                          data:
+                              'parkhere://pix/${widget.reservationId ?? widget.amount}',
+                          size: 150,
+                        ),
+                        const Text('Validade: 15:00 / Valid for 15:00'),
+                        TextButton.icon(
+                          onPressed: () => Clipboard.setData(
+                            ClipboardData(
+                              text:
+                                  'parkhere://pix/${widget.reservationId ?? widget.amount}',
+                            ),
+                          ),
+                          icon: const Icon(Icons.copy),
+                          label: const Text('Copiar código / Copy code'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              Text(
+                widget.payNow
+                    ? "Pagamento necessário para iniciar"
+                    : "Pagamento no checkout",
+                style: const TextStyle(fontSize: 18),
+              ),
+
+              const SizedBox(height: 20),
+
+              Text(
+                "Valor: R\$ ${widget.amount.toStringAsFixed(2)}",
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (_quote != null)
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        title: const Text('Resumo da reserva'),
+                        trailing: Text(
+                          'R\$ ${(_quote!['reservation_amount'] as num).toDouble().toStringAsFixed(2)}',
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('Taxa do usuário'),
+                        trailing: Text(
+                          'R\$ ${(_quote!['customer_fee_amount'] as num).toDouble().toStringAsFixed(2)}',
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('Taxa do estabelecimento'),
+                        trailing: Text(
+                          'R\$ ${(_quote!['establishment_fee_amount'] as num).toDouble().toStringAsFixed(2)}',
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('Total'),
+                        trailing: Text(
+                          'R\$ ${(_quote!['total_amount'] as num).toDouble().toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (widget.reservationId != null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  "Pagamento via Mercado Pago preparado com split ParkHere/parceiro.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF55708F)),
+                ),
+              ],
+
+              const SizedBox(height: 30),
+
+              if (activeMethod != null)
+                SegmentedButton<PaymentMethod>(
+                  segments: [
+                    if (activeMethod.type == WalletMethodType.pix)
+                      const ButtonSegment(
+                        value: PaymentMethod.pix,
+                        label: Text("Pix"),
+                        icon: Icon(Icons.qr_code_2),
+                      ),
+                    if (activeMethod.type == WalletMethodType.creditCard)
+                      const ButtonSegment(
+                        value: PaymentMethod.creditCard,
+                        label: Text("Credito"),
+                        icon: Icon(Icons.credit_card),
+                      ),
+                    if (activeMethod.type == WalletMethodType.debitCard)
+                      const ButtonSegment(
+                        value: PaymentMethod.debitCard,
+                        label: Text("Debito"),
+                        icon: Icon(Icons.payment),
+                      ),
                   ],
+                  selected: {_selectedMethod ?? _mapMethod(activeMethod.type)},
+                  onSelectionChanged: (value) {
+                    setState(() => _selectedMethod = value.first);
+                  },
                 ),
-              ),
-            if (activeMethod != null) ...[
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.account_balance_wallet),
-                  title: Text(activeMethod.label),
-                  subtitle: Text(_activeMethodDescription(activeMethod)),
-                  trailing: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const WalletPage()),
-                      );
-                    },
-                    child: const Text("Trocar"),
-                  ),
+
+              const SizedBox(height: 20),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading || !account.hasActivePaymentMethod
+                      ? null
+                      : _processPayment,
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text("Confirmar Pagamento"),
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (_requiresCvv(activeMethod))
-                TextField(
-                  controller: cvvController,
-                  keyboardType: TextInputType.number,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: "CVV",
-                    prefixIcon: Icon(Icons.lock_outline),
-                  ),
-                ),
-              const SizedBox(height: 18),
-            ],
-
-            Text(
-              widget.payNow
-                  ? "Pagamento necessário para iniciar"
-                  : "Pagamento no checkout",
-              style: const TextStyle(fontSize: 18),
-            ),
-
-            const SizedBox(height: 20),
-
-            Text(
-              "Valor: R\$ ${widget.amount.toStringAsFixed(2)}",
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            if (widget.reservationId != null) ...[
-              const SizedBox(height: 8),
-              const Text(
-                "Pagamento via Mercado Pago preparado com split ParkHere/parceiro.",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF55708F)),
               ),
             ],
-
-            const SizedBox(height: 30),
-
-            if (activeMethod != null)
-              SegmentedButton<PaymentMethod>(
-                segments: [
-                  if (activeMethod.type == WalletMethodType.pix)
-                    const ButtonSegment(
-                      value: PaymentMethod.pix,
-                      label: Text("Pix"),
-                      icon: Icon(Icons.qr_code_2),
-                    ),
-                  if (activeMethod.type == WalletMethodType.creditCard)
-                    const ButtonSegment(
-                      value: PaymentMethod.creditCard,
-                      label: Text("Credito"),
-                      icon: Icon(Icons.credit_card),
-                    ),
-                  if (activeMethod.type == WalletMethodType.debitCard)
-                    const ButtonSegment(
-                      value: PaymentMethod.debitCard,
-                      label: Text("Debito"),
-                      icon: Icon(Icons.payment),
-                    ),
-                ],
-                selected: {_selectedMethod ?? _mapMethod(activeMethod.type)},
-                onSelectionChanged: (value) {
-                  setState(() => _selectedMethod = value.first);
-                },
-              ),
-
-            const Spacer(),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isLoading || !account.hasActivePaymentMethod
-                    ? null
-                    : _processPayment,
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Confirmar Pagamento"),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

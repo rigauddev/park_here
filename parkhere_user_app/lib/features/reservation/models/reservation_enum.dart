@@ -1,6 +1,1 @@
-enum ReservationStatus {
-  open,
-  finished,
-  expired, 
-  cancelled,
-}
+enum ReservationStatus { open, finished, expired, cancelled }

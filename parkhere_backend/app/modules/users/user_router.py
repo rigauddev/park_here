@@ -1,9 +1,10 @@
 from app.modules.users.models.user_schema import UserCreate, UserResponse
 from app.modules.users.user_service import create_parking_user, create_customer_user
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from app.core.dependencies import get_current_user, require_role, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.users.models.user_model import User
+from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from sqlalchemy import select
 
 
@@ -16,8 +17,11 @@ async def create_user(
     current_user: User = Depends(get_current_user)
 ):
 
-    if current_user.role != "PARKING_ADMIN":
-        raise Exception("Somente admin pode criar usuários")
+    if current_user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+    }:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     user = await create_parking_user(
         db=db,

@@ -7,9 +7,11 @@
 - Criar conta e autenticar.
 - Formularios devem validar campos obrigatorios, e-mail, telefone, CPF/CNPJ, data, hora e senha forte antes de enviar para API.
 - Visualizar estacionamentos no mapa.
+- Buscar estacionamentos por cidade e, quando houver permissao, priorizar os mais proximos da geolocalizacao atual.
 - Filtrar por vagas, cobertura, vagas VIP e servicos.
 - Ver preco por hora, diaria e mensal.
-- Fazer pre-reserva enquanto se desloca ate o estacionamento.
+- Fazer pre-reserva enquanto se desloca ate o estacionamento, com previsao de tempo de trajeto e hora estimada de chegada.
+- Agendar reserva futura conforme horario de funcionamento e politica de cancelamento do estacionamento.
 - Escolher plano e servicos adicionais.
 - Pagar reserva.
 - Fazer check-in ao chegar.
@@ -30,6 +32,8 @@
 - Controlar vagas disponiveis.
 - Validar check-in e checkout manualmente na portaria.
 - Consultar reservas ativas, expiradas, canceladas e finalizadas.
+- Ver no mapa operacional a previsao de chegada das pre-reservas recebidas.
+- Consultar reservas agendadas e aplicar politica de cancelamento configurada.
 
 ## Admin Plataforma
 
