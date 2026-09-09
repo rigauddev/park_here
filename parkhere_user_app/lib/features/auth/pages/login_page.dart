@@ -12,7 +12,7 @@ import 'register_page.dart';
 
 enum LoginLanguage { ptBr, en }
 
-enum LoginMode { customer, partner }
+enum LoginMode { customer, partner, admin }
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -651,6 +651,16 @@ class _AccessModeSelector extends StatelessWidget {
               title: isPortuguese ? "Parceiro" : "Partner",
               subtitle: isPortuguese ? "Gerir serviços" : "Manage services",
               onTap: enabled ? () => onChanged(LoginMode.partner) : null,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _AccessModeButton(
+              selected: loginMode == LoginMode.admin,
+              icon: Icons.admin_panel_settings_outlined,
+              title: 'Admin',
+              subtitle: isPortuguese ? 'Gestão do app' : 'App management',
+              onTap: enabled ? () => onChanged(LoginMode.admin) : null,
             ),
           ),
         ],
