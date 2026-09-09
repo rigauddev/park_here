@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
+import '../../../core/widgets/main_navigation.dart';
 
 class AdminLoginPage extends ConsumerStatefulWidget {
   const AdminLoginPage({super.key});
@@ -83,7 +84,12 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage> {
       final auth = ref.read(authProvider);
       if (auth.status == AuthStatus.mfaRequired) {
         await ref.read(authProvider.notifier).verifyMfa(mfa.text.trim());
-        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const MainNavigation()),
+            (_) => false,
+          );
+        }
       } else {
         await ref.read(authProvider.notifier).login(email.text.trim(), password.text, accountType: AuthAccountType.partner);
       }
