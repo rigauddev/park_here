@@ -172,6 +172,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           MaterialPageRoute(
             builder: (_) => PaymentPage(
               amount: next.amount!,
+              reservationId: widget.reservation.id,
               payNow: false,
               onPaymentSuccess: () {
                 ref.read(checkoutProvider.notifier).paymentSuccess();

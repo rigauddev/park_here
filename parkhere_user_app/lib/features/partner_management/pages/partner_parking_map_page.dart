@@ -522,6 +522,23 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
                 fontWeight: FontWeight.w700,
               ),
             ),
+            if (slot.reservation == null)
+              TextButton.icon(
+                onPressed: () => _toggleBlocked(context, slot),
+                icon: Icon(
+                  slot.status == 'blocked' ? Icons.lock_open : Icons.block,
+                  size: 14,
+                ),
+                label: Text(
+                  slot.status == 'blocked' ? 'Liberar' : 'Bloquear',
+                  style: const TextStyle(fontSize: 10),
+                ),
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
             if (slot.reservation != null) ...[
               const SizedBox(height: 2),
               Text(

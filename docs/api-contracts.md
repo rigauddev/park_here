@@ -57,6 +57,11 @@ e `PUT /admin/platform-fees/{service_type}`. Esses endpoints exigem o papel
 Guias parceiros usam `GET/POST /partners/guide/services` para cadastrar seus
 próprios serviços turísticos, separados das afiliações a estacionamentos.
 
+`POST /partners/parking-map/{parking_id}/slots/{slot_code}/block` alterna o
+status operacional da vaga entre bloqueada e disponível. A vaga bloqueada não
+é oferecida para novas reservas; o estacionamento permanece ativo e seus
+dados históricos são preservados.
+
 ## Busca De Estacionamentos
 
 `GET /parkings?city=Valenca`
