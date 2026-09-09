@@ -89,6 +89,7 @@ class ManagedParkingModel {
   final ParkingAreaPricingModel uncoveredPricing;
   final ParkingAreaPricingModel coveredPricing;
   final List<ManagedParkingServiceModel> services;
+  final Map<String, ParkingAreaPricingModel> categoryPricing;
 
   const ManagedParkingModel({
     this.arrivalToleranceMinutes = 15,
@@ -115,6 +116,7 @@ class ManagedParkingModel {
     required this.uncoveredPricing,
     required this.coveredPricing,
     required this.services,
+    this.categoryPricing = const {},
   });
 
   factory ManagedParkingModel.fromJson(Map<String, dynamic> json) {
@@ -150,6 +152,10 @@ class ManagedParkingModel {
         for (final service in json['services'] as List<dynamic>)
           ManagedParkingServiceModel.fromJson(service as Map<String, dynamic>),
       ],
+      categoryPricing: {
+        for (final entry in (json['category_pricing'] as Map<String, dynamic>? ?? {}).entries)
+          entry.key: ParkingAreaPricingModel.fromJson(entry.value as Map<String, dynamic>),
+      },
     );
   }
 
@@ -177,6 +183,9 @@ class ManagedParkingModel {
       'uncovered_pricing': uncoveredPricing.toJson(),
       'covered_pricing': coveredPricing.toJson(),
       'services': services.map((service) => service.toJson()).toList(),
+      'category_pricing': {
+        for (final entry in categoryPricing.entries) entry.key: entry.value.toJson(),
+      },
       'is_active': isActive,
     };
   }

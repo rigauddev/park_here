@@ -51,7 +51,12 @@ async def register_parking(
 @router.post("/customer-signup", response_model=TokenResponse)
 async def customer_signup(data: CustomerSignupRequest, db: AsyncSession = Depends(get_db)):
     tokens = await AuthService.CustomerSignup(db, data)
-    return {"access_token": tokens[0], "refresh_token": tokens[1]}
+    return {
+        "access_token": tokens[0],
+        "refresh_token": tokens[1],
+        "role": "customer",
+        "account_type": "customer",
+    }
 
 @router.post("/login")
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):

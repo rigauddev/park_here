@@ -228,6 +228,12 @@ class _ParkingManagementFormPageState
   final coveredDailyController = TextEditingController();
   final coveredWeeklyController = TextEditingController();
   final coveredMonthlyController = TextEditingController();
+  final Map<String, List<TextEditingController>> specialPricing = {
+    'vip': List.generate(5, (_) => TextEditingController()),
+    'large': List.generate(5, (_) => TextEditingController()),
+    'bus': List.generate(5, (_) => TextEditingController()),
+    'pickup': List.generate(5, (_) => TextEditingController()),
+  };
 
   final serviceNameController = TextEditingController();
   final servicePriceController = TextEditingController();
@@ -254,6 +260,9 @@ class _ParkingManagementFormPageState
     final total = _sumSpots();
     if (totalController.text != total.toString()) {
       totalController.text = total.toString();
+    }
+    if (widget.parking == null && availableController.text != total.toString()) {
+      availableController.text = total.toString();
     }
   }
 
@@ -321,6 +330,9 @@ class _ParkingManagementFormPageState
       coveredWeeklyController,
       coveredMonthlyController,
     ]);
+    for (final entry in parking.categoryPricing.entries) {
+      if (specialPricing.containsKey(entry.key)) _fillPricing(entry.value, specialPricing[entry.key]!);
+    }
   }
 
   @override
@@ -352,6 +364,7 @@ class _ParkingManagementFormPageState
       coveredMonthlyController,
       serviceNameController,
       servicePriceController,
+      ...specialPricing.values.expand((items) => items),
     ]) {
       controller.dispose();
     }
@@ -404,7 +417,7 @@ class _ParkingManagementFormPageState
                     child: _field(totalController, 'Total', readOnly: true),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: _field(availableController, 'Disponíveis')),
+                  Expanded(child: _field(availableController, 'Disponíveis', readOnly: true)),
                 ],
               ),
               _field(arrivalToleranceController, 'Tolerância de chegada (min)'),
@@ -414,6 +427,14 @@ class _ParkingManagementFormPageState
                   const SizedBox(width: 10),
                   Expanded(child: _field(uncoveredController, 'Descobertas')),
                 ],
+              ),
+              for (final entry in {'vip': 'VIP', 'large': 'Carro grande', 'bus': 'Ônibus', 'pickup': 'Picape'}.entries)
+                if (_countFor(entry.key) > 0)
+                  _PricingSection(title: 'Tarifas ${entry.value}', controllers: specialPricing[entry.key]!),
+              OutlinedButton.icon(
+                onPressed: () => _showMessage('Para criar um tipo especial, informe quantidade acima de zero e suas tarifas.'),
+                icon: const Icon(Icons.add),
+                label: const Text('Adicionar tipo especial'),
               ),
               const SizedBox(height: 4),
               Text(
@@ -700,8 +721,19 @@ class _ParkingManagementFormPageState
         coveredMonthlyController,
       ]),
       services: services,
+      categoryPricing: {
+        for (final entry in specialPricing.entries)
+          if (_countFor(entry.key) > 0) entry.key: _pricing(entry.value),
+      },
     );
   }
+
+  int _countFor(String key) => switch (key) {
+    'vip' => _int(vipController, 'VIP'),
+    'large' => _int(largeController, 'Carro grande'),
+    'bus' => _int(busController, 'Ônibus'),
+    _ => _int(pickupController, 'Picape'),
+  };
 
   ParkingAreaPricingModel _pricing(List<TextEditingController> controllers) {
     if (controllers.any((controller) => _double(controller, 'Tarifa') < 0)) {
