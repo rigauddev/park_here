@@ -10,9 +10,7 @@ depends_on = None
 def upgrade():
     op.add_column("users", sa.Column("cpf", sa.String(length=14), nullable=True))
     op.create_unique_constraint("uq_users_cpf", "users", ["cpf"])
-    op.add_column("parkings", sa.Column("blocked_spots", sa.Text(), nullable=True))
 
 def downgrade():
     op.drop_constraint("uq_users_cpf", "users", type_="unique")
-    op.drop_column("parkings", "blocked_spots")
     op.drop_column("users", "cpf")
