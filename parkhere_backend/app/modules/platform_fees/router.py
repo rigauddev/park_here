@@ -6,8 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.platform_fees.models import PlatformFee
-from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
+from app.modules.tenants.models.tenant_models import Tenant
+from app.modules.parkings.models import Parking
+from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix='/admin/platform-fees', tags=['Platform fees'])
 
@@ -35,6 +37,28 @@ async def list_platform_fees(
     _ensure_admin(current_user)
     rows = (await db.scalars(select(PlatformFee).order_by(PlatformFee.service_type))).all()
     return [_fee_payload(row) for row in rows]
+
+
+@router.get('/overview')
+async def admin_overview(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    tenants = (await db.scalars(select(Tenant))).all()
+    parkings = (await db.scalars(select(Parking))).all()
+    users = (await db.scalars(select(User))).all()
+    return {
+        'companies': len(tenants),
+        'parkings': len(parkings),
+        'active_parkings': sum(1 for item in parkings if item.is_active),
+        'users': len(users),
+        'plans': ['free', 'pro'],
+        'plan_rules': {
+            'free': {'parkings': 1, 'operators': 2, 'financial_reports': False},
+            'pro': {'parkings': 'custom', 'operators': 'custom', 'financial_reports': True},
+        },
+    }
 
 
 @router.put('/{service_type}')

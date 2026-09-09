@@ -15,6 +15,7 @@ class AdminManagementPage extends ConsumerStatefulWidget {
 class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   final _api = ApiService();
   List<Map<String, dynamic>> _fees = [];
+  Map<String, dynamic> _overview = {};
   bool _loading = true;
 
   @override
@@ -28,7 +29,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     if (token == null) return;
     try {
       final rows = await _api.getAuthorized('/admin/platform-fees', token);
-      if (mounted) setState(() => _fees = rows.cast<Map<String, dynamic>>());
+      final overview = await _api.getAuthorizedMap('/admin/platform-fees/overview', token);
+      if (mounted) {
+        setState(() {
+          _fees = rows.cast<Map<String, dynamic>>();
+          _overview = overview;
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -54,6 +61,14 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                       ),
                     ),
                   ),
+                  if (_overview.isNotEmpty)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.insights),
+                        title: Text('${_overview['companies']} empresas · ${_overview['parkings']} estacionamentos'),
+                        subtitle: Text('${_overview['active_parkings']} unidades ativas · ${_overview['users']} usuários'),
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   const Text(
                     'Taxas globais',
@@ -71,11 +86,44 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                               ? Icons.check_circle
                               : Icons.pause_circle,
                         ),
+                        onTap: () => _editFee(fee),
                       ),
                     ),
                 ],
               ),
             ),
     );
+  }
+
+  Future<void> _editFee(Map<String, dynamic> fee) async {
+    final percentage = TextEditingController(text: '${fee['percentage'] ?? 0}');
+    final fixed = TextEditingController(text: '${fee['fixed_amount'] ?? 0}');
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Taxa: ${fee['service_type']}'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: percentage, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Percentual (%)')),
+          TextField(controller: fixed, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Valor fixo (R\$)')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Salvar')),
+        ],
+      ),
+    );
+    if (result != true) return;
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    await _api.putAuthorized('/admin/platform-fees/${fee['service_type']}', {
+      'service_type': fee['service_type'],
+      'fee_mode': fee['fee_mode'] ?? 'hybrid',
+      'percentage': double.tryParse(percentage.text.replaceAll(',', '.')) ?? 0,
+      'fixed_amount': double.tryParse(fixed.text.replaceAll(',', '.')) ?? 0,
+      'min_fee': fee['min_fee'] ?? 0,
+      'max_fee': fee['max_fee'],
+      'is_active': fee['is_active'] ?? true,
+    }, token);
+    await _load();
   }
 }

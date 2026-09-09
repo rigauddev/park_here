@@ -82,12 +82,30 @@ class _PartnerParkingMapPageState extends ConsumerState<PartnerParkingMapPage> {
             );
           }
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
-            children: [
-              for (final layout in items)
-                _ParkingLayoutPanel(layout: layout, showFinancialSummary: true),
-            ],
+          return DefaultTabController(
+            length: items.length,
+            child: Column(
+              children: [
+                Material(
+                  color: Colors.white,
+                  child: TabBar(
+                    isScrollable: true,
+                    tabs: [for (final layout in items) Tab(text: layout.name)],
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      for (final layout in items)
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
+                          child: _ParkingLayoutPanel(layout: layout, showFinancialSummary: true),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           );
         },
       ),

@@ -53,6 +53,8 @@ pagamentos e armazenamento seguro no backend.
 O administrador do sistema gerencia essas regras com `GET /admin/platform-fees`
 e `PUT /admin/platform-fees/{service_type}`. Esses endpoints exigem o papel
 `SUPER_ADMIN`; gestores de estacionamento e guias não alteram taxas globais.
+`GET /admin/platform-fees/overview` apresenta indicadores das empresas,
+unidades ativas, usuários e regras dos planos Free/Pro para o painel do admin.
 
 Guias parceiros usam `GET/POST /partners/guide/services` para cadastrar seus
 próprios serviços turísticos, separados das afiliações a estacionamentos.
