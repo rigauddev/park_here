@@ -1,4 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/local_storage_service.dart';
 
 import '../../parking_search/models/payment_plan_enum.dart';
 import '../models/reservation_enum.dart';
@@ -12,7 +16,31 @@ final reservationsProvider =
 class ReservationsNotifier extends AsyncNotifier<List<ReservationModel>> {
   @override
   Future<List<ReservationModel>> build() async {
-    return [];
+    final tokens = await LocalStorageService().getTokens();
+    final token = tokens['access'];
+    if (token != null) {
+      try {
+        final remote = await ApiService().getAuthorized('/reservations', token);
+        final reservations = remote
+            .map((item) => ReservationModel.fromApi(item as Map<String, dynamic>))
+            .toList();
+        await _persist(reservations);
+        return _applyBusinessRules(reservations);
+      } catch (_) {
+        // Keep the local cache available while the API is temporarily offline.
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('parkhere_reservations');
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final values = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      return _applyBusinessRules(
+        values.map(ReservationModel.fromJson).toList(),
+      );
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> createReservation(ReservationModel reservation) async {
@@ -21,6 +49,7 @@ class ReservationsNotifier extends AsyncNotifier<List<ReservationModel>> {
     final updated = _applyBusinessRules([...current, reservation]);
 
     state = AsyncData(updated);
+    await _persist(updated);
   }
 
   Future<void> finishReservation(String id, double finalValue) async {
@@ -38,6 +67,7 @@ class ReservationsNotifier extends AsyncNotifier<List<ReservationModel>> {
     }).toList();
 
     state = AsyncData(_applyBusinessRules(updated));
+    await _persist(state.value ?? []);
   }
 
   Future<void> rateReservation({
@@ -60,6 +90,17 @@ class ReservationsNotifier extends AsyncNotifier<List<ReservationModel>> {
     }).toList();
 
     state = AsyncData(_applyBusinessRules(updated));
+    await _persist(state.value ?? []);
+  }
+
+  Future<void> _persist(List<ReservationModel> reservations) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'parkhere_reservations',
+      jsonEncode(
+        reservations.map((reservation) => reservation.toJson()).toList(),
+      ),
+    );
   }
 
   // 🔥 REGRA CENTRALIZADA

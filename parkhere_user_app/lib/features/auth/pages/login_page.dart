@@ -2,10 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/widgets/main_navigation.dart';
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
+import '../../../core/i18n/app_language.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
 
@@ -26,8 +27,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final mfaController = TextEditingController();
 
   bool isLoading = false;
+  bool showPassword = false;
   LoginLanguage language = LoginLanguage.ptBr;
   LoginMode loginMode = LoginMode.customer;
+  String? loginError;
 
   bool get isPortuguese => language == LoginLanguage.ptBr;
 
@@ -41,6 +44,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    language = locale.languageCode == 'en'
+        ? LoginLanguage.en
+        : LoginLanguage.ptBr;
     final authState = ref.watch(authProvider);
     final isMfaStep = authState.status == AuthStatus.mfaRequired;
     final displayedLoginMode = isMfaStep
@@ -49,16 +56,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               : LoginMode.customer)
         : loginMode;
 
-    ref.listen<AuthState>(authProvider, (previous, next) {
-      if (next.status == AuthStatus.authenticated) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const MainNavigation()),
-        );
-      }
-    });
-
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeOutCubic,
@@ -97,42 +96,48 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   padding: const EdgeInsets.all(18),
                   child: _LanguageFlagButton(
                     language: language,
-                    onChanged: (value) => setState(() => language = value),
+                    onChanged: (value) {
+                      setState(() => language = value);
+                      ref
+                          .read(appLanguageProvider.notifier)
+                          .setLanguage(
+                            value == LoginLanguage.en
+                                ? const Locale('en')
+                                : const Locale('pt', 'BR'),
+                          );
+                    },
                   ),
                 ),
               ),
             ),
             Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 72,
-                ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
+                  constraints: const BoxConstraints(maxWidth: 390),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.95),
-                      borderRadius: BorderRadius.circular(28),
+                      borderRadius: BorderRadius.circular(24),
                       boxShadow: const [
                         BoxShadow(
-                          blurRadius: 34,
-                          offset: Offset(0, 18),
+                          blurRadius: 28,
+                          offset: Offset(0, 14),
                           color: Color(0x33000000),
                         ),
                       ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(26),
+                      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const _ParkingLogoMark(),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 8),
                           const Text(
                             "ParkHere",
                             style: TextStyle(
-                              fontSize: 30,
+                              fontSize: 26,
                               fontWeight: FontWeight.w800,
                               color: Color(0xFF102657),
                             ),
@@ -148,28 +153,50 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(height: 22),
+                          const SizedBox(height: 16),
                           _AccessModeSelector(
                             loginMode: displayedLoginMode,
                             isPortuguese: isPortuguese,
                             enabled: !isMfaStep,
                             onChanged: (mode) {
-                              setState(() => loginMode = mode);
+                              ref.read(authProvider.notifier).resetLoginFlow();
+                              setState(() {
+                                loginMode = mode;
+                                loginError = null;
+                                mfaController.clear();
+                              });
                             },
                           ),
-                          const SizedBox(height: 22),
+                          const SizedBox(height: 16),
                           if (authState.status != AuthStatus.mfaRequired) ...[
                             _textField(
                               controller: emailController,
                               label: isPortuguese ? "E-mail" : "Email",
                               icon: Icons.mail_outline,
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 10),
                             _textField(
                               controller: passwordController,
                               label: isPortuguese ? "Senha" : "Password",
                               icon: Icons.lock_outline,
-                              obscureText: true,
+                              obscureText: !showPassword,
+                              suffixIcon: IconButton(
+                                tooltip: showPassword
+                                    ? (isPortuguese
+                                          ? 'Ocultar senha'
+                                          : 'Hide password')
+                                    : (isPortuguese
+                                          ? 'Mostrar senha'
+                                          : 'Show password'),
+                                onPressed: () => setState(
+                                  () => showPassword = !showPassword,
+                                ),
+                                icon: Icon(
+                                  showPassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                ),
+                              ),
                             ),
                           ],
                           if (authState.status == AuthStatus.mfaRequired) ...[
@@ -191,12 +218,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               icon: Icons.verified_user_outlined,
                             ),
                           ],
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.all(14),
                                 backgroundColor: const Color(0xFF102657),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
@@ -210,9 +237,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                           ? (isPortuguese
                                                 ? "Verificar código"
                                                 : "Verify code")
-                                          : (isPortuguese
-                                                ? "Entrar"
-                                                : "Sign in"),
+                                          : _loginButtonLabel(isPortuguese),
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
@@ -220,7 +245,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                     ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 6),
                           TextButton(
                             onPressed:
                                 authState.status == AuthStatus.mfaRequired
@@ -278,11 +303,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
               ),
             ),
-            SafeArea(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
+            if (loginError != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(child: _LoginErrorBanner(message: loginError!)),
+                ),
+              ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 12,
+              child: SafeArea(
+                top: false,
+                child: Center(
                   child: _RigaudTechFooter(isPortuguese: isPortuguese),
                 ),
               ),
@@ -298,6 +331,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     required String label,
     required IconData icon,
     bool obscureText = false,
+    Widget? suffixIcon,
   }) {
     return TextField(
       controller: controller,
@@ -305,6 +339,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: const Color(0xFF169FC4)),
+        suffixIcon: suffixIcon,
         filled: true,
         fillColor: const Color(0xFFF7FBFD),
         border: OutlineInputBorder(
@@ -322,7 +357,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Future<void> _submitLogin() async {
     final authState = ref.read(authProvider);
 
-    setState(() => isLoading = true);
+    setState(() {
+      isLoading = true;
+      loginError = null;
+    });
 
     try {
       if (authState.status != AuthStatus.mfaRequired) {
@@ -355,9 +393,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (e) {
       if (!mounted) return;
       final message = _authErrorMessage(e);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      setState(() => loginError = message);
+      Future<void>.delayed(const Duration(seconds: 4), () {
+        if (!mounted || loginError != message) return;
+        setState(() => loginError = null);
+      });
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -372,6 +412,59 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return rawMessage;
   }
+
+  String _loginButtonLabel(bool isPortuguese) {
+    if (loginMode == LoginMode.partner) {
+      return isPortuguese ? "Entrar como parceiro" : "Sign in as partner";
+    }
+
+    return isPortuguese ? "Entrar como cliente" : "Sign in as customer";
+  }
+}
+
+class _LoginErrorBanner extends StatelessWidget {
+  final String message;
+
+  const _LoginErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEBEE),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFD32F2F)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Color(0xFFD32F2F)),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Color(0xFFD32F2F),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _LanguageFlagButton extends StatelessWidget {
@@ -385,42 +478,56 @@ class _LanguageFlagButton extends StatelessWidget {
     final label = language == LoginLanguage.ptBr ? "PT-BR" : "EN";
     final flag = language == LoginLanguage.ptBr ? "🇧🇷" : "🇺🇸";
 
-    return Tooltip(
-      message: "Idioma / Language",
-      child: InkWell(
+    return PopupMenuButton<LoginLanguage>(
+      tooltip: "Idioma / Language",
+      initialValue: language,
+      onSelected: onChanged,
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: LoginLanguage.ptBr,
+          child: Row(
+            children: [
+              Text('🇧🇷', style: TextStyle(fontSize: 22)),
+              SizedBox(width: 8),
+              Text('Português Brasil'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: LoginLanguage.en,
+          child: Row(
+            children: [
+              Text('🇺🇸', style: TextStyle(fontSize: 22)),
+              SizedBox(width: 8),
+              Text('English'),
+            ],
+          ),
+        ),
+      ],
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          onChanged(
-            language == LoginLanguage.ptBr
-                ? LoginLanguage.en
-                : LoginLanguage.ptBr,
-          );
-        },
-        child: Material(
-          color: Colors.white.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(flag, style: const TextStyle(fontSize: 22)),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Color(0xFF102657),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.keyboard_arrow_down,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(flag, style: const TextStyle(fontSize: 22)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
                   color: Color(0xFF102657),
-                  size: 18,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.keyboard_arrow_down,
+                color: Color(0xFF102657),
+                size: 18,
+              ),
+            ],
           ),
         ),
       ),
@@ -435,38 +542,47 @@ class _RigaudTechFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              isPortuguese ? "Desenvolvido por" : "Developed by",
-              style: const TextStyle(
-                color: Color(0xFF55708F),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: _openRigaudTech,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.86),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isPortuguese ? "Desenvolvido por" : "Developed by",
+                style: const TextStyle(
+                  color: Color(0xFF55708F),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(width: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.asset(
-                "assets/branding/logo_rigaud_tech_clean.png",
-                width: 72,
-                height: 20,
-                fit: BoxFit.contain,
+              const SizedBox(width: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.asset(
+                  "assets/branding/logo_rigaud_tech_clean.png",
+                  width: 72,
+                  height: 20,
+                  fit: BoxFit.contain,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Future<void> _openRigaudTech() async {
+    final uri = Uri.parse('https://rigaudtech.com.br');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
 
@@ -616,8 +732,8 @@ class _ParkingLogoMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 86,
-      height: 86,
+      width: 68,
+      height: 68,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
         gradient: LinearGradient(
@@ -627,11 +743,11 @@ class _ParkingLogoMark extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: const [
-          Icon(Icons.local_parking, size: 50, color: Colors.white),
+          Icon(Icons.local_parking, size: 40, color: Colors.white),
           Positioned(
-            right: 17,
-            bottom: 18,
-            child: Icon(Icons.location_on, size: 22, color: Color(0xFF102657)),
+            right: 12,
+            bottom: 13,
+            child: Icon(Icons.location_on, size: 18, color: Color(0xFF102657)),
           ),
         ],
       ),

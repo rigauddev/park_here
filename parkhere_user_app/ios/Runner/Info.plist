@@ -28,6 +28,13 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Precisamos da sua localização para encontrar estacionamentos próximos.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Precisamos acessar a API local de desenvolvimento do ParkHere na mesma rede.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

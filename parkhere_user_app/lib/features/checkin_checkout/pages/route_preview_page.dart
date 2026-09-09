@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import '../../../core/services/location_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
-import '../../checkin_checkout/pages/checkin_page.dart';
 
 class RoutePreviewPage extends StatefulWidget {
   final PreCheckinModel preCheckin;
+  final Future<void> Function()? onRouteSelected;
 
-  const RoutePreviewPage({super.key, required this.preCheckin});
+  const RoutePreviewPage({
+    super.key,
+    required this.preCheckin,
+    this.onRouteSelected,
+  });
 
   @override
   State<RoutePreviewPage> createState() => _RoutePreviewPageState();
@@ -33,76 +36,28 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
 
             const SizedBox(height: 20),
 
-            const Text("Deseja abrir a rota em qual aplicativo?"),
-
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.route_outlined),
+                title: const Text('Resumo da pré-reserva'),
+                subtitle: Text(
+                  '${widget.preCheckin.plan.name.toUpperCase()} • R\$ ${widget.preCheckin.total.toStringAsFixed(2)}',
+                ),
+              ),
+            ),
             const SizedBox(height: 15),
-
-            ListTile(
-              leading: const Icon(Icons.map),
-              title: const Text("Google Maps"),
-              onTap: () {
-                // abrir URL futura
-              },
-            ),
-
-            ListTile(
-              leading: const Icon(Icons.map_outlined),
-              title: const Text("Waze"),
-              onTap: () {},
-            ),
-
-            ListTile(
-              leading: const Icon(Icons.public),
-              title: const Text("OpenStreetMap"),
-              onTap: () {},
+            const Text(
+              'Ao iniciar, a pré-reserva será enviada ao estacionamento com o tempo estimado da rota + 5 minutos.',
+              textAlign: TextAlign.center,
             ),
 
             const Spacer(),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF169FC4),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                ),
-                onPressed: _loading ? null : _validateAndGoToCheckin,
-                child: _loading
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        "Fazer check-in",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          CheckinPage(preCheckin: widget.preCheckin),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.lock_clock),
-                label: const Text("Check-in antecipado e pagamento"),
+              child: FilledButton.icon(
+                onPressed: _loading ? null : _openMapChooser,
+                icon: const Icon(Icons.navigation_outlined),
+                label: const Text('Iniciar rota'),
               ),
             ),
           ],
@@ -111,65 +66,72 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     );
   }
 
-  Future<void> _validateAndGoToCheckin() async {
+  Future<void> _selectRoute(String appName) async {
+    if (_loading) return;
+    setState(() => _loading = true);
     try {
-      setState(() => _loading = true);
-
-      final locationService = LocationService();
-
-      final userPosition = Position(
-        latitude: -12.9704,
-        longitude: -38.5124,
-        timestamp: DateTime.now(),
-        accuracy: 0,
-        altitude: 0,
-        heading: 0,
-        speed: 0,
-        speedAccuracy: 0,
-        altitudeAccuracy: 0,
-        headingAccuracy: 0,
-      );
-
-      final latitude = widget.preCheckin.parking.lat;
-      final longitude = widget.preCheckin.parking.lng;
-
-      final distance = locationService.calculateDistance(
-        startLat: userPosition.latitude,
-        startLng: userPosition.longitude,
-        endLat: latitude,
-        endLng: longitude,
-      );
-
-      const allowedRadius = 30.0;
-
-      if (distance > allowedRadius) {
-        throw CheckinCheckoutError(
-          "Você precisa estar no estacionamento para realizar o check-in.\nDistância atual: ${distance.toStringAsFixed(1)}m",
-        );
-      }
-
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CheckinPage(preCheckin: widget.preCheckin),
+      await widget.onRouteSelected?.call();
+      final destination =
+          '${widget.preCheckin.parking.lat},${widget.preCheckin.parking.lng}';
+      final uri = switch (appName) {
+        'Waze' => Uri.parse('https://waze.com/ul?ll=$destination&navigate=yes'),
+        'OpenStreetMap' => Uri.parse(
+          'https://www.openstreetmap.org/directions?to=$destination',
         ),
-      );
-    } catch (e) {
-      _showError(
-        e is CheckinCheckoutError ? e.message : "Erro ao validar localização.",
-      );
+        _ => Uri.parse(
+          'https://www.google.com/maps/dir/?api=1&destination=$destination',
+        ),
+      };
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Rota iniciada no $appName.')));
+      Navigator.pop(context);
+    } catch (error) {
+      _showError('Nao foi possivel iniciar a rota: $error');
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
+  Future<void> _openMapChooser() async {
+    final app = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            const ListTile(title: Text('Escolha seu aplicativo de mapas')),
+            for (final item in const [
+              ('Google Maps', Icons.map),
+              ('Waze', Icons.map_outlined),
+              ('OpenStreetMap', Icons.public),
+            ])
+              ListTile(
+                leading: Icon(item.$2),
+                title: Text(item.$1),
+                onTap: () => Navigator.pop(context, item.$1),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (app != null) await _selectRoute(app);
+  }
+
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(backgroundColor: Colors.red, content: Text(message)),
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Não foi possível iniciar a rota'),
+        content: Text(message, textAlign: TextAlign.center),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -22,10 +22,7 @@ class ParkingSessionModel {
     this.finalTotal,
   });
 
-  ParkingSessionModel copyWith({
-    DateTime? checkOutTime,
-    double? finalTotal,
-  }) {
+  ParkingSessionModel copyWith({DateTime? checkOutTime, double? finalTotal}) {
     return ParkingSessionModel(
       sessionId: sessionId,
       parkingId: parkingId,
@@ -37,4 +34,3 @@ class ParkingSessionModel {
     );
   }
 }
-

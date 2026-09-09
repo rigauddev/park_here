@@ -2,10 +2,16 @@
 
 ## Status Atual
 
+O plano base inclui a visão operacional, o caixa e o relatório básico de entradas,
+saídas, recebimentos e fechamento do turno. O módulo Financeiro Pro é um
+recurso contratado separadamente e fica reservado para análises avançadas,
+repasses, taxas, comissões, conciliação e exportações financeiras.
+
 Hoje a gestao existe em dois blocos diferentes:
 
 - `tenants` representam estabelecimentos/contas parceiras.
-- `PARKING_ADMIN` representa dono/admin de estacionamento.
+- `PARTNER_MANAGER` representa dono/gestor de um estabelecimento parceiro.
+- `PARKING_ADMIN` fica como papel legado temporario para dados antigos e deve ser migrado para `PARTNER_MANAGER`.
 - `SUPER_ADMIN` representa a gestao interna ParkHere/Rigaud Tech.
 - `/auth/register-parking` cadastra um estacionamento inicial.
 - `parkings` e `parking_services` ja existem para alimentar o app do motorista.
@@ -107,7 +113,7 @@ No MVP, o codigo de guia e o vinculo da reserva podem entrar antes do pagamento 
 
 Primeiro bloco implementavel da fase de gestao:
 
-- Parceiro com papel `PARKING_ADMIN` entra na area de gestao.
+- Parceiro com papel `PARTNER_MANAGER` entra na area de gestao do proprio estabelecimento.
 - Parceiro lista apenas estacionamentos do proprio `tenant_id`.
 - Parceiro cadastra/edita nome, endereco, latitude, longitude e status ativo.
 - Parceiro informa se possui portaria 24h.
@@ -117,6 +123,9 @@ Primeiro bloco implementavel da fase de gestao:
 - Parceiro informa quantidade total de vagas.
 - Parceiro separa vagas cobertas e descobertas.
 - Soma de vagas cobertas e descobertas deve ser igual ao total.
+- Parceiro define a quantidade de vagas especiais: VIP, carro grande, onibus e picape.
+- A soma das vagas especiais nao pode ser maior que a quantidade total de vagas.
+- O mapa de vagas deve classificar as vagas a partir dessa configuracao do estacionamento.
 - Vagas disponiveis nao podem ser negativas nem maiores que o total.
 - Parceiro cadastra tarifas para area descoberta: primeira hora, hora adicional, diaria, semanal e mensal.
 - Parceiro cadastra tarifas para area coberta: primeira hora, hora adicional, diaria, semanal e mensal.
@@ -140,11 +149,11 @@ Primeiro bloco implementavel da fase de gestao:
 
 Todos exigem bearer token de parceiro/admin e isolamento por `tenant_id`. No MVP, `SUPER_ADMIN` pode usar endpoints tecnicos para suporte, mas a interface de admin do sistema deve ficar separada da interface do parceiro.
 
-`GET /partners/operators` pode ser usado por gestor e operador do tenant para listar equipe. `POST /partners/operators` exige `PARKING_ADMIN`, aceite de termos, respeita o limite gratuito de 2 operadores e cria o operador sempre no mesmo `tenant_id` do parceiro gestor.
+`GET /partners/operators` pode ser usado por gestor e operador do tenant para listar equipe. `POST /partners/operators` exige `PARTNER_MANAGER`, aceite de termos, respeita o limite gratuito de 2 operadores e cria o operador sempre no mesmo `tenant_id` do parceiro gestor.
 
 ## Permissoes Do Parceiro
 
-Dono/gestor (`PARKING_ADMIN`):
+Dono/gestor (`PARTNER_MANAGER`):
 
 - Gerencia dados do estacionamento.
 - Gerencia tarifas e servicos.
@@ -157,7 +166,14 @@ Operador (`OPERATOR`):
 - Pertence ao estabelecimento do parceiro que o criou.
 - Acessa somente as telas operacionais liberadas por permissao.
 - Permissoes padrao: ver reservas, ver patio de vagas, criar reserva operacional, cancelar reserva criada por ele, receber pagamento, fazer check-in e checkout das reservas criadas por ele.
+- Operador so pode cancelar reserva/pre-reserva propria antes do check-in; reserva com check-in exige gestor do parceiro.
 - Pode receber pagamento e fazer check-in/checkout manual quando o fluxo operacional permitir.
+- Funcao caixa operacional permite receber dinheiro/Pix no mapa de vagas ou nos detalhes da reserva.
+- Modalidade por hora deve ficar para pagamento no checkout, pois o valor final depende do tempo real de permanencia.
+- Checkout por hora tem 15 minutos de tolerancia apos o periodo contratado.
+- Se o cliente ultrapassar a tolerancia, o checkout fica bloqueado ate pagar somente o excedente calculado.
+- O excedente e registrado como pagamento separado com `purpose=checkout_excess`, preparado para integracao Mercado Pago.
+- Diaria/semanal/mensal podem permitir pagar agora ou pagar na volta conforme decisao operacional do estabelecimento.
 - Nao altera tarifas, dados cadastrais, financeiro, taxas ou usuarios.
 - Nao deve ver menu de cliente, veiculos, carteira ou servicos publicos.
 
@@ -182,6 +198,13 @@ MVP:
 
 - Exibir uma grade interativa 2D com vagas livres, pre-reservadas e ocupadas.
 - Ao tocar em uma vaga com reserva, mostrar status, pagamento, placa, veiculo e valor.
+- Ao tocar em uma vaga livre, abrir criacao de pre-reserva ou reserva operacional vinculada ao codigo da vaga.
+- Vagas devem mostrar tipo: descoberta, coberta, VIP, carro grande, onibus ou picape, conforme configuracao cadastrada pelo parceiro.
+- Reserva criada por operador/parceiro usa previsao manual de chegada informada no atendimento.
+- Cards financeiros do mapa devem ter tooltip explicando o indicador, aberto apenas pelo icone de informacao.
+- Mapa deve exibir indicador de reservas canceladas com quantidade e valor, sem ocupar vagas.
+- Card de vaga com pre-reserva deve mostrar quanto tempo falta para expirar.
+- Card de vaga ocupada deve mostrar tempo em permanencia e destacar excedente quando passar da tolerancia.
 - Gerar o mapa com base em reservas e capacidade do estacionamento enquanto ainda nao existe modelagem de vaga individual.
 
 Roadmap:
@@ -280,7 +303,7 @@ MVP atual:
 
 Variaveis previstas:
 
-- `PAYMENT_PROVIDER=mercado_pago`
+- `PAYMENT_PROVIDER=mock` para simulacao local; Mercado Pago real ainda desabilitado
 - `MERCADO_PAGO_ACCESS_TOKEN`
 - `MERCADO_PAGO_PUBLIC_KEY`
 - `MERCADO_PAGO_WEBHOOK_SECRET`
@@ -290,9 +313,10 @@ Variaveis previstas:
 ```json
 {
   "name": "ParkHere Centro",
-  "address": "Av. Sete de Setembro, Salvador",
-  "lat": -12.9704,
-  "lng": -38.5124,
+  "address": "Rua Conselheiro Ferraz, Centro, Valenca - BA",
+  "city": "Valenca",
+  "lat": -13.3703,
+  "lng": -39.0731,
   "total_spots": 60,
   "covered_spots": 24,
   "uncovered_spots": 36,
@@ -407,3 +431,12 @@ Fluxo:
 7. Criar divulgacao simples de hoteis/restaurantes/turismo.
 8. Criar paginas internas de servico por parceiro.
 9. Habilitar contratacao direta com taxa do app.
+
+
+### Validacao do catalogo — 06/09/2026
+
+Cada estacionamento aceita um servico por codigo. Para trocar preco/nome no formulario
+atual, remover a entrada e adicionar novamente antes de salvar. Reservas existentes
+mantem o snapshot contratado. Valores negativos e nao finitos sao rejeitados.
+A chegada manual no minuto atual permanece hoje; horarios anteriores indicam o dia seguinte.
+A simulacao de pagamento e identificada no retorno da API e na mensagem do app.

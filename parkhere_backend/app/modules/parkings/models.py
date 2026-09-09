@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.base import BaseModel
@@ -10,13 +10,20 @@ class Parking(BaseModel):
     tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False)
     name = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
+    city = Column(String(120), nullable=False, default="Valenca")
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
     rating = Column(Float, default=5.0)
+    arrival_tolerance_minutes = Column(Integer, nullable=False, default=5)
     total_spots = Column(Integer, nullable=False, default=0)
     available_spots = Column(Integer, nullable=False, default=0)
     covered_spots = Column(Integer, nullable=False, default=0)
     uncovered_spots = Column(Integer, nullable=False, default=0)
+    vip_spots = Column(Integer, nullable=False, default=0)
+    large_spots = Column(Integer, nullable=False, default=0)
+    bus_spots = Column(Integer, nullable=False, default=0)
+    pickup_spots = Column(Integer, nullable=False, default=0)
+    moto_home_spots = Column(Integer, nullable=False, default=0)
     first_hour_price = Column(Float, nullable=False, default=0)
     additional_hour_price = Column(Float, nullable=False, default=0)
     daily_price = Column(Float, nullable=False, default=0)
@@ -39,6 +46,8 @@ class Parking(BaseModel):
     wants_automatic_access = Column(Boolean, default=False)
     has_automatic_access = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    guide_commission_terms = Column(Text, nullable=True)
+    category_pricing = Column(Text, nullable=True)
 
     services = relationship("ParkingService", back_populates="parking")
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../checkin_checkout/pages/checkout_page.dart';
+import '../../payments/pages/payment_page.dart';
 import '../models/reservation_enum.dart';
 import '../models/reservation_model.dart';
 import '../providers/reservation_provider.dart';
@@ -86,8 +87,40 @@ class _ReservationDetailsPageState
                 "Hora adicional",
                 "R\$ ${reservation.additionalHourPrice.toStringAsFixed(2)}",
               ),
+              _DetailRow(
+                "Taxa administrativa do app",
+                "R\$ ${reservation.preCheckin.platformFeeAmount.toStringAsFixed(2)}",
+              ),
             ],
           ),
+          if (reservation.status == ReservationStatus.open &&
+              reservation.id.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Card(
+                child: ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: const Text('Garantir reserva antecipadamente'),
+                  subtitle: Text(
+                    'Pague agora R\$ ${reservation.estimatedValue.toStringAsFixed(2)}',
+                  ),
+                  trailing: FilledButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PaymentPage(
+                          amount: reservation.estimatedValue,
+                          reservationId: reservation.id,
+                          payNow: true,
+                          onPaymentSuccess: () {},
+                        ),
+                      ),
+                    ),
+                    child: const Text('Pagar'),
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 14),
           _Section(
             title: "Servicos adicionais",
@@ -143,7 +176,8 @@ class _ReservationDetailsPageState
           ),
         ],
       ),
-      bottomNavigationBar: reservation.status == ReservationStatus.open
+      bottomNavigationBar:
+          reservation.status == ReservationStatus.open && reservation.checkedIn
           ? Padding(
               padding: const EdgeInsets.all(20),
               child: FilledButton.icon(

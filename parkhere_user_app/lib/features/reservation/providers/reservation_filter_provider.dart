@@ -6,7 +6,6 @@ List<ReservationModel> applyFilters(
   ReservationFilter filter,
 ) {
   return list.where((r) {
-
     if (filter.status != null && r.status != filter.status) {
       return false;
     }
@@ -16,19 +15,17 @@ List<ReservationModel> applyFilters(
     }
 
     if (filter.parkingName != null &&
-        !r.parkingName
-            .toLowerCase()
-            .contains(filter.parkingName!.toLowerCase())) {
+        !r.parkingName.toLowerCase().contains(
+          filter.parkingName!.toLowerCase(),
+        )) {
       return false;
     }
 
-    if (filter.startDate != null &&
-        r.checkinAt.isBefore(filter.startDate!)) {
+    if (filter.startDate != null && r.checkinAt.isBefore(filter.startDate!)) {
       return false;
     }
 
-    if (filter.endDate != null &&
-        r.checkinAt.isAfter(filter.endDate!)) {
+    if (filter.endDate != null && r.checkinAt.isAfter(filter.endDate!)) {
       return false;
     }
 

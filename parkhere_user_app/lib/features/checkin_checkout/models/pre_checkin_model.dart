@@ -15,10 +15,10 @@ class PreCheckinModel {
   final double userLocationLng;
 
   final double total;
-  final String? reservationId;
+  String? reservationId;
   final double platformFeeAmount;
 
-  const PreCheckinModel({
+  PreCheckinModel({
     required this.parking,
     required this.plan,
     required this.carWash,

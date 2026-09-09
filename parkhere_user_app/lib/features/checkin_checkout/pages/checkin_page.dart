@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../reservation/models/reservation_enum.dart';
 import '../../reservation/models/reservation_model.dart';
 import '../../reservation/providers/reservation_provider.dart';
 import '../models/pre_checkin_model.dart';
 import '../../payments/pages/payment_page.dart';
 import '../providers/checkout_privider.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/location_service.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class CheckinPage extends ConsumerStatefulWidget {
   final PreCheckinModel preCheckin;
@@ -22,175 +26,247 @@ class CheckinPage extends ConsumerStatefulWidget {
 }
 
 class _CheckinPageState extends ConsumerState<CheckinPage> {
+  final _picker = ImagePicker();
+  final Map<String, XFile?> _captured = {};
   bool frontPhoto = false;
   bool leftPhoto = false;
   bool rightPhoto = false;
   bool backPhoto = false;
+  bool hasGuideIndication = false;
 
   bool get allPhotosDone => frontPhoto && leftPhoto && rightPhoto && backPhoto;
+
+  Future<void> _capture(String kind, VoidCallback markDone) async {
+    final photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
+    if (photo == null) return;
+    _captured[kind] = photo;
+    markDone();
+    final token = ref.read(authProvider).accessToken;
+    final reservationId = widget.preCheckin.reservationId;
+    if (token != null && reservationId != null) {
+      try {
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/$reservationId/photos?kind=$kind',
+          token,
+          photo.name,
+          await photo.readAsBytes(),
+        );
+      } catch (error) {
+        if (mounted) {
+          await showDialog<void>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Foto não enviada'),
+              content: Text('$error', textAlign: TextAlign.center),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    }
+  }
 
   void _showServiceSummary(BuildContext context) {
     final pre = widget.preCheckin;
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Barra Uber
-              Center(
-                child: Container(
-                  width: 50,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: 15),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade400,
-                    borderRadius: BorderRadius.circular(10),
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              20 + MediaQuery.viewInsetsOf(context).bottom + 90,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Barra Uber
+                Center(
+                  child: Container(
+                    width: 50,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 15),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
-              ),
 
-              Text(
-                "Resumo do Check-in",
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF102657),
-                ),
-              ),
-
-              const SizedBox(height: 15),
-
-              Text(
-                "Estacionamento: ${pre.parking.name}",
-                style: const TextStyle(fontSize: 16),
-              ),
-
-              const SizedBox(height: 10),
-
-              Text(
-                "Plano escolhido: ${pre.plan.name.toUpperCase()}",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF169FC4),
-                ),
-              ),
-
-              if (pre.plan.name == "hourly")
                 Text(
-                  "⏱ Primeira hora: R\$ ${pre.parking.pricing.firstHourPrice}\n"
-                  "➕ Hora adicional: R\$ ${pre.parking.pricing.additionalHourPrice}",
-                  style: const TextStyle(fontSize: 16),
-                )
-              else if (pre.plan.name == "daily")
-                Text(
-                  "Valor: R\$ ${pre.parking.pricing.dailyPrice}",
-                  style: const TextStyle(fontSize: 16),
-                )
-              else if (pre.plan.name == "monthly")
-                Text(
-                  "Valor: R\$ ${pre.parking.pricing.monthlyPrice}",
+                  "Resumo do Check-in",
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    color: Color(0xFF102657),
                   ),
                 ),
 
-              const SizedBox(height: 15),
+                const SizedBox(height: 15),
 
-              const Text(
-                "Serviços adicionais:",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
-              if (!pre.carWash && !pre.tourGuide && !pre.transport)
-                const Text("Nenhum serviço adicional selecionado."),
-
-              if (pre.carWash)
-                _serviceItem(
-                  "Lavagem pintura de veículos R\$${pre.parking.carWashPrice}",
-                ),
-              if (pre.tourGuide)
-                _serviceItem(
-                  "Guia turístico, R\$${pre.parking.tourGuidePrice}",
-                ),
-              if (pre.transport)
-                _serviceItem("Transporte, R\$${pre.parking.transportPrice}"),
-
-              const SizedBox(height: 15),
-
-              const Divider(thickness: 2),
-
-              const SizedBox(height: 15),
-
-              if (pre.plan.name == "hourly")
                 Text(
-                  "Total parcial: R\$ ${pre.total}\n",
-                  // "Desconto: R\$ ${pre.discount}",
+                  "Estacionamento: ${pre.parking.name}",
+                  style: const TextStyle(fontSize: 16),
+                ),
+                if (pre.reservationId != null) ...[
+                  const SizedBox(height: 6),
+                  Text('Código da reserva: ${pre.reservationId}'),
+                ],
+
+                const SizedBox(height: 10),
+
+                Text(
+                  "Plano escolhido: ${pre.plan.name.toUpperCase()}",
                   style: const TextStyle(
-                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF169FC4),
                   ),
                 ),
-              if (pre.plan.name == "hourly")
-                Text(
-                  "O valor será calculado no checkout, de acordo com o tempo estacionado.",
-                  style: const TextStyle(
-                    fontSize: 13,
-                    // color: Color(0xFF169FC4),
+
+                if (pre.plan.name == "hourly")
+                  Text(
+                    "⏱ Primeira hora: R\$ ${pre.parking.pricing.firstHourPrice}\n"
+                    "➕ Hora adicional: R\$ ${pre.parking.pricing.additionalHourPrice}",
+                    style: const TextStyle(fontSize: 16),
+                  )
+                else if (pre.plan.name == "daily")
+                  Text(
+                    "Valor: R\$ ${pre.parking.pricing.dailyPrice}",
+                    style: const TextStyle(fontSize: 16),
+                  )
+                else if (pre.plan.name == "monthly")
+                  Text(
+                    "Valor: R\$ ${pre.parking.pricing.monthlyPrice}",
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+
+                const SizedBox(height: 15),
+
+                const Text(
+                  "Serviços adicionais:",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
 
-              if (pre.plan.name != "hourly")
                 Text(
-                  "Total: R\$ ${pre.total}",
+                  'Valor total: R\$ ${pre.total.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    // color: Color(0xFF169FC4),
                   ),
                 ),
-              const SizedBox(height: 15),
 
-              // Botão Confirmar
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF169FC4),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
+                const SizedBox(height: 10),
+
+                if (!pre.carWash && !pre.tourGuide && !pre.transport)
+                  const Text("Nenhum serviço adicional selecionado."),
+
+                if (pre.carWash)
+                  _serviceItem(
+                    "Lavagem pintura de veículos R\$${pre.parking.carWashPrice}",
                   ),
-                  onPressed: () {
-                    Navigator.pop(context); // fecha bottomsheet
-                    _openPaymentAndConfirmCheckin();
-                  },
+                if (pre.tourGuide)
+                  _serviceItem(
+                    "Guia turístico, R\$${pre.parking.tourGuidePrice}",
+                  ),
+                if (pre.transport)
+                  _serviceItem("Transporte, R\$${pre.parking.transportPrice}"),
 
-                  child: const Text(
-                    "Pagar e confirmar check-in",
-                    style: TextStyle(
-                      fontSize: 16,
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Esta reserva tem indicação de guia?'),
+                  subtitle: const Text(
+                    'A comissão é registrada somente quando houver indicação.',
+                  ),
+                  value: hasGuideIndication,
+                  onChanged: (value) =>
+                      setState(() => hasGuideIndication = value),
+                ),
+
+                const SizedBox(height: 15),
+
+                const Divider(thickness: 2),
+
+                const SizedBox(height: 15),
+
+                if (pre.plan.name == "hourly")
+                  Text(
+                    "Total parcial: R\$ ${pre.total}\n",
+                    // "Desconto: R\$ ${pre.discount}",
+                    style: const TextStyle(
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Color(0xFF169FC4),
+                    ),
+                  ),
+                if (pre.plan.name == "hourly")
+                  Text(
+                    "O valor será calculado no checkout, de acordo com o tempo estacionado.",
+                    style: const TextStyle(
+                      fontSize: 13,
+                      // color: Color(0xFF169FC4),
+                    ),
+                  ),
+
+                if (pre.plan.name != "hourly")
+                  Text(
+                    "Total: R\$ ${pre.total}",
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      // color: Color(0xFF169FC4),
+                    ),
+                  ),
+                const SizedBox(height: 15),
+
+                // Botão Confirmar
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF169FC4),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context); // fecha bottomsheet
+                      _openPaymentAndConfirmCheckin();
+                    },
+
+                    child: const Text(
+                      "Pagar e confirmar check-in",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              const SizedBox(height: 10),
-            ],
+                const SizedBox(height: 10),
+              ],
+            ),
           ),
         );
       },
@@ -235,21 +311,29 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
 
             const SizedBox(height: 15),
 
-            _photoItem("Frontal", frontPhoto, () {
-              setState(() => frontPhoto = true);
-            }),
+            _photoItem(
+              "Frontal",
+              frontPhoto,
+              () => _capture('front', () => setState(() => frontPhoto = true)),
+            ),
 
-            _photoItem("Lateral esquerda", leftPhoto, () {
-              setState(() => leftPhoto = true);
-            }),
+            _photoItem(
+              "Lateral esquerda",
+              leftPhoto,
+              () => _capture('left', () => setState(() => leftPhoto = true)),
+            ),
 
-            _photoItem("Lateral direita", rightPhoto, () {
-              setState(() => rightPhoto = true);
-            }),
+            _photoItem(
+              "Lateral direita",
+              rightPhoto,
+              () => _capture('right', () => setState(() => rightPhoto = true)),
+            ),
 
-            _photoItem("Traseira", backPhoto, () {
-              setState(() => backPhoto = true);
-            }),
+            _photoItem(
+              "Traseira",
+              backPhoto,
+              () => _capture('rear', () => setState(() => backPhoto = true)),
+            ),
 
             const Spacer(),
 
@@ -304,10 +388,11 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
     final pre = widget.preCheckin;
 
     final reservation = ReservationModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: pre.reservationId ?? DateTime.now().millisecondsSinceEpoch.toString(),
       parkingName: pre.parking.name,
       plan: pre.plan,
       status: ReservationStatus.open,
+      checkedIn: true,
       checkinAt: DateTime.now(),
       estimatedValue: pre.total,
       carWash: pre.carWash,
@@ -333,7 +418,8 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
           amount: widget.preCheckin.total,
           reservationId: widget.preCheckin.reservationId,
           payNow: true,
-          onPaymentSuccess: () {
+          onPaymentSuccess: () async {
+            await _confirmBackendCheckin();
             _createReservation();
             ref.read(checkoutProvider.notifier).paymentSuccess();
             if (mounted) {
@@ -343,5 +429,34 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmBackendCheckin() async {
+    final reservationId = widget.preCheckin.reservationId;
+    final token = ref.read(authProvider).accessToken;
+    if (reservationId == null || token == null) return;
+    try {
+      final position = await LocationService().getCurrentLocation();
+      await ApiService().postAuthorized(
+        '/reservations/$reservationId/checkin?latitude=${position.latitude}&longitude=${position.longitude}',
+        {},
+        token,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Check-in não concluído'),
+          content: Text('$error', textAlign: TextAlign.center),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Entendi'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 }

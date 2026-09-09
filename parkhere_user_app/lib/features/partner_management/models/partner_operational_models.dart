@@ -12,7 +12,18 @@ class PartnerSlotReservation {
   final List<PartnerReservationService> selectedServices;
   final String? vehiclePlate;
   final String? vehicleLabel;
+  final int routeMinutes;
+  final DateTime createdAt;
+  final DateTime? checkedInAt;
+  final DateTime arrivalEstimateAt;
   final DateTime holdExpiresAt;
+  final bool isManualArrival;
+  final double cancellationFeeAmount;
+  final double cancellationCreditAmount;
+  final int checkoutGraceMinutes;
+  final int checkoutExcessMinutes;
+  final double checkoutExcessAmount;
+  final DateTime? checkoutExcessPaidAt;
 
   const PartnerSlotReservation({
     required this.id,
@@ -28,7 +39,18 @@ class PartnerSlotReservation {
     required this.selectedServices,
     required this.vehiclePlate,
     required this.vehicleLabel,
+    required this.routeMinutes,
+    required this.createdAt,
+    required this.checkedInAt,
+    required this.arrivalEstimateAt,
     required this.holdExpiresAt,
+    required this.isManualArrival,
+    required this.cancellationFeeAmount,
+    required this.cancellationCreditAmount,
+    required this.checkoutGraceMinutes,
+    required this.checkoutExcessMinutes,
+    required this.checkoutExcessAmount,
+    required this.checkoutExcessPaidAt,
   });
 
   factory PartnerSlotReservation.fromJson(Map<String, dynamic> json) {
@@ -49,7 +71,25 @@ class PartnerSlotReservation {
       ],
       vehiclePlate: json['vehicle_plate'] as String?,
       vehicleLabel: json['vehicle_label'] as String?,
+      routeMinutes: json['route_minutes'] as int? ?? 0,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      checkedInAt: json['checked_in_at'] == null
+          ? null
+          : DateTime.parse(json['checked_in_at'] as String),
+      arrivalEstimateAt: DateTime.parse(json['arrival_estimate_at'] as String),
       holdExpiresAt: DateTime.parse(json['hold_expires_at'] as String),
+      isManualArrival: json['is_manual_arrival'] as bool? ?? false,
+      cancellationFeeAmount: (json['cancellation_fee_amount'] as num? ?? 0)
+          .toDouble(),
+      cancellationCreditAmount:
+          (json['cancellation_credit_amount'] as num? ?? 0).toDouble(),
+      checkoutGraceMinutes: json['checkout_grace_minutes'] as int? ?? 15,
+      checkoutExcessMinutes: json['checkout_excess_minutes'] as int? ?? 0,
+      checkoutExcessAmount: (json['checkout_excess_amount'] as num? ?? 0)
+          .toDouble(),
+      checkoutExcessPaidAt: json['checkout_excess_paid_at'] == null
+          ? null
+          : DateTime.parse(json['checkout_excess_paid_at'] as String),
     );
   }
 }
@@ -76,11 +116,13 @@ class PartnerReservationService {
 
 class PartnerParkingSlot {
   final String code;
+  final String type;
   final String status;
   final PartnerSlotReservation? reservation;
 
   const PartnerParkingSlot({
     required this.code,
+    required this.type,
     required this.status,
     required this.reservation,
   });
@@ -89,6 +131,7 @@ class PartnerParkingSlot {
     final reservationJson = json['reservation'];
     return PartnerParkingSlot(
       code: json['code'] as String,
+      type: json['type'] as String? ?? 'uncovered',
       status: json['status'] as String,
       reservation: reservationJson is Map<String, dynamic>
           ? PartnerSlotReservation.fromJson(reservationJson)
@@ -104,6 +147,14 @@ class PartnerParkingLayout {
   final int availableSpots;
   final int preReservedSpots;
   final int occupiedSpots;
+  final int cancelledSpots;
+  final double preReservedAmount;
+  final double confirmedAmount;
+  final double checkedInAmount;
+  final double cancelledAmount;
+  final double pendingPaymentAmount;
+  final double paidAmount;
+  final Map<String, double> servicesAmountByStatus;
   final List<PartnerParkingSlot> slots;
 
   const PartnerParkingLayout({
@@ -113,6 +164,14 @@ class PartnerParkingLayout {
     required this.availableSpots,
     required this.preReservedSpots,
     required this.occupiedSpots,
+    required this.cancelledSpots,
+    required this.preReservedAmount,
+    required this.confirmedAmount,
+    required this.checkedInAmount,
+    required this.cancelledAmount,
+    required this.pendingPaymentAmount,
+    required this.paidAmount,
+    required this.servicesAmountByStatus,
     required this.slots,
   });
 
@@ -124,6 +183,21 @@ class PartnerParkingLayout {
       availableSpots: json['available_spots'] as int,
       preReservedSpots: json['pre_reserved_spots'] as int,
       occupiedSpots: json['occupied_spots'] as int,
+      cancelledSpots: json['cancelled_spots'] as int? ?? 0,
+      preReservedAmount: (json['pre_reserved_amount'] as num? ?? 0).toDouble(),
+      confirmedAmount: (json['confirmed_amount'] as num? ?? 0).toDouble(),
+      checkedInAmount: (json['checked_in_amount'] as num? ?? 0).toDouble(),
+      cancelledAmount: (json['cancelled_amount'] as num? ?? 0).toDouble(),
+      pendingPaymentAmount: (json['pending_payment_amount'] as num? ?? 0)
+          .toDouble(),
+      paidAmount: (json['paid_amount'] as num? ?? 0).toDouble(),
+      servicesAmountByStatus: {
+        for (final entry
+            in (json['services_amount_by_status'] as Map<String, dynamic>? ??
+                    {})
+                .entries)
+          entry.key: (entry.value as num? ?? 0).toDouble(),
+      },
       slots: [
         for (final item in json['slots'] as List<dynamic>)
           PartnerParkingSlot.fromJson(item as Map<String, dynamic>),
@@ -142,7 +216,11 @@ class PartnerReservationSummary {
   final String paymentStatus;
   final String spotType;
   final String pricingPlan;
+  final double baseAmount;
+  final double servicesAmount;
+  final double platformFeeAmount;
   final double finalTotal;
+  final List<PartnerReservationService> selectedServices;
   final DateTime createdAt;
   final DateTime holdExpiresAt;
 
@@ -156,7 +234,11 @@ class PartnerReservationSummary {
     required this.paymentStatus,
     required this.spotType,
     required this.pricingPlan,
+    required this.baseAmount,
+    required this.servicesAmount,
+    required this.platformFeeAmount,
     required this.finalTotal,
+    required this.selectedServices,
     required this.createdAt,
     required this.holdExpiresAt,
   });
@@ -172,7 +254,14 @@ class PartnerReservationSummary {
       paymentStatus: json['payment_status'] as String,
       spotType: json['spot_type'] as String,
       pricingPlan: json['pricing_plan'] as String,
+      baseAmount: (json['base_amount'] as num? ?? 0).toDouble(),
+      servicesAmount: (json['services_amount'] as num? ?? 0).toDouble(),
+      platformFeeAmount: (json['platform_fee_amount'] as num? ?? 0).toDouble(),
       finalTotal: (json['final_total'] as num).toDouble(),
+      selectedServices: [
+        for (final item in json['selected_services'] as List<dynamic>? ?? [])
+          PartnerReservationService.fromJson(item as Map<String, dynamic>),
+      ],
       createdAt: DateTime.parse(json['created_at'] as String),
       holdExpiresAt: DateTime.parse(json['hold_expires_at'] as String),
     );

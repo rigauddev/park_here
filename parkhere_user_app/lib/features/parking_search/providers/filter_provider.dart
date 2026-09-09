@@ -33,5 +33,42 @@ class ParkingFilter {
   }
 }
 
-final filterProvider =
-    StateProvider<ParkingFilter>((ref) => ParkingFilter());
+final filterProvider = StateProvider<ParkingFilter>((ref) => ParkingFilter());
+
+final selectedAreaPreferenceProvider = StateProvider<AreaPreference>(
+  (ref) => AreaPreference.any,
+);
+
+enum AreaPreference {
+  any,
+  covered,
+  uncovered,
+  vip,
+  large,
+  motorhome,
+  bus,
+  pickup,
+}
+
+extension AreaPreferenceLabel on AreaPreference {
+  String get label {
+    switch (this) {
+      case AreaPreference.any:
+        return 'Sem preferência';
+      case AreaPreference.covered:
+        return 'Coberta';
+      case AreaPreference.uncovered:
+        return 'Descoberta';
+      case AreaPreference.vip:
+        return 'VIP';
+      case AreaPreference.large:
+        return 'Picape / grande';
+      case AreaPreference.motorhome:
+        return 'Motorhome';
+      case AreaPreference.bus:
+        return 'Ônibus';
+      case AreaPreference.pickup:
+        return 'Pickup';
+    }
+  }
+}

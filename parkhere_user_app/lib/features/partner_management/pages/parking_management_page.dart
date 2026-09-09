@@ -126,7 +126,13 @@ class _ManagedParkingCard extends StatelessWidget {
                 ),
                 _InfoChip('${parking.coveredSpots} cobertas'),
                 _InfoChip('${parking.uncoveredSpots} descobertas'),
-                if (parking.hasVipSpots) const _InfoChip('VIP'),
+                if (parking.vipSpots > 0) _InfoChip('${parking.vipSpots} VIP'),
+                if (parking.largeSpots > 0)
+                  _InfoChip('${parking.largeSpots} carro grande'),
+                if (parking.busSpots > 0)
+                  _InfoChip('${parking.busSpots} ônibus'),
+                if (parking.pickupSpots > 0)
+                  _InfoChip('${parking.pickupSpots} picape'),
                 _InfoChip(parking.isActive ? 'Ativo' : 'Inativo'),
               ],
             ),
@@ -198,12 +204,18 @@ class _ParkingManagementFormPageState
     extends ConsumerState<ParkingManagementFormPage> {
   final nameController = TextEditingController();
   final addressController = TextEditingController();
+  final cityController = TextEditingController();
   final latController = TextEditingController();
   final lngController = TextEditingController();
   final totalController = TextEditingController();
   final availableController = TextEditingController();
+  final arrivalToleranceController = TextEditingController();
   final coveredController = TextEditingController();
   final uncoveredController = TextEditingController();
+  final vipController = TextEditingController();
+  final largeController = TextEditingController();
+  final busController = TextEditingController();
+  final pickupController = TextEditingController();
 
   final uncoveredFirstController = TextEditingController();
   final uncoveredAdditionalController = TextEditingController();
@@ -220,7 +232,6 @@ class _ParkingManagementFormPageState
   final serviceNameController = TextEditingController();
   final servicePriceController = TextEditingController();
 
-  bool hasVipSpots = false;
   bool has24hGate = false;
   bool hasSecuritySystem = false;
   bool wantsAutomaticAccess = false;
@@ -230,28 +241,66 @@ class _ParkingManagementFormPageState
   List<ManagedParkingServiceModel> services = [];
   bool isSaving = false;
 
+  int _sumSpots() => [
+    coveredController,
+    uncoveredController,
+    vipController,
+    largeController,
+    busController,
+    pickupController,
+  ].fold(0, (sum, controller) => sum + (int.tryParse(controller.text) ?? 0));
+
+  void _refreshTotal() {
+    final total = _sumSpots();
+    if (totalController.text != total.toString()) {
+      totalController.text = total.toString();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     final parking = widget.parking;
+    for (final controller in [
+      coveredController,
+      uncoveredController,
+      vipController,
+      largeController,
+      busController,
+      pickupController,
+    ]) {
+      controller.addListener(_refreshTotal);
+    }
     if (parking == null) {
-      latController.text = '-12.9704';
-      lngController.text = '-38.5124';
+      cityController.text = 'Valenca';
+      latController.text = '-13.3703';
+      lngController.text = '-39.0731';
       coveredController.text = '0';
       uncoveredController.text = '0';
       availableController.text = '0';
+      arrivalToleranceController.text = '15';
+      vipController.text = '0';
+      largeController.text = '0';
+      busController.text = '0';
+      pickupController.text = '0';
       return;
     }
 
     nameController.text = parking.name;
     addressController.text = parking.address;
+    cityController.text = parking.city;
     latController.text = parking.lat.toString();
     lngController.text = parking.lng.toString();
     totalController.text = parking.totalSpots.toString();
     availableController.text = parking.availableSpots.toString();
+    arrivalToleranceController.text = parking.arrivalToleranceMinutes
+        .toString();
     coveredController.text = parking.coveredSpots.toString();
     uncoveredController.text = parking.uncoveredSpots.toString();
-    hasVipSpots = parking.hasVipSpots;
+    vipController.text = parking.vipSpots.toString();
+    largeController.text = parking.largeSpots.toString();
+    busController.text = parking.busSpots.toString();
+    pickupController.text = parking.pickupSpots.toString();
     has24hGate = parking.has24hGate;
     hasSecuritySystem = parking.hasSecuritySystem;
     wantsAutomaticAccess = parking.wantsAutomaticAccess;
@@ -279,12 +328,18 @@ class _ParkingManagementFormPageState
     for (final controller in [
       nameController,
       addressController,
+      cityController,
       latController,
       lngController,
       totalController,
       availableController,
+      arrivalToleranceController,
       coveredController,
       uncoveredController,
+      vipController,
+      largeController,
+      busController,
+      pickupController,
       uncoveredFirstController,
       uncoveredAdditionalController,
       uncoveredDailyController,
@@ -321,6 +376,7 @@ class _ParkingManagementFormPageState
             children: [
               _field(nameController, 'Nome'),
               _field(addressController, 'Endereço'),
+              _field(cityController, 'Cidade'),
               Row(
                 children: [
                   Expanded(child: _field(latController, 'Latitude')),
@@ -344,11 +400,14 @@ class _ParkingManagementFormPageState
             children: [
               Row(
                 children: [
-                  Expanded(child: _field(totalController, 'Total')),
+                  Expanded(
+                    child: _field(totalController, 'Total', readOnly: true),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(child: _field(availableController, 'Disponíveis')),
                 ],
               ),
+              _field(arrivalToleranceController, 'Tolerância de chegada (min)'),
               Row(
                 children: [
                   Expanded(child: _field(coveredController, 'Cobertas')),
@@ -356,11 +415,28 @@ class _ParkingManagementFormPageState
                   Expanded(child: _field(uncoveredController, 'Descobertas')),
                 ],
               ),
-              SwitchListTile(
-                value: hasVipSpots,
-                onChanged: (value) => setState(() => hasVipSpots = value),
-                title: const Text('Possui vagas VIP'),
-                contentPadding: EdgeInsets.zero,
+              const SizedBox(height: 4),
+              Text(
+                'Tipos especiais de vaga',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(child: _field(vipController, 'VIP')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field(largeController, 'Carro grande')),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(child: _field(busController, 'Ônibus')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field(pickupController, 'Picape')),
+                ],
               ),
               SwitchListTile(
                 value: has24hGate,
@@ -386,7 +462,8 @@ class _ParkingManagementFormPageState
               ),
               SwitchListTile(
                 value: hasAutomaticAccess,
-                onChanged: (value) => setState(() => hasAutomaticAccess = value),
+                onChanged: (value) =>
+                    setState(() => hasAutomaticAccess = value),
                 title: const Text('Já possui atendimento automático'),
                 contentPadding: EdgeInsets.zero,
               ),
@@ -493,15 +570,23 @@ class _ParkingManagementFormPageState
     );
   }
 
-  Widget _field(TextEditingController controller, String label) {
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    bool readOnly = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
         controller: controller,
         keyboardType:
-            label == 'Nome' || label == 'Endereço' || label == 'Nome do serviço'
+            label == 'Nome' ||
+                label == 'Endereço' ||
+                label == 'Cidade' ||
+                label == 'Nome do serviço'
             ? TextInputType.text
             : const TextInputType.numberWithOptions(decimal: true),
+        readOnly: readOnly,
         decoration: InputDecoration(labelText: label),
       ),
     );
@@ -513,8 +598,13 @@ class _ParkingManagementFormPageState
       servicePriceController.text.replaceAll(',', '.'),
     );
 
-    if (name.isEmpty || price == null) {
-      _showMessage('Informe nome e preço do serviço.');
+    if (name.isEmpty || price == null || !price.isFinite || price < 0) {
+      _showMessage('Informe nome e preço válido, maior ou igual a zero.');
+      return;
+    }
+
+    if (services.any((service) => service.code == serviceCode)) {
+      _showMessage('Este tipo de serviço já foi adicionado.');
       return;
     }
 
@@ -552,26 +642,44 @@ class _ParkingManagementFormPageState
   }
 
   ManagedParkingModel _buildParking() {
-    final total = _int(totalController, 'Total');
+    final total = _sumSpots();
     final covered = _int(coveredController, 'Cobertas');
     final uncovered = _int(uncoveredController, 'Descobertas');
     final available = _int(availableController, 'Disponíveis');
+    final arrivalTolerance = _int(
+      arrivalToleranceController,
+      'Tolerância de chegada',
+    );
+    final vip = _int(vipController, 'VIP');
+    final large = _int(largeController, 'Carro grande');
+    final bus = _int(busController, 'Ônibus');
+    final pickup = _int(pickupController, 'Picape');
 
-    if (covered + uncovered != total) {
-      throw Exception('Cobertas + descobertas deve ser igual ao total.');
+    if (total <= 0 || available > total) {
+      throw Exception('Informe total positivo e disponibilidade até o total.');
+    }
+
+    if (arrivalTolerance < 1 || arrivalTolerance > 120) {
+      throw Exception('Tolerância deve ficar entre 1 e 120 minutos.');
     }
 
     return ManagedParkingModel(
       id: widget.parking?.id,
       name: _required(nameController, 'Nome'),
       address: _required(addressController, 'Endereço'),
+      city: _required(cityController, 'Cidade'),
       lat: _double(latController, 'Latitude'),
       lng: _double(lngController, 'Longitude'),
       totalSpots: total,
+      arrivalToleranceMinutes: arrivalTolerance,
       availableSpots: available,
       coveredSpots: covered,
       uncoveredSpots: uncovered,
-      hasVipSpots: hasVipSpots,
+      vipSpots: vip,
+      largeSpots: large,
+      busSpots: bus,
+      pickupSpots: pickup,
+      hasVipSpots: vip > 0,
       has24hGate: has24hGate,
       hasSecuritySystem: hasSecuritySystem,
       wantsAutomaticAccess: wantsAutomaticAccess,
@@ -596,6 +704,9 @@ class _ParkingManagementFormPageState
   }
 
   ParkingAreaPricingModel _pricing(List<TextEditingController> controllers) {
+    if (controllers.any((controller) => _double(controller, 'Tarifa') < 0)) {
+      throw Exception('Tarifas não podem ser negativas.');
+    }
     return ParkingAreaPricingModel(
       firstHourPrice: _double(controllers[0], 'Primeira hora'),
       additionalHourPrice: _double(controllers[1], 'Hora adicional'),
@@ -624,13 +735,17 @@ class _ParkingManagementFormPageState
 
   int _int(TextEditingController controller, String label) {
     final value = int.tryParse(controller.text.trim());
-    if (value == null) throw Exception('Informe $label corretamente.');
+    if (value == null || value < 0) {
+      throw Exception('Informe $label corretamente.');
+    }
     return value;
   }
 
   double _double(TextEditingController controller, String label) {
     final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
-    if (value == null) throw Exception('Informe $label corretamente.');
+    if (value == null || !value.isFinite) {
+      throw Exception('Informe $label corretamente.');
+    }
     return value;
   }
 
