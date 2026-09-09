@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../../../core/i18n/app_language.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
+import 'admin_login_page.dart';
 
 enum LoginLanguage { ptBr, en }
 
@@ -90,11 +91,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
             SafeArea(
-              child: Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: _LanguageFlagButton(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 18, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextButton.icon(
+                      onPressed: isMfaStep
+                          ? null
+                          : () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AdminLoginPage(),
+                                ),
+                              ),
+                      icon: const Icon(Icons.settings_outlined, size: 15),
+                      label: Text(isPortuguese ? 'Gestão do sistema' : 'System management'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white.withValues(alpha: 0.72),
+                        textStyle: const TextStyle(fontSize: 11),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      ),
+                    ),
+                    _LanguageFlagButton(
                     language: language,
                     onChanged: (value) {
                       setState(() => language = value);
@@ -106,7 +126,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 : const Locale('pt', 'BR'),
                           );
                     },
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
