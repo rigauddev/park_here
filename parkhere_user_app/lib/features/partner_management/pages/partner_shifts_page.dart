@@ -35,27 +35,29 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
     final parkings = ref.read(partnerParkingProvider).maybeWhen(data: (v) => v, orElse: () => <ManagedParkingModel>[]);
     final operators = ref.read(partnerOperatorsProvider).maybeWhen(data: (v) => v, orElse: () => <PartnerOperatorModel>[]);
     if (parkings.isEmpty || operators.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cadastre estacionamentos e operadores antes de criar a escala.'))); return; }
-    String parkingId = parkings.first.id!; final selected = <String>{}; var step = 0; var month = DateTime(DateTime.now().year, DateTime.now().month); var opening = const TimeOfDay(hour: 7, minute: 0); var closing = const TimeOfDay(hour: 18, minute: 0);
+    String parkingId = parkings.first.id!; final selected = <String>{}; var step = 0; var startDate = DateTime.now(); var endDate = DateTime.now(); var opening = const TimeOfDay(hour: 7, minute: 0); var closing = const TimeOfDay(hour: 18, minute: 0);
     await showDialog<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, setLocal) => AlertDialog(
       title: const Text('Nova escala mensal'),
       content: SizedBox(width: 480, child: Stepper(currentStep: step, onStepCancel: step == 0 ? null : () => setLocal(() => step--), onStepContinue: () async {
         if (step == 0) {
           final assigned = <String>{};
           for (final op in operators) { if ((await ref.read(partnerOperatorsProvider.notifier).fetchOperatorParkings(op.id)).contains(parkingId)) assigned.add(op.id); }
+          if (!mounted) return;
+          if (assigned.isEmpty) { ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Nenhum operador está associado a este estacionamento. Associe a equipe antes de criar a escala.'))); return; }
           setLocal(() { selected..clear()..addAll(assigned); step = 1; });
-        } else if (step < 3) { setLocal(() => step++); } else { Navigator.pop(dialogContext); await _generate(parkingId, selected.toList(), month, opening, closing); }
+        } else if (step < 3) { setLocal(() => step++); } else { Navigator.pop(dialogContext); await _generate(parkingId, selected.toList(), startDate, endDate, opening, closing); }
       }, controlsBuilder: (context, d) => Row(children: [FilledButton(onPressed: d.onStepContinue, child: Text(step == 3 ? 'Gerar escala' : 'Próximo')), if (step > 0) TextButton(onPressed: d.onStepCancel, child: const Text('Voltar'))]), steps: [
         Step(isActive: step >= 0, title: const Text('Estacionamento'), content: DropdownButtonFormField<String>(initialValue: parkingId, items: [for (final p in parkings) DropdownMenuItem(value: p.id, child: Text(p.name))], onChanged: (v) => setLocal(() => parkingId = v!))),
         Step(isActive: step >= 1, title: const Text('Usuários e turno'), content: Column(children: [for (final op in operators) CheckboxListTile(value: selected.contains(op.id), title: Text(op.name), subtitle: Text(op.email), onChanged: (v) => setLocal(() => v == true ? selected.add(op.id) : selected.remove(op.id)))])),
         Step(isActive: step >= 2, title: const Text('Funcionamento'), content: Column(children: [ListTile(title: const Text('Abertura'), subtitle: Text(opening.format(context)), trailing: const Icon(Icons.login), onTap: () async { final v = await showTimePicker(context: context, initialTime: opening); if (v != null) setLocal(() => opening = v); }), ListTile(title: const Text('Fechamento'), subtitle: Text(closing.format(context)), trailing: const Icon(Icons.logout), onTap: () async { final v = await showTimePicker(context: context, initialTime: closing); if (v != null) setLocal(() => closing = v); })])),
-        Step(isActive: step >= 3, title: const Text('Período'), content: ListTile(title: const Text('Mês da escala'), subtitle: Text('${month.month}/${month.year}'), trailing: const Icon(Icons.calendar_month), onTap: () async { final v = await showDatePicker(context: context, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 366)), initialDate: month); if (v != null) setLocal(() => month = DateTime(v.year, v.month)); })),
+        Step(isActive: step >= 3, title: const Text('Período'), content: ListTile(title: const Text('Dias da escala'), subtitle: Text('${startDate.day}/${startDate.month}/${startDate.year} até ${endDate.day}/${endDate.month}/${endDate.year}'), trailing: const Icon(Icons.date_range), onTap: () async { final v = await showDateRangePicker(context: context, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 366)), initialDateRange: DateTimeRange(start: startDate, end: endDate)); if (v != null) setLocal(() { startDate = v.start; endDate = v.end; }); })),
       ])),
     )));
   }
 
-  Future<void> _generate(String parkingId, List<String> operators, DateTime month, TimeOfDay opening, TimeOfDay closing) async {
-    if (operators.isEmpty) return; final first = DateTime(month.year, month.month, 1); final last = DateTime(month.year, month.month + 1, 0); final minute = opening.hour * 60 + opening.minute; final closeMinute = closing.hour * 60 + closing.minute; final duration = (closeMinute > minute ? closeMinute - minute : 480).clamp(60, 480);
-    for (var day = first; !day.isAfter(last); day = day.add(const Duration(days: 1))) { final id = operators[day.difference(first).inDays % operators.length]; final start = DateTime(day.year, day.month, day.day, minute ~/ 60, minute % 60); await ref.read(partnerOperatorsProvider.notifier).createShift(operatorId: id, parkingId: parkingId, startsAt: start, endsAt: start.add(Duration(minutes: duration))); }
+  Future<void> _generate(String parkingId, List<String> operators, DateTime first, DateTime last, TimeOfDay opening, TimeOfDay closing) async {
+    if (operators.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecione ao menos um operador.'))); return; } final minute = opening.hour * 60 + opening.minute; final closeMinute = closing.hour * 60 + closing.minute; final duration = (closeMinute > minute ? closeMinute - minute : 480).clamp(60, 480);
+    try { for (var day = first; !day.isAfter(last); day = day.add(const Duration(days: 1))) { final id = operators[day.difference(first).inDays % operators.length]; final start = DateTime(day.year, day.month, day.day, minute ~/ 60, minute % 60); await ref.read(partnerOperatorsProvider.notifier).createShift(operatorId: id, parkingId: parkingId, startsAt: start, endsAt: start.add(Duration(minutes: duration))); } } catch (error) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível gerar a escala: $error'))); return; }
     if (mounted) setState(() => _future = ref.read(partnerOperatorsProvider.notifier).fetchShifts());
   }
 }
