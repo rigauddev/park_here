@@ -101,31 +101,38 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       onPressed: isMfaStep
                           ? null
                           : () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AdminLoginPage(),
-                                ),
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AdminLoginPage(),
                               ),
+                            ),
                       icon: const Icon(Icons.settings_outlined, size: 15),
-                      label: Text(isPortuguese ? 'Gestão do sistema' : 'System management'),
+                      label: Text(
+                        isPortuguese
+                            ? 'Gestão do sistema'
+                            : 'System management',
+                      ),
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.white.withValues(alpha: 0.72),
                         textStyle: const TextStyle(fontSize: 11),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
                       ),
                     ),
                     _LanguageFlagButton(
-                    language: language,
-                    onChanged: (value) {
-                      setState(() => language = value);
-                      ref
-                          .read(appLanguageProvider.notifier)
-                          .setLanguage(
-                            value == LoginLanguage.en
-                                ? const Locale('en')
-                                : const Locale('pt', 'BR'),
-                          );
-                    },
+                      language: language,
+                      onChanged: (value) {
+                        setState(() => language = value);
+                        ref
+                            .read(appLanguageProvider.notifier)
+                            .setLanguage(
+                              value == LoginLanguage.en
+                                  ? const Locale('en')
+                                  : const Locale('pt', 'BR'),
+                            );
+                      },
                     ),
                   ],
                 ),
@@ -568,7 +575,7 @@ class _RigaudTechFooter extends StatelessWidget {
       onTap: _openRigaudTech,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.86),
+          color: Colors.white.withValues(alpha: 0.60),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Padding(
@@ -580,8 +587,8 @@ class _RigaudTechFooter extends StatelessWidget {
                 isPortuguese ? "Desenvolvido por" : "Developed by",
                 style: const TextStyle(
                   color: Color(0xFF55708F),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(width: 6),
@@ -589,8 +596,8 @@ class _RigaudTechFooter extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
                 child: Image.asset(
                   "assets/branding/logo_rigaud_tech_clean.png",
-                  width: 72,
-                  height: 20,
+                  width: 58,
+                  height: 16,
                   fit: BoxFit.contain,
                 ),
               ),
@@ -791,6 +798,48 @@ class _LoginBackgroundPainter extends CustomPainter {
       ..color = const Color(0xFF6FE7F1).withValues(alpha: 0.22)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
+
+    if (mode == LoginMode.partner) {
+      // Silhuetas discretas de painel: reforçam a operação sem competir com o login.
+      final panelPaint = Paint()
+        ..color = const Color(0xFFFFC66B).withValues(alpha: 0.13)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      for (var i = 0; i < 3; i++) {
+        final rect = Rect.fromLTWH(
+          size.width * (0.06 + i * 0.34),
+          size.height * (0.72 - i * 0.06),
+          size.width * 0.24,
+          size.height * 0.12,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+          panelPaint,
+        );
+        canvas.drawLine(
+          Offset(rect.left + 12, rect.bottom - 12),
+          Offset(rect.right - 12, rect.bottom - 12),
+          panelPaint,
+        );
+      }
+    } else {
+      // Grade leve de ruas para o modo cliente.
+      final gridPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.07)
+        ..strokeWidth = 1;
+      for (var i = 1; i < 7; i++) {
+        canvas.drawLine(
+          Offset(size.width * i / 7, 0),
+          Offset(size.width * i / 7, size.height),
+          gridPaint,
+        );
+        canvas.drawLine(
+          Offset(0, size.height * i / 7),
+          Offset(size.width, size.height * i / 7),
+          gridPaint,
+        );
+      }
+    }
 
     final path = Path()
       ..moveTo(size.width * 0.05, size.height * 0.25)

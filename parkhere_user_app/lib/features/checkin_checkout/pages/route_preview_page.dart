@@ -47,7 +47,7 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
             ),
             const SizedBox(height: 15),
             const Text(
-              'Ao iniciar, a pré-reserva será enviada ao estacionamento com o tempo estimado da rota + 5 minutos.',
+              'Ao iniciar, a pré-reserva será enviada ao estacionamento com o tempo estimado da rota + 5 minutos. Ao chegar, retorne ao ParkHere para realizar o check-in.',
               textAlign: TextAlign.center,
             ),
 

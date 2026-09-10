@@ -62,3 +62,14 @@ Quando houver alteração de modelo ou schema, executar as migrations Alembic e 
 Rodar flutter analyze, flutter test e validações do backend antes do commit. Separar commits por bloco funcional.
 No MVP da VPS, arquivos e fotos devem ser gravados no volume persistente local do Docker e o caminho relativo salvo no banco; manter a estrutura preparada para futura migração para object storage.
 ```
+
+## Marketing e conteúdo
+
+```text
+Use $parkhere-marketing.
+Leia docs/marketing/product-facts.md, docs/marketing/ideas.md e os documentos de produto.
+Crie o material em português e inglês, distinguindo o que já existe no MVP, o que está
+em homologação e o que é roadmap. Não invente clientes, cobertura ou integrações.
+Atualize o backlog de ideias quando surgir uma nova oportunidade.
+Pedido:
+```
