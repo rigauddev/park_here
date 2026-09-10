@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
 import '../../../core/i18n/app_language.dart';
+import '../../../core/i18n/app_localizations.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
 import 'admin_login_page.dart';
@@ -142,7 +143,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 390),
+                  constraints: const BoxConstraints(maxWidth: 360),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.95),
@@ -156,32 +157,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const _ParkingLogoMark(),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "ParkHere",
-                            style: TextStyle(
-                              fontSize: 26,
+                          const SizedBox(height: 4),
+                          Text(
+                            context.strings.appName,
+                            style: const TextStyle(
+                              fontSize: 23,
                               fontWeight: FontWeight.w800,
                               color: Color(0xFF102657),
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            isPortuguese
-                                ? "Mobilidade, vagas e serviços em um só lugar"
-                                : "Parking, mobility and services in one place",
+                            context.strings.loginTagline,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Color(0xFF55708F),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 10),
                           _AccessModeSelector(
                             loginMode: displayedLoginMode,
                             isPortuguese: isPortuguese,
@@ -195,7 +194,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               });
                             },
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 10),
                           if (authState.status != AuthStatus.mfaRequired) ...[
                             _textField(
                               controller: emailController,
@@ -760,8 +759,8 @@ class _ParkingLogoMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 68,
-      height: 68,
+      width: 56,
+      height: 56,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
         gradient: LinearGradient(
@@ -771,11 +770,11 @@ class _ParkingLogoMark extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: const [
-          Icon(Icons.local_parking, size: 40, color: Colors.white),
+          Icon(Icons.local_parking, size: 32, color: Colors.white),
           Positioned(
-            right: 12,
-            bottom: 13,
-            child: Icon(Icons.location_on, size: 18, color: Color(0xFF102657)),
+            right: 9,
+            bottom: 10,
+            child: Icon(Icons.location_on, size: 15, color: Color(0xFF102657)),
           ),
         ],
       ),
