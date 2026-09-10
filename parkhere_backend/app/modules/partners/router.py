@@ -27,6 +27,7 @@ from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
+from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
@@ -73,6 +74,13 @@ class OperatorShiftRequest(BaseModel):
     parking_id: str
     starts_at: datetime
     ends_at: datetime
+
+class OperatorWorkProfileRequest(BaseModel):
+    operator_id: str
+    parking_id: str
+    daily_hours: float = 8
+    lunch_minutes: int = 60
+    days_off: list[int] = []
 
 
 class PartnerOperatorResponse(BaseModel):
@@ -691,6 +699,36 @@ async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = D
     shift = OperatorWorkShift(operator_id=data.operator_id, parking_id=data.parking_id, starts_at=data.starts_at, ends_at=data.ends_at)
     db.add(shift); await db.commit(); await db.refresh(shift)
     return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id, "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
+
+@router.get("/work-profiles")
+async def list_work_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    rows = (await db.scalars(select(OperatorWorkProfile).join(User, User.id == OperatorWorkProfile.operator_id).where(User.tenant_id == current_user.tenant_id))).all()
+    return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "daily_hours": r.daily_hours, "lunch_minutes": r.lunch_minutes, "days_off": r.days_off_list()} for r in rows]
+
+@router.put("/work-profiles", status_code=200)
+async def save_work_profile(data: OperatorWorkProfileRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    if not 1 <= data.daily_hours <= 12 or not 0 <= data.lunch_minutes <= 180 or any(day < 0 or day > 6 for day in data.days_off):
+        raise HTTPException(status_code=422, detail="Jornada ou folgas inválidas")
+    operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
+    assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id))
+    if not operator or not assigned: raise HTTPException(status_code=422, detail="Operador não está associado a este estacionamento")
+    profile = await db.scalar(select(OperatorWorkProfile).where(OperatorWorkProfile.operator_id == data.operator_id, OperatorWorkProfile.parking_id == data.parking_id))
+    action = "updated" if profile else "created"
+    if profile is None:
+        profile = OperatorWorkProfile(operator_id=data.operator_id, parking_id=data.parking_id)
+        db.add(profile)
+    profile.daily_hours = data.daily_hours; profile.lunch_minutes = data.lunch_minutes; profile.days_off = json.dumps(sorted(set(data.days_off)))
+    db.add(OperatorScheduleHistory(parking_id=data.parking_id, changed_by=current_user.id, action=action, details=json.dumps({"operator_id": data.operator_id, "daily_hours": data.daily_hours, "lunch_minutes": data.lunch_minutes, "days_off": data.days_off})))
+    await db.commit(); await db.refresh(profile)
+    return {"id": profile.id, "operator_id": profile.operator_id, "parking_id": profile.parking_id, "daily_hours": profile.daily_hours, "lunch_minutes": profile.lunch_minutes, "days_off": profile.days_off_list()}
+
+@router.get("/schedule-history")
+async def schedule_history(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    rows = (await db.scalars(select(OperatorScheduleHistory).join(Parking, Parking.id == OperatorScheduleHistory.parking_id).where(Parking.tenant_id == current_user.tenant_id).order_by(OperatorScheduleHistory.created_at.desc()))).all()
+    return [{"id": r.id, "parking_id": r.parking_id, "changed_by": r.changed_by, "action": r.action, "details": json.loads(r.details or "{}"), "created_at": r.created_at.isoformat()} for r in rows]
 
 
 @router.get(

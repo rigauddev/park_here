@@ -541,3 +541,11 @@ check-in e checkout. O envio do checkout usa os mesmos tipos (`front`, `rear`,
 `left`, `right`) e substitui o arquivo anterior da reserva. Os arquivos ficam
 em armazenamento local temporário por sete dias e são removidos na próxima
 limpeza do endpoint.
+
+## Jornada e escalas — 10/09/2026
+
+- `GET /partners/work-profiles` lista a jornada cadastrada por operador e unidade.
+- `PUT /partners/work-profiles` recebe `operator_id`, `parking_id`, `daily_hours`,
+  `lunch_minutes` e `days_off` (dias da semana, 0=domingo).
+- `GET /partners/schedule-history` retorna alterações de jornada para auditoria.
+  A escala deve ser gerada somente para operadores associados à unidade.
