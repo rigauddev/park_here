@@ -11,7 +11,7 @@ class AppLocalizations {
   static const supportedLocales = [Locale('pt', 'BR'), Locale('en')];
 
   bool get isEnglish => locale.languageCode == 'en';
-  String get appName => isEnglish ? 'ParkHere' : 'Estacione Aqui';
+  String get appName => isEnglish ? 'Park Here' : 'Estacione Aqui';
   String get loginTagline => isEnglish
       ? 'Parking, mobility and services in one place'
       : 'Mobilidade, vagas e serviços em um só lugar';
