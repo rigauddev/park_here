@@ -23,7 +23,8 @@ class LoginPage extends ConsumerStatefulWidget {
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends ConsumerState<LoginPage> {
+class _LoginPageState extends ConsumerState<LoginPage>
+    with SingleTickerProviderStateMixin {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final mfaController = TextEditingController();
@@ -33,6 +34,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   LoginLanguage language = LoginLanguage.ptBr;
   LoginMode loginMode = LoginMode.customer;
   String? loginError;
+  late final AnimationController _backgroundAnimation = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 8),
+  )..repeat();
 
   bool get isPortuguese => language == LoginLanguage.ptBr;
 
@@ -41,6 +46,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     emailController.dispose();
     passwordController.dispose();
     mfaController.dispose();
+    _backgroundAnimation.dispose();
     super.dispose();
   }
 
@@ -85,9 +91,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             Positioned.fill(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 450),
-                child: CustomPaint(
-                  key: ValueKey(loginMode),
-                  painter: _LoginBackgroundPainter(loginMode),
+                child: AnimatedBuilder(
+                  animation: _backgroundAnimation,
+                  builder: (context, _) => CustomPaint(
+                    key: ValueKey(loginMode),
+                    painter: _LoginBackgroundPainter(
+                      loginMode,
+                      progress: _backgroundAnimation.value,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -784,8 +796,9 @@ class _ParkingLogoMark extends StatelessWidget {
 
 class _LoginBackgroundPainter extends CustomPainter {
   final LoginMode mode;
+  final double progress;
 
-  const _LoginBackgroundPainter(this.mode);
+  const _LoginBackgroundPainter(this.mode, {this.progress = 0});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -820,6 +833,18 @@ class _LoginBackgroundPainter extends CustomPainter {
           Offset(rect.right - 12, rect.bottom - 12),
           panelPaint,
         );
+        final barHeight =
+            size.height *
+            (0.025 + 0.035 * math.sin(progress * math.pi * 2 + i));
+        canvas.drawRect(
+          Rect.fromLTWH(
+            rect.left + 14,
+            rect.top + 14,
+            size.width * 0.035,
+            rect.height * 0.55 + barHeight,
+          ),
+          Paint()..color = const Color(0xFFFFC66B).withValues(alpha: 0.26),
+        );
       }
     } else {
       // Grade leve de ruas para o modo cliente.
@@ -839,6 +864,22 @@ class _LoginBackgroundPainter extends CustomPainter {
         );
       }
     }
+
+    final pulse = (math.sin(progress * math.pi * 2) + 1) / 2;
+    final movingPoint = Offset(
+      size.width * (0.18 + 0.64 * progress),
+      size.height * (0.27 + 0.10 * math.sin(progress * math.pi * 2)),
+    );
+    canvas.drawCircle(
+      movingPoint,
+      5 + pulse * 10,
+      Paint()..color = const Color(0xFF8AF4FF).withValues(alpha: 0.10),
+    );
+    canvas.drawCircle(
+      movingPoint,
+      4,
+      Paint()..color = Colors.white.withValues(alpha: 0.75),
+    );
 
     final path = Path()
       ..moveTo(size.width * 0.05, size.height * 0.25)
@@ -944,6 +985,6 @@ class _LoginBackgroundPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LoginBackgroundPainter oldDelegate) {
-    return oldDelegate.mode != mode;
+    return oldDelegate.mode != mode || oldDelegate.progress != progress;
   }
 }
