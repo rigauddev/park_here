@@ -22,6 +22,7 @@ import '../../features/partner_management/pages/guide_affiliations_page.dart';
 import '../../features/partner_management/pages/guide_dashboard_page.dart';
 import '../../features/partner_management/pages/guide_services_page.dart';
 import '../../features/partner_management/pages/admin_management_page.dart';
+import '../../features/partner_management/pages/partner_shifts_page.dart';
 
 enum _MainArea {
   menu,
@@ -32,6 +33,7 @@ enum _MainArea {
   wallet,
   management,
   users,
+  shifts,
   financial,
   dashboard,
   profile,
@@ -298,6 +300,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             : const PartnerParkingMapPage();
       case _MainArea.users:
         return isPartnerOwner ? const PartnerUsersPage() : const ProfilePage();
+      case _MainArea.shifts:
+        return isPartnerOwner ? const PartnerShiftsPage() : const ProfilePage();
       case _MainArea.dashboard:
         if (isGuide) return const GuideDashboardPage();
         return isPartnerOwner
@@ -349,6 +353,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.management:
         return isPartner ? 0 : 2;
       case _MainArea.users:
+      case _MainArea.shifts:
         return isPartner ? 0 : 2;
       case _MainArea.financial:
         return isPartner ? 3 : 2;
@@ -486,6 +491,8 @@ class _WebMenu extends ConsumerWidget {
                     'Minha empresa',
                     _MainArea.management,
                   ),
+                if (isPartner && isPartnerOwner)
+                  _MenuItem(Icons.schedule_outlined, 'Escalas', _MainArea.shifts),
                 if (isGuide)
                   _MenuItem(
                     Icons.local_parking_outlined,

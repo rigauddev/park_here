@@ -618,10 +618,12 @@ async def create_partner_operator(
         .where(User.role == UserRoleEnum.OPERATOR)
     )
     operator_count = count_result.scalar_one()
-    if operator_count >= FREE_OPERATOR_LIMIT:
+    parking_count = await db.scalar(select(func.count(Parking.id)).where(Parking.tenant_id == current_user.tenant_id, Parking.is_active.is_(True)))
+    operator_limit = max(FREE_OPERATOR_LIMIT, (parking_count or 1) * FREE_OPERATOR_LIMIT)
+    if operator_count >= operator_limit:
         raise HTTPException(
             status_code=402,
-            detail="Free plan includes up to 2 operators. Extra operators require an additional fee.",
+            detail=f"O limite atual é de 2 operadores por estacionamento ({operator_limit} no total).",
         )
 
     permissions = data.permissions or DEFAULT_OPERATOR_PERMISSIONS

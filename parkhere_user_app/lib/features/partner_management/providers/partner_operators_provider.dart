@@ -64,4 +64,11 @@ class PartnerOperatorsNotifier
     if (token == null) throw Exception('Sessão expirada.');
     await _api.postAuthorized('/partners/shifts', {'operator_id': operatorId, 'parking_id': parkingId, 'starts_at': startsAt.toUtc().toIso8601String(), 'ends_at': endsAt.toUtc().toIso8601String()}, token);
   }
+
+  Future<List<Map<String, dynamic>>> fetchShifts() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada.');
+    final data = await _api.getAuthorized('/partners/shifts', token);
+    return data.cast<Map<String, dynamic>>();
+  }
 }
