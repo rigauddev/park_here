@@ -59,6 +59,13 @@ class PartnerOperatorsNotifier
     await _api.putAuthorized('/partners/operators/$operatorId/parkings', {'parking_ids': parkingIds}, token);
   }
 
+  Future<List<String>> fetchOperatorParkings(String operatorId) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada.');
+    final data = await _api.getAuthorized('/partners/operators/$operatorId/parkings', token);
+    return data.cast<String>();
+  }
+
   Future<void> createShift({required String operatorId, required String parkingId, required DateTime startsAt, required DateTime endsAt}) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
