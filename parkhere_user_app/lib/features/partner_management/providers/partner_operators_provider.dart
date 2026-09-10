@@ -52,4 +52,16 @@ class PartnerOperatorsNotifier
     state = const AsyncLoading();
     state = await AsyncValue.guard(fetch);
   }
+
+  Future<void> assignParkings(String operatorId, List<String> parkingIds) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada.');
+    await _api.putAuthorized('/partners/operators/$operatorId/parkings', {'parking_ids': parkingIds}, token);
+  }
+
+  Future<void> createShift({required String operatorId, required String parkingId, required DateTime startsAt, required DateTime endsAt}) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada.');
+    await _api.postAuthorized('/partners/shifts', {'operator_id': operatorId, 'parking_id': parkingId, 'starts_at': startsAt.toUtc().toIso8601String(), 'ends_at': endsAt.toUtc().toIso8601String()}, token);
+  }
 }

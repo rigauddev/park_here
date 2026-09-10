@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/validators/form_validators.dart';
 import '../models/partner_operator_model.dart';
+import '../models/managed_parking_model.dart';
 import '../providers/partner_operators_provider.dart';
+import '../providers/partner_parking_provider.dart';
 
 const _operatorPermissionLabels = {
   'reservations.view': 'Ver reservas',
@@ -56,7 +58,7 @@ class PartnerUsersPage extends ConsumerWidget {
               if (items.isEmpty)
                 const Center(child: Text('Nenhum operador cadastrado.'))
               else
-                for (final operator in items) _OperatorCard(operator: operator),
+                for (final operator in items) _OperatorCard(operator: operator, onConfigure: () => _openAssignment(context, ref, operator)),
             ],
           );
         },
@@ -69,6 +71,10 @@ class PartnerUsersPage extends ConsumerWidget {
       context: context,
       builder: (context) => _CreateOperatorDialog(ref: ref),
     );
+  }
+
+  void _openAssignment(BuildContext context, WidgetRef ref, PartnerOperatorModel operator) {
+    showDialog<void>(context: context, builder: (_) => _OperatorAssignmentDialog(operator: operator, ref: ref));
   }
 }
 
@@ -105,8 +111,9 @@ class _LimitCard extends StatelessWidget {
 
 class _OperatorCard extends StatelessWidget {
   final PartnerOperatorModel operator;
+  final VoidCallback onConfigure;
 
-  const _OperatorCard({required this.operator});
+  const _OperatorCard({required this.operator, required this.onConfigure});
 
   @override
   Widget build(BuildContext context) {
@@ -123,6 +130,7 @@ class _OperatorCard extends StatelessWidget {
           '${operator.email}\n${operator.phone ?? "Sem telefone"}',
         ),
         isThreeLine: true,
+        onTap: onConfigure,
         trailing: SizedBox(
           width: 160,
           child: Wrap(
@@ -146,6 +154,40 @@ class _OperatorCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _OperatorAssignmentDialog extends ConsumerStatefulWidget {
+  final PartnerOperatorModel operator;
+  final WidgetRef ref;
+  const _OperatorAssignmentDialog({required this.operator, required this.ref});
+  @override ConsumerState<_OperatorAssignmentDialog> createState() => _OperatorAssignmentDialogState();
+}
+
+class _OperatorAssignmentDialogState extends ConsumerState<_OperatorAssignmentDialog> {
+  final selected = <String>{};
+  String? shiftParking;
+  DateTime? starts;
+  DateTime? ends;
+  @override Widget build(BuildContext context) {
+    final parkings = ref.watch(partnerParkingProvider).maybeWhen(data: (value) => value, orElse: () => <ManagedParkingModel>[]);
+    return AlertDialog(
+      title: Text('Unidades e escala · ${widget.operator.name}'),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Align(alignment: Alignment.centerLeft, child: Text('Estacionamentos autorizados')),
+        for (final parking in parkings) CheckboxListTile(value: selected.contains(parking.id), title: Text(parking.name), onChanged: (value) => setState(() => value == true ? selected.add(parking.id!) : selected.remove(parking.id)), contentPadding: EdgeInsets.zero),
+        const Divider(),
+        DropdownButtonFormField<String>(initialValue: shiftParking, decoration: const InputDecoration(labelText: 'Estacionamento do turno'), items: [for (final p in parkings) DropdownMenuItem(value: p.id, child: Text(p.name))], onChanged: (v) => setState(() => shiftParking = v)),
+        TextButton.icon(onPressed: () async { final d = await showDatePicker(context: context, firstDate: DateTime.now().subtract(const Duration(days: 1)), lastDate: DateTime.now().add(const Duration(days: 365)), initialDate: DateTime.now()); if (d != null) setState(() => starts = DateTime(d.year, d.month, d.day, 8)); }, icon: const Icon(Icons.schedule), label: Text(starts == null ? 'Definir início' : 'Início: ${starts!.day}/${starts!.month} 08:00')),
+        TextButton.icon(onPressed: () async { final d = await showDatePicker(context: context, firstDate: DateTime.now().subtract(const Duration(days: 1)), lastDate: DateTime.now().add(const Duration(days: 365)), initialDate: DateTime.now()); if (d != null) setState(() => ends = DateTime(d.year, d.month, d.day, 18)); }, icon: const Icon(Icons.schedule_outlined), label: Text(ends == null ? 'Definir fim' : 'Fim: ${ends!.day}/${ends!.month} 18:00')),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: _save, child: const Text('Salvar'))],
+    );
+  }
+  Future<void> _save() async {
+    await ref.read(partnerOperatorsProvider.notifier).assignParkings(widget.operator.id, selected.toList());
+    if (shiftParking != null && starts != null && ends != null) await ref.read(partnerOperatorsProvider.notifier).createShift(operatorId: widget.operator.id, parkingId: shiftParking!, startsAt: starts!, endsAt: ends!);
+    if (mounted) Navigator.pop(context);
   }
 }
 

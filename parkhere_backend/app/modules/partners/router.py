@@ -7,7 +7,7 @@ from math import ceil
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pathlib import Path
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,7 @@ from app.modules.parkings.service import ParkingManagementService
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
+from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
@@ -63,6 +64,15 @@ class PartnerOperatorCreateRequest(BaseModel):
     password: str
     accepted_terms: bool
     permissions: list[str] | None = None
+
+class OperatorParkingAssignmentRequest(BaseModel):
+    parking_ids: list[str]
+
+class OperatorShiftRequest(BaseModel):
+    operator_id: str
+    parking_id: str
+    starts_at: datetime
+    ends_at: datetime
 
 
 class PartnerOperatorResponse(BaseModel):
@@ -642,6 +652,43 @@ async def create_partner_operator(
     await db.commit()
     await db.refresh(operator)
     return _operator_response(operator)
+
+@router.get("/operators/{operator_id}/parkings")
+async def operator_parkings(operator_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    operator = await db.scalar(select(User).where(User.id == operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
+    if operator is None: raise HTTPException(status_code=404, detail="Operador não encontrado")
+    rows = (await db.scalars(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == operator_id))).all()
+    return [row.parking_id for row in rows]
+
+@router.put("/operators/{operator_id}/parkings")
+async def assign_operator_parkings(operator_id: str, data: OperatorParkingAssignmentRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    operator = await db.scalar(select(User).where(User.id == operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
+    if operator is None: raise HTTPException(status_code=404, detail="Operador não encontrado")
+    valid = (await db.scalars(select(Parking.id).where(Parking.tenant_id == current_user.tenant_id, Parking.id.in_(data.parking_ids)))).all()
+    await db.execute(delete(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == operator_id))
+    db.add_all([OperatorParkingAssignment(operator_id=operator_id, parking_id=parking_id) for parking_id in valid])
+    await db.commit()
+    return {"operator_id": operator_id, "parking_ids": valid}
+
+@router.get("/shifts")
+async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_staff(db, current_user)
+    rows = (await db.scalars(select(OperatorWorkShift).join(User, User.id == OperatorWorkShift.operator_id).where(User.tenant_id == current_user.tenant_id).order_by(OperatorWorkShift.starts_at.desc()))).all()
+    return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "starts_at": r.starts_at.isoformat(), "ends_at": r.ends_at.isoformat()} for r in rows]
+
+@router.post("/shifts", status_code=201)
+async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    if data.ends_at <= data.starts_at: raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
+    operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
+    parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
+    assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id))
+    if not operator or not parking or not assigned: raise HTTPException(status_code=422, detail="Operador não está associado a este estacionamento")
+    shift = OperatorWorkShift(operator_id=data.operator_id, parking_id=data.parking_id, starts_at=data.starts_at, ends_at=data.ends_at)
+    db.add(shift); await db.commit(); await db.refresh(shift)
+    return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id, "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
 
 
 @router.get(

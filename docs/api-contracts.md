@@ -119,6 +119,13 @@ Observacoes:
 
 `PUT /partners/parking-management/{parking_id}`
 
+Operadores do mesmo tenant podem ser associados a uma ou mais unidades:
+`GET/PUT /partners/operators/{operator_id}/parkings` recebe
+`{"parking_ids": ["..."]}`. O gestor cria escalas com
+`GET /partners/shifts` e `POST /partners/shifts`, informando `operator_id`,
+`parking_id`, `starts_at` e `ends_at`. A API valida que operador e unidade
+pertencem à mesma empresa e que o operador está associado à unidade.
+
 O mapa operacional (`GET /partners/parking-map`) devolve `category_pricing` e
 as tarifas de cada categoria (`uncovered_pricing`, `covered_pricing`). Ao criar
 uma reserva operacional, o app apenas envia `spot_type` e `pricing_plan`; o
