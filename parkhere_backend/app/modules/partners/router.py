@@ -82,6 +82,13 @@ class OperatorWorkProfileRequest(BaseModel):
     lunch_minutes: int = 60
     days_off: list[int] = []
 
+class ShiftSuggestionRequest(BaseModel):
+    parking_id: str
+    operator_ids: list[str]
+    starts_on: datetime
+    ends_on: datetime
+    daily_hours: float = 8
+
 
 class PartnerOperatorResponse(BaseModel):
     id: str
@@ -729,6 +736,32 @@ async def schedule_history(db: AsyncSession = Depends(get_db), current_user: Use
     await _ensure_parking_partner(db, current_user)
     rows = (await db.scalars(select(OperatorScheduleHistory).join(Parking, Parking.id == OperatorScheduleHistory.parking_id).where(Parking.tenant_id == current_user.tenant_id).order_by(OperatorScheduleHistory.created_at.desc()))).all()
     return [{"id": r.id, "parking_id": r.parking_id, "changed_by": r.changed_by, "action": r.action, "details": json.loads(r.details or "{}"), "created_at": r.created_at.isoformat()} for r in rows]
+
+@router.post("/shifts/suggest")
+async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Sugere uma escala rotativa; o gestor pode editar antes de confirmar."""
+    await _ensure_parking_partner(db, current_user)
+    if not data.operator_ids or data.ends_on < data.starts_on or not 1 <= data.daily_hours <= 12:
+        raise HTTPException(status_code=422, detail="Período, operadores ou carga horária inválidos")
+    parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
+    if parking is None: raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
+    assigned = (await db.scalars(select(OperatorParkingAssignment.operator_id).where(OperatorParkingAssignment.parking_id == data.parking_id, OperatorParkingAssignment.operator_id.in_(data.operator_ids)))).all()
+    if len(assigned) != len(set(data.operator_ids)): raise HTTPException(status_code=422, detail="Todos os operadores precisam estar associados à unidade")
+    duration = int(data.daily_hours * 60)
+    continuous_hours = 24 if parking.has_24h_gate else 12
+    required_people = max(1, (continuous_hours * 60 + duration - 1) // duration)
+    suggestions = []
+    day = data.starts_on.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_day = data.ends_on.replace(hour=0, minute=0, second=0, microsecond=0)
+    index = 0
+    while day <= end_day:
+        operator_id = data.operator_ids[index % len(data.operator_ids)]
+        start = day.replace(hour=7 if not parking.has_24h_gate else (index % required_people) * int(data.daily_hours))
+        finish = start + timedelta(minutes=duration)
+        suggestions.append({"operator_id": operator_id, "starts_at": start.isoformat(), "ends_at": finish.isoformat(), "day_off_for": [item for item in data.operator_ids if item != operator_id]})
+        index += 1; day += timedelta(days=1)
+    warning = None if len(data.operator_ids) >= required_people else f"Cobertura insuficiente: esta unidade exige pelo menos {required_people} faixas de {data.daily_hours:g}h para operar {continuous_hours}h por dia."
+    return {"parking_id": data.parking_id, "suggestions": suggestions, "required_people": required_people, "coverage_warning": warning, "rule": "A folga é atribuída automaticamente ao operador que não trabalha no dia; o gestor pode editar antes de salvar."}
 
 
 @router.get(

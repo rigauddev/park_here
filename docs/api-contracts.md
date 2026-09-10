@@ -549,3 +549,6 @@ limpeza do endpoint.
   `lunch_minutes` e `days_off` (dias da semana, 0=domingo).
 - `GET /partners/schedule-history` retorna alterações de jornada para auditoria.
   A escala deve ser gerada somente para operadores associados à unidade.
+- `POST /partners/shifts/suggest` recebe `parking_id`, `operator_ids`, `starts_on`,
+  `ends_on` e `daily_hours`, retornando turnos rotativos, folgas sugeridas,
+  `required_people` e `coverage_warning`. A sugestão é editável antes de gravar.
