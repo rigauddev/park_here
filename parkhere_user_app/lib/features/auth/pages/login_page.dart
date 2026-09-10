@@ -174,20 +174,22 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Image.asset(
-                            'assets/branding/logo_park_here_transparent.png',
+                            isPortuguese
+                                ? 'assets/branding/logo_park_here_portugues.png'
+                                : 'assets/branding/logo_park_here_ingles.png',
                             height: 58,
                             width: double.infinity,
                             fit: BoxFit.contain,
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            context.strings.appName,
-                            style: const TextStyle(
-                              fontSize: 23,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF102657),
-                            ),
-                          ),
+                          // Text(
+                          //   context.strings.appName,
+                          //   style: const TextStyle(
+                          //     fontSize: 23,
+                          //     fontWeight: FontWeight.w800,
+                          //     color: Color(0xFF102657),
+                          //   ),
+                          // ),
                           const SizedBox(height: 4),
                           Text(
                             context.strings.loginTagline,
@@ -329,8 +331,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                             child: Text(
                               loginMode == LoginMode.customer
                                   ? (isPortuguese
-                                        ? "Criar conta cliente"
-                                        : "Create customer account")
+                                        ? "Criar conta"
+                                        : "Create account")
                                   : (isPortuguese
                                         ? "Cadastrar estabelecimento parceiro"
                                         : "Register partner business"),

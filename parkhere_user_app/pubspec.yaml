@@ -77,6 +77,8 @@ flutter:
     - assets/branding/logo_rigaud_tech_clean.png
     - assets/branding/logo_park_here_transparent.png
     - assets/branding/icon_padrao_transparent.png
+    - assets/branding/logo_park_here_ingles.png
+    - assets/branding/logo_park_here_portugues.png
     - assets/branding/logo_park_here.svg
     - assets/branding/icon_padrao.svg
 

@@ -1,6 +1,6 @@
 {
-    "name": "parkhere_user_app",
-    "short_name": "parkhere_user_app",
+    "name": "ParkHere",
+    "short_name": "ParkHere",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
@@ -10,24 +10,24 @@
     "prefer_related_applications": false,
     "icons": [
         {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
+            "src": "icons/parkhere-icon.png",
+            "sizes": "413x421",
             "type": "image/png"
         },
         {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
+            "src": "icons/parkhere-icon.png",
+            "sizes": "413x421",
             "type": "image/png"
         },
         {
-            "src": "icons/Icon-maskable-192.png",
-            "sizes": "192x192",
+            "src": "icons/parkhere-icon.png",
+            "sizes": "413x421",
             "type": "image/png",
             "purpose": "maskable"
         },
         {
-            "src": "icons/Icon-maskable-512.png",
-            "sizes": "512x512",
+            "src": "icons/parkhere-icon.png",
+            "sizes": "413x421",
             "type": "image/png",
             "purpose": "maskable"
         }
