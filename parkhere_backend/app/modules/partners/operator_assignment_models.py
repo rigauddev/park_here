@@ -5,7 +5,7 @@ from app.db.base import BaseModel
 class OperatorParkingAssignment(BaseModel):
     __tablename__ = "operator_parking_assignments"
     __table_args__ = (UniqueConstraint("operator_id", "parking_id"),)
-    operator_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    operator_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=False)
 
 

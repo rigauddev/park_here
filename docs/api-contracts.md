@@ -552,3 +552,5 @@ limpeza do endpoint.
 - `POST /partners/shifts/suggest` recebe `parking_id`, `operator_ids`, `starts_on`,
   `ends_on` e `daily_hours`, retornando turnos rotativos, folgas sugeridas,
   `required_people` e `coverage_warning`. A sugestão é editável antes de gravar.
+  `operator_id` pode ser nulo: nesse caso o turno fica como vaga aberta para
+  atribuição posterior, sem bloquear a criação da escala.
