@@ -78,7 +78,7 @@ class PartnerOperatorsNotifier
     final response = await _api.postAuthorized('/partners/shifts/suggest', {
       'parking_id': parkingId, 'operator_ids': operatorIds, 'starts_on': startsOn.toUtc().toIso8601String(), 'ends_on': endsOn.toUtc().toIso8601String(), 'daily_hours': dailyHours,
     }, token);
-    return response as Map<String, dynamic>;
+    return response;
   }
 
   Future<List<Map<String, dynamic>>> fetchShifts() async {
