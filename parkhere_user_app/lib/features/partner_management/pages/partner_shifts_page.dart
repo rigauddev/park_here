@@ -57,7 +57,12 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
 
   Future<void> _generate(String parkingId, List<String> operators, DateTime first, DateTime last, TimeOfDay opening, TimeOfDay closing) async {
     if (operators.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecione ao menos um operador.'))); return; } final minute = opening.hour * 60 + opening.minute; final closeMinute = closing.hour * 60 + closing.minute; final duration = (closeMinute > minute ? closeMinute - minute : 480).clamp(60, 480);
-    try { for (var day = first; !day.isAfter(last); day = day.add(const Duration(days: 1))) { final id = operators[day.difference(first).inDays % operators.length]; final start = DateTime(day.year, day.month, day.day, minute ~/ 60, minute % 60); await ref.read(partnerOperatorsProvider.notifier).createShift(operatorId: id, parkingId: parkingId, startsAt: start, endsAt: start.add(Duration(minutes: duration))); } } catch (error) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível gerar a escala: $error'))); return; }
+    try {
+      final suggestion = await ref.read(partnerOperatorsProvider.notifier).suggestShifts(parkingId: parkingId, operatorIds: operators, startsOn: first, endsOn: last, dailyHours: duration / 60);
+      final warning = suggestion['coverage_warning'] as String?;
+      if (warning != null && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(warning)));
+      for (final item in (suggestion['suggestions'] as List<dynamic>)) { final value = item as Map<String, dynamic>; await ref.read(partnerOperatorsProvider.notifier).createShift(operatorId: value['operator_id'] as String, parkingId: parkingId, startsAt: DateTime.parse(value['starts_at'] as String), endsAt: DateTime.parse(value['ends_at'] as String)); }
+    } catch (error) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível gerar a escala: $error'))); return; }
     if (mounted) setState(() => _future = ref.read(partnerOperatorsProvider.notifier).fetchShifts());
   }
 }

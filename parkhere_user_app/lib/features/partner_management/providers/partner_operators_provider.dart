@@ -72,6 +72,15 @@ class PartnerOperatorsNotifier
     await _api.postAuthorized('/partners/shifts', {'operator_id': operatorId, 'parking_id': parkingId, 'starts_at': startsAt.toUtc().toIso8601String(), 'ends_at': endsAt.toUtc().toIso8601String()}, token);
   }
 
+  Future<Map<String, dynamic>> suggestShifts({required String parkingId, required List<String> operatorIds, required DateTime startsOn, required DateTime endsOn, double dailyHours = 8}) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada.');
+    final response = await _api.postAuthorized('/partners/shifts/suggest', {
+      'parking_id': parkingId, 'operator_ids': operatorIds, 'starts_on': startsOn.toUtc().toIso8601String(), 'ends_on': endsOn.toUtc().toIso8601String(), 'daily_hours': dailyHours,
+    }, token);
+    return response as Map<String, dynamic>;
+  }
+
   Future<List<Map<String, dynamic>>> fetchShifts() async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
