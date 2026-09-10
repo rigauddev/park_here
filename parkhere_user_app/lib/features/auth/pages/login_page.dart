@@ -173,7 +173,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const _ParkingLogoMark(),
+                          Image.asset(
+                            'assets/branding/logo_park_here_transparent.png',
+                            height: 58,
+                            width: double.infinity,
+                            fit: BoxFit.contain,
+                          ),
                           const SizedBox(height: 4),
                           Text(
                             context.strings.appName,
@@ -760,35 +765,6 @@ class _AccessModeButton extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ParkingLogoMark extends StatelessWidget {
-  const _ParkingLogoMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [Color(0xFF2AD2E5), Color(0xFF2788E8)],
-        ),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: const [
-          Icon(Icons.local_parking, size: 32, color: Colors.white),
-          Positioned(
-            right: 9,
-            bottom: 10,
-            child: Icon(Icons.location_on, size: 15, color: Color(0xFF102657)),
-          ),
-        ],
       ),
     );
   }
