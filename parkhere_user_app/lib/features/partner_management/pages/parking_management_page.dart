@@ -95,18 +95,18 @@ class _OperatingHoursEditor extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       dense: true,
       title: Text(label),
-      subtitle: Text(closed ? 'Fechado' : '${value?['open']} – ${value?['close']}'),
+      subtitle: Text(closed ? 'Fechado' : '${value['open']} – ${value['close']}'),
       trailing: Switch(value: !closed, onChanged: (enabled) {
         final next = {...hours};
         next[key] = enabled ? {'open': '08:00', 'close': '18:00'} : null;
         onChanged(next);
       }),
       onTap: closed ? null : () async {
-        final initial = _parse(value?['open'] ?? '08:00');
+        final initial = _parse(value['open'] ?? '08:00');
         final picked = await showTimePicker(context: context, initialTime: initial);
         if (picked == null) return;
         if (!context.mounted) return;
-        final finish = await showTimePicker(context: context, initialTime: _parse(value?['close'] ?? '18:00'));
+        final finish = await showTimePicker(context: context, initialTime: _parse(value['close'] ?? '18:00'));
         if (finish == null) return;
         if (!context.mounted) return;
         final next = {...hours, key: {'open': picked.format(context), 'close': finish.format(context)}};
