@@ -195,7 +195,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               const NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Visão geral'),
               const NavigationDestination(icon: Icon(Icons.approval_outlined), label: 'Aprovações'),
               const NavigationDestination(icon: Icon(Icons.payments_outlined), label: 'Taxas e planos'),
-              const NavigationDestination(icon: Icon(Icons.people_outline), label: 'Usuários'),
+              const NavigationDestination(icon: Icon(Icons.people_outline), label: 'Clientes'),
             ] else if (!isPartner)
               const NavigationDestination(
                 icon: Icon(Icons.menu),
