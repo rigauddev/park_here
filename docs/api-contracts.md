@@ -554,3 +554,5 @@ limpeza do endpoint.
   `required_people` e `coverage_warning`. A sugestão é editável antes de gravar.
   `operator_id` pode ser nulo: nesse caso o turno fica como vaga aberta para
   atribuição posterior, sem bloquear a criação da escala.
+  O gerador consulta `operating_hours` da unidade por dia da semana, ignora dias
+  fechados e limita o turno ao fechamento configurado.
