@@ -475,7 +475,7 @@ class _WebMenu extends ConsumerWidget {
             if (expanded)
               Text('ParkHere', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 18),
-            _MenuCategory(
+            if (!isAdmin) _MenuCategory(
               expanded: expanded,
               title: 'Navegação',
               items: [
@@ -564,7 +564,7 @@ class _WebMenu extends ConsumerWidget {
                 selectedArea: selectedArea,
                 onSelected: onSelected,
               ),
-            _MenuCategory(
+            if (!isAdmin) _MenuCategory(
               expanded: expanded,
               title: 'Conta',
               items: [
