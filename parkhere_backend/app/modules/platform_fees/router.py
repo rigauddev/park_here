@@ -74,6 +74,26 @@ async def admin_overview(
     }
 
 
+@router.get('/partners')
+async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Lista empresas parceiras com seus recursos para a gestão do sistema."""
+    _ensure_admin(current_user)
+    profiles = (await db.scalars(select(PartnerProfile))).all()
+    result = []
+    for profile in profiles:
+        users = (await db.scalars(select(User).where(User.tenant_id == profile.tenant_id))).all()
+        parkings = (await db.scalars(select(Parking).where(Parking.tenant_id == profile.tenant_id))).all()
+        result.append({
+            'tenant_id': profile.tenant_id,
+            'company_name': profile.company_name,
+            'service_type': profile.service_type,
+            'approval_status': profile.approval_status,
+            'users': [{'id': user.id, 'name': user.name, 'email': user.email, 'role': user.role.value, 'is_active': user.is_active} for user in users],
+            'parkings': [{'id': parking.id, 'name': parking.name, 'city': parking.city, 'is_active': parking.is_active} for parking in parkings],
+        })
+    return result
+
+
 @router.put('/{service_type}')
 async def upsert_platform_fee(
     service_type: str,

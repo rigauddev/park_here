@@ -17,6 +17,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   List<Map<String, dynamic>> _fees = [];
   Map<String, dynamic> _overview = {};
   List<Map<String, dynamic>> _operatorRequests = [];
+  List<Map<String, dynamic>> _partners = [];
   bool _loading = true;
   int _section = 0;
 
@@ -33,11 +34,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       final rows = await _api.getAuthorized('/admin/platform-fees', token);
       final overview = await _api.getAuthorizedMap('/admin/platform-fees/overview', token);
       final requests = await _api.getAuthorized('/admin/platform-fees/operator-packages/requests', token);
+      final partners = await _api.getAuthorized('/admin/platform-fees/partners', token);
       if (mounted) {
         setState(() {
           _fees = rows.cast<Map<String, dynamic>>();
           _overview = overview;
           _operatorRequests = requests.cast<Map<String, dynamic>>();
+          _partners = partners.cast<Map<String, dynamic>>();
         });
       }
     } finally {
@@ -152,7 +155,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       case 3:
         return [const Text('Funcionalidades pagas', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), const Card(child: ListTile(leading: Icon(Icons.analytics_outlined), title: Text('Indicadores avançados'), subtitle: Text('Habilite ou desabilite por parceiro após contratação.'))), const Card(child: ListTile(leading: Icon(Icons.account_balance_outlined), title: Text('Gestão financeira'), subtitle: Text('Controle de acesso ao módulo financeiro por plano.'))), const Card(child: ListTile(leading: Icon(Icons.groups_outlined), title: Text('Operadores adicionais'), subtitle: Text('Solicitações aprovadas ampliam o limite da empresa.')))];
       case 4:
-        return [const Text('Parceiros', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Empresas parceiras', '${_overview['partners'] ?? 0}', Icons.business), _overviewCard('Unidades de estacionamento', '${_overview['parkings'] ?? 0}', Icons.local_parking), const Card(child: ListTile(title: Text('Serviços e funcionalidades'), subtitle: Text('Cada parceiro poderá ter serviços e funcionalidades liberados individualmente.')))];
+        return [const Text('Parceiros', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), if (_partners.isEmpty) const Card(child: ListTile(title: Text('Nenhum parceiro cadastrado.'))) else for (final partner in _partners) Card(child: ListTile(leading: const Icon(Icons.business), title: Text(partner['company_name'] as String? ?? 'Empresa sem nome'), subtitle: Text('${_categoryLabel(partner['service_type'] as String? ?? '')} · ${(partner['users'] as List?)?.length ?? 0} usuários · ${(partner['parkings'] as List?)?.length ?? 0} unidades'), trailing: const Icon(Icons.chevron_right), onTap: () => _showPartnerDetails(partner))), const SizedBox(height: 8), const Card(child: ListTile(title: Text('Serviços, taxas e funcionalidades'), subtitle: Text('Selecione uma empresa para consultar seus cadastros e liberações.')))];
       case 5:
         return [const Text('Clientes do app', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Clientes cadastrados', '${_overview['customers'] ?? 0}', Icons.people_outline), const Card(child: ListTile(title: Text('Usuários dos parceiros'), subtitle: Text('Consulte clientes que utilizam reservas e serviços da plataforma.')))];
       default:
@@ -166,6 +169,12 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   String _categoryLabel(String value) => {'parking': 'Estacionamentos', 'tour_guide': 'Guias turísticos', 'car_wash': 'Lava-jatos', 'hotel': 'Hotéis', 'restaurant': 'Restaurantes', 'tourism_company': 'Empresas de turismo', 'transport': 'Transportes'}[value] ?? value;
 
   List<Widget> _operatorRequestCards() => _operatorRequests.isEmpty ? [const Card(child: ListTile(title: Text('Nenhuma solicitação pendente.')))] : [for (final request in _operatorRequests) Card(child: ListTile(title: Text('${request['quantity']} operador(es) · ${request['package_type']}'), subtitle: Text('${request['status']} · empresa ${request['tenant_id']}'), trailing: request['status'] == 'pending_review' ? Wrap(children: [IconButton(onPressed: () => _reviewOperatorRequest(request['id'] as String, 'approve'), icon: const Icon(Icons.check, color: Colors.green)), IconButton(onPressed: () => _reviewOperatorRequest(request['id'] as String, 'reject'), icon: const Icon(Icons.close, color: Colors.red))]) : null))];
+
+  void _showPartnerDetails(Map<String, dynamic> partner) {
+    final users = (partner['users'] as List?) ?? const [];
+    final parkings = (partner['parkings'] as List?) ?? const [];
+    showDialog<void>(context: context, builder: (_) => AlertDialog(title: Text(partner['company_name'] as String? ?? 'Parceiro'), content: SizedBox(width: 460, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Serviço: ${_categoryLabel(partner['service_type'] as String? ?? '')}'), Text('Status: ${partner['approval_status'] ?? 'pendente'}'), const SizedBox(height: 12), const Text('Usuários', style: TextStyle(fontWeight: FontWeight.bold)), for (final user in users) Text('• ${user['name']} — ${user['role']}'), const SizedBox(height: 12), const Text('Unidades', style: TextStyle(fontWeight: FontWeight.bold)), for (final parking in parkings) Text('• ${parking['name']} (${parking['city']})')])),), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar'))]));
+  }
 
   Future<void> _reviewOperatorRequest(String id, String decision) async {
     final token = ref.read(authProvider).accessToken;
