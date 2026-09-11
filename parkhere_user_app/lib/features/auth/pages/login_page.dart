@@ -10,10 +10,17 @@ import '../../../core/i18n/app_language.dart';
 import '../../../core/i18n/app_localizations.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
+import 'admin_login_page.dart';
 
 enum LoginLanguage { ptBr, en }
 
 enum LoginMode { customer, partner }
+
+/// Entrada administrativa exposta apenas em builds internos/homologação.
+const _showAdminEntry = bool.fromEnvironment(
+  'PARKHERE_ADMIN_ENTRY',
+  defaultValue: false,
+);
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -109,7 +116,26 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(width: 8),
+                    if (_showAdminEntry)
+                      TextButton.icon(
+                        onPressed: isMfaStep
+                            ? null
+                            : () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AdminLoginPage(),
+                                ),
+                              ),
+                        icon: const Icon(Icons.settings_outlined, size: 15),
+                        label: Text(isPortuguese ? 'Gestão' : 'Admin'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white.withValues(alpha: 0.72),
+                          textStyle: const TextStyle(fontSize: 11),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        ),
+                      )
+                    else
+                      const SizedBox(width: 8),
                     _LanguageFlagButton(
                       language: language,
                       onChanged: (value) {
