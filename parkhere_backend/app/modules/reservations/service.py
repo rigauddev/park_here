@@ -727,6 +727,7 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         selected_services=selected_services,
         platform_fees=platform_fees,
         payment_status=reservation.payment_status,
+        payment_method=getattr(reservation, "payment_method", None),
         notification_status=reservation.notification_status,
         cancelled_at=reservation.cancelled_at.isoformat() + "Z"
         if reservation.cancelled_at

@@ -93,6 +93,7 @@ class ReservationResponse(BaseModel):
     selected_services: list[ReservationServiceSnapshot]
     platform_fees: list[ReservationPlatformFeeSnapshot]
     payment_status: str
+    payment_method: str | None = None
     notification_status: str
     cancelled_at: str | None = None
     cancellation_fee_amount: float = 0

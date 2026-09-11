@@ -32,6 +32,7 @@ class Reservation(BaseModel):
     selected_services_snapshot = Column(Text, nullable=True)
     platform_fee_snapshot = Column(Text, nullable=True)
     payment_status = Column(String(40), nullable=False, default="pending_checkin")
+    payment_method = Column(String(20), nullable=True)
     notification_status = Column(String(40), nullable=False, default="sent_to_parking")
     spot_code = Column(String(20), nullable=True)
     arrival_estimate_at = Column(DateTime(timezone=True), nullable=True)

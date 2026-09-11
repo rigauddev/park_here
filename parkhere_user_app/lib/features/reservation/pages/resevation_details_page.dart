@@ -60,6 +60,8 @@ class _ReservationDetailsPageState
             children: [
               _DetailRow("Status", _statusLabel(reservation.status)),
               _DetailRow("Pagamento", _paymentLabel(reservation.paymentStatus)),
+              if (reservation.paymentMethod != null)
+                _DetailRow("Método", _methodLabel(reservation.paymentMethod!)),
               _DetailRow("Plano", reservation.plan.name.toUpperCase()),
               _DetailRow("Check-in", _formatDate(reservation.checkinAt)),
               if (reservation.checkoutAt != null)
@@ -246,6 +248,14 @@ class _ReservationDetailsPageState
     'expired' => 'Expirado',
     'cancelled' => 'Cancelado',
     _ => 'Aguardando pagamento',
+  };
+
+  String _methodLabel(String method) => switch (method) {
+    'credit_card' => 'Cartão de crédito',
+    'debit_card' => 'Cartão de débito',
+    'pix' => 'Pix',
+    'cash' => 'Dinheiro',
+    _ => method,
   };
 
   String _formatDate(DateTime date) {

@@ -241,6 +241,7 @@ class PaymentService:
             raise HTTPException(status_code=409, detail="Checkout excess already paid")
         await apply_cash_fee_ledger(db, transaction)
         transaction.status = "paid"
+        reservation.payment_method = transaction.method
         transaction.provider_payment_id = transaction.provider_payment_id or f"mp_mock_{payment_id}"
         if transaction.payment_purpose == "checkout_excess":
             reservation.checkout_excess_paid_at = datetime.utcnow()

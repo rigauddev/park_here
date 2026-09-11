@@ -12,13 +12,13 @@ from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.document_models import PartnerDocument
-from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PartnerPaymentAccount, PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.users.models.user_model import User
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_assignment_models import OperatorWorkShift
+from app.modules.reservations.models import Reservation
 
 
 config = context.config
