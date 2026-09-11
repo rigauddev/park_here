@@ -156,7 +156,8 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       case 5:
         return [const Text('Usuários', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Usuários na plataforma', '${_overview['users'] ?? 0}', Icons.people_outline), const Card(child: ListTile(title: Text('Perfis e permissões'), subtitle: Text('Consulte contas, papéis e funcionalidades liberadas.')))];
       default:
-        return [_overviewCard('Empresas', '${_overview['companies'] ?? 0}', Icons.apartment), _overviewCard('Estacionamentos', '${_overview['parkings'] ?? 0}', Icons.local_parking), _overviewCard('Usuários', '${_overview['users'] ?? 0}', Icons.people), const Card(child: ListTile(title: Text('Centro de gestão'), subtitle: Text('Use as abas acima para administrar cada domínio do sistema.')))];
+        final cities = (_overview['cities'] as List?)?.cast<Map<String, dynamic>>() ?? const <Map<String, dynamic>>[];
+        return [_overviewCard('Empresas', '${_overview['companies'] ?? 0}', Icons.apartment), _overviewCard('Estacionamentos', '${_overview['parkings'] ?? 0}', Icons.local_parking), _overviewCard('Clientes', '${_overview['customers'] ?? 0}', Icons.person), _overviewCard('Parceiros', '${_overview['partners'] ?? 0}', Icons.business_center), const SizedBox(height: 8), const Text('Cidades com serviços ativos', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), if (cities.isEmpty) const Card(child: ListTile(title: Text('Nenhuma cidade cadastrada.'))) else for (final city in cities) Card(child: ListTile(leading: const Icon(Icons.location_on_outlined), title: Text(city['city'] as String? ?? ''), subtitle: Text('${city['active_parkings'] ?? 0} estacionamentos ativos · ${city['parkings'] ?? 0} unidades')),), const Card(child: ListTile(title: Text('Auditoria'), subtitle: Text('O próximo bloco exibirá ações de usuários, pagamentos e alterações administrativas.')))];
     }
   }
 

@@ -49,11 +49,20 @@ async def admin_overview(
     tenants = (await db.scalars(select(Tenant))).all()
     parkings = (await db.scalars(select(Parking))).all()
     users = (await db.scalars(select(User))).all()
+    city_rows = {}
+    for parking in parkings:
+        city = (parking.city or '').strip() or 'Não informado'
+        item = city_rows.setdefault(city, {'city': city, 'parkings': 0, 'active_parkings': 0})
+        item['parkings'] += 1
+        item['active_parkings'] += int(bool(parking.is_active))
     return {
         'companies': len(tenants),
         'parkings': len(parkings),
         'active_parkings': sum(1 for item in parkings if item.is_active),
         'users': len(users),
+        'customers': sum(1 for user in users if user.role == UserRoleEnum.CUSTOMER),
+        'partners': sum(1 for user in users if user.role != UserRoleEnum.CUSTOMER and user.role != UserRoleEnum.SUPER_ADMIN),
+        'cities': list(city_rows.values()),
         'plans': ['free', 'pro'],
         'plan_rules': {
             'free': {'parkings': 1, 'operators': 2, 'financial_reports': False},
