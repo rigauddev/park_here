@@ -14,6 +14,8 @@ class PartnerShiftsPage extends ConsumerStatefulWidget {
 class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
   late Future<List<Map<String, dynamic>>> _future;
   DateTime _selectedDay = DateTime.now();
+  String? _parkingFilter;
+  String? _operatorFilter;
   @override
   void initState() { super.initState(); _future = ref.read(partnerOperatorsProvider.notifier).fetchShifts(); }
 
@@ -26,9 +28,10 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
       final operators = ref.read(partnerOperatorsProvider).maybeWhen(data: (v) => v, orElse: () => <PartnerOperatorModel>[]);
       final parkings = ref.read(partnerParkingProvider).maybeWhen(data: (v) => v, orElse: () => <ManagedParkingModel>[]);
       if (snapshot.data!.isEmpty) return const Center(child: Text('Nenhuma escala cadastrada.'));
-      final dayShifts = snapshot.data!.where((shift) { final date = DateTime.parse(shift['starts_at'] as String).toLocal(); return date.year == _selectedDay.year && date.month == _selectedDay.month && date.day == _selectedDay.day; }).toList();
+      final dayShifts = snapshot.data!.where((shift) { final date = DateTime.parse(shift['starts_at'] as String).toLocal(); return date.year == _selectedDay.year && date.month == _selectedDay.month && date.day == _selectedDay.day && (_parkingFilter == null || shift['parking_id'] == _parkingFilter) && (_operatorFilter == null || shift['operator_id'] == _operatorFilter); }).toList();
       return ListView(padding: const EdgeInsets.fromLTRB(8, 8, 8, 96), children: [
         CalendarDatePicker(initialDate: _selectedDay, firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 730)), onDateChanged: (value) => setState(() => _selectedDay = value)),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [Expanded(child: DropdownButton<String>(isExpanded: true, value: _parkingFilter, hint: const Text('Estacionamento'), items: [const DropdownMenuItem(value: null, child: Text('Todos')), ...parkings.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))], onChanged: (v) => setState(() => _parkingFilter = v))), const SizedBox(width: 8), Expanded(child: DropdownButton<String>(isExpanded: true, value: _operatorFilter, hint: const Text('Usuário'), items: [const DropdownMenuItem(value: null, child: Text('Todos')), ...operators.map((o) => DropdownMenuItem(value: o.id, child: Text(o.name)))], onChanged: (v) => setState(() => _operatorFilter = v)))])),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text('Turnos de ${_selectedDay.day}/${_selectedDay.month}/${_selectedDay.year}', style: Theme.of(context).textTheme.titleMedium)),
         if (dayShifts.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Text('Nenhum operador escalado neste dia.')),
         for (final shift in dayShifts) Card(child: ListTile(leading: const Icon(Icons.schedule), title: Text(operators.where((o) => o.id == shift['operator_id']).firstOrNull?.name ?? 'Vaga aberta — atribuir operador'), subtitle: Text('${parkings.where((p) => p.id == shift['parking_id']).firstOrNull?.name ?? 'Estacionamento'} • ${_date(shift['starts_at'])} até ${_date(shift['ends_at'])}'), trailing: IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Cancelar turno', onPressed: () async { final ok = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('Cancelar turno?'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Não')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sim'))])); if (ok == true) { await ref.read(partnerOperatorsProvider.notifier).cancelShift(shift['id'] as String); if (mounted) setState(() => _future = ref.read(partnerOperatorsProvider.notifier).fetchShifts()); } }))),
