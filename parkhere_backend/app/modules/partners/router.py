@@ -749,15 +749,33 @@ async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession
     if len(assigned) != len(set(data.operator_ids)): raise HTTPException(status_code=422, detail="Todos os operadores precisam estar associados à unidade")
     duration = int(data.daily_hours * 60)
     continuous_hours = 24 if parking.has_24h_gate else 12
+    configured_hours = json.loads(parking.operating_hours or '{}')
+    weekday_keys = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
     required_people = max(1, (continuous_hours * 60 + duration - 1) // duration)
     suggestions = []
     day = data.starts_on.replace(hour=0, minute=0, second=0, microsecond=0)
     end_day = data.ends_on.replace(hour=0, minute=0, second=0, microsecond=0)
     index = 0
     while day <= end_day:
+        day_hours = None if parking.has_24h_gate else configured_hours.get(weekday_keys[day.weekday()])
+        if not parking.has_24h_gate and not day_hours:
+            day += timedelta(days=1)
+            continue
         operator_id = data.operator_ids[index % len(data.operator_ids)] if data.operator_ids else None
-        start = day.replace(hour=7 if not parking.has_24h_gate else (index % required_people) * int(data.daily_hours))
-        finish = start + timedelta(minutes=duration)
+        if parking.has_24h_gate:
+            start_hour = (index % required_people) * int(data.daily_hours)
+            start = day.replace(hour=start_hour % 24)
+        else:
+            open_text = day_hours.get('open', '08:00')
+            hour, minute = (int(part) for part in open_text.split(':', 1))
+            start = day.replace(hour=hour, minute=minute)
+        shift_duration = duration
+        if day_hours:
+            close_text = day_hours.get('close', '18:00')
+            close_hour, close_minute = (int(part) for part in close_text.split(':', 1))
+            closing = day.replace(hour=close_hour, minute=close_minute)
+            shift_duration = max(60, min(duration, int((closing - start).total_seconds() // 60)))
+        finish = start + timedelta(minutes=shift_duration)
         suggestions.append({"operator_id": operator_id, "starts_at": start.isoformat(), "ends_at": finish.isoformat(), "day_off_for": [item for item in data.operator_ids if item != operator_id]})
         index += 1; day += timedelta(days=1)
     warning = None if len(data.operator_ids) >= required_people else f"Cobertura pendente: esta unidade exige pelo menos {required_people} faixas de {data.daily_hours:g}h para operar {continuous_hours}h por dia. Os turnos foram criados como vagas abertas."
