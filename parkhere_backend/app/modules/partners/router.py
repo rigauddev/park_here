@@ -87,6 +87,8 @@ class OperatorWorkProfileRequest(BaseModel):
     daily_hours: float = 8
     lunch_minutes: int = 60
     days_off: list[int] = []
+    work_modality: str = "8h"
+    bank_hours: float = 0
 
 class ShiftSuggestionRequest(BaseModel):
     parking_id: str
@@ -826,12 +828,12 @@ async def cancel_operator_shift(shift_id: str, db: AsyncSession = Depends(get_db
 async def list_work_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
     rows = (await db.scalars(select(OperatorWorkProfile).join(User, User.id == OperatorWorkProfile.operator_id).where(User.tenant_id == current_user.tenant_id))).all()
-    return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "daily_hours": r.daily_hours, "lunch_minutes": r.lunch_minutes, "days_off": r.days_off_list()} for r in rows]
+    return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "daily_hours": r.daily_hours, "lunch_minutes": r.lunch_minutes, "days_off": r.days_off_list(), "work_modality": r.work_modality, "bank_hours": r.bank_hours} for r in rows]
 
 @router.put("/work-profiles", status_code=200)
 async def save_work_profile(data: OperatorWorkProfileRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
-    if not 1 <= data.daily_hours <= 12 or not 0 <= data.lunch_minutes <= 180 or any(day < 0 or day > 6 for day in data.days_off):
+    if data.work_modality not in {"8h", "12h", "24h"} or not 1 <= data.daily_hours <= 24 or not 0 <= data.lunch_minutes <= 180 or data.bank_hours < 0 or any(day < 0 or day > 6 for day in data.days_off):
         raise HTTPException(status_code=422, detail="Jornada ou folgas inválidas")
     operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
     assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id))
@@ -841,10 +843,10 @@ async def save_work_profile(data: OperatorWorkProfileRequest, db: AsyncSession =
     if profile is None:
         profile = OperatorWorkProfile(operator_id=data.operator_id, parking_id=data.parking_id)
         db.add(profile)
-    profile.daily_hours = data.daily_hours; profile.lunch_minutes = data.lunch_minutes; profile.days_off = json.dumps(sorted(set(data.days_off)))
-    db.add(OperatorScheduleHistory(parking_id=data.parking_id, changed_by=current_user.id, action=action, details=json.dumps({"operator_id": data.operator_id, "daily_hours": data.daily_hours, "lunch_minutes": data.lunch_minutes, "days_off": data.days_off})))
+    profile.daily_hours = data.daily_hours; profile.lunch_minutes = data.lunch_minutes; profile.days_off = json.dumps(sorted(set(data.days_off))); profile.work_modality = data.work_modality; profile.bank_hours = data.bank_hours
+    db.add(OperatorScheduleHistory(parking_id=data.parking_id, changed_by=current_user.id, action=action, details=json.dumps({"operator_id": data.operator_id, "daily_hours": data.daily_hours, "lunch_minutes": data.lunch_minutes, "days_off": data.days_off, "work_modality": data.work_modality, "bank_hours": data.bank_hours})))
     await db.commit(); await db.refresh(profile)
-    return {"id": profile.id, "operator_id": profile.operator_id, "parking_id": profile.parking_id, "daily_hours": profile.daily_hours, "lunch_minutes": profile.lunch_minutes, "days_off": profile.days_off_list()}
+    return {"id": profile.id, "operator_id": profile.operator_id, "parking_id": profile.parking_id, "daily_hours": profile.daily_hours, "lunch_minutes": profile.lunch_minutes, "days_off": profile.days_off_list(), "work_modality": profile.work_modality, "bank_hours": profile.bank_hours}
 
 @router.get("/schedule-history")
 async def schedule_history(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):

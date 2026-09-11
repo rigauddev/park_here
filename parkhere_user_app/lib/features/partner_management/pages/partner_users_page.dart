@@ -197,9 +197,6 @@ class _OperatorAssignmentDialog extends ConsumerStatefulWidget {
 
 class _OperatorAssignmentDialogState extends ConsumerState<_OperatorAssignmentDialog> {
   final selected = <String>{};
-  String? shiftParking;
-  DateTime? starts;
-  DateTime? ends;
   @override Widget build(BuildContext context) {
     final parkings = ref.watch(partnerParkingProvider).maybeWhen(data: (value) => value, orElse: () => <ManagedParkingModel>[]);
     return AlertDialog(
@@ -208,16 +205,13 @@ class _OperatorAssignmentDialogState extends ConsumerState<_OperatorAssignmentDi
         const Align(alignment: Alignment.centerLeft, child: Text('Estacionamentos autorizados')),
         for (final parking in parkings) CheckboxListTile(value: selected.contains(parking.id), title: Text(parking.name), onChanged: (value) => setState(() => value == true ? selected.add(parking.id!) : selected.remove(parking.id)), contentPadding: EdgeInsets.zero),
         const Divider(),
-        DropdownButtonFormField<String>(initialValue: shiftParking, decoration: const InputDecoration(labelText: 'Estacionamento do turno'), items: [for (final p in parkings) DropdownMenuItem(value: p.id, child: Text(p.name))], onChanged: (v) => setState(() => shiftParking = v)),
-        TextButton.icon(onPressed: () async { final d = await showDatePicker(context: context, firstDate: DateTime.now().subtract(const Duration(days: 1)), lastDate: DateTime.now().add(const Duration(days: 365)), initialDate: DateTime.now()); if (d != null) setState(() => starts = DateTime(d.year, d.month, d.day, 8)); }, icon: const Icon(Icons.schedule), label: Text(starts == null ? 'Definir início' : 'Início: ${starts!.day}/${starts!.month} 08:00')),
-        TextButton.icon(onPressed: () async { final d = await showDatePicker(context: context, firstDate: DateTime.now().subtract(const Duration(days: 1)), lastDate: DateTime.now().add(const Duration(days: 365)), initialDate: DateTime.now()); if (d != null) setState(() => ends = DateTime(d.year, d.month, d.day, 18)); }, icon: const Icon(Icons.schedule_outlined), label: Text(ends == null ? 'Definir fim' : 'Fim: ${ends!.day}/${ends!.month} 18:00')),
+        const Text('Os turnos são definidos exclusivamente na tela Escalas. Aqui ficam apenas os estacionamentos autorizados.'),
       ])),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: _save, child: const Text('Salvar'))],
     );
   }
   Future<void> _save() async {
     await ref.read(partnerOperatorsProvider.notifier).assignParkings(widget.operator.id, selected.toList());
-    if (shiftParking != null && starts != null && ends != null) await ref.read(partnerOperatorsProvider.notifier).createShift(operatorId: widget.operator.id, parkingId: shiftParking!, startsAt: starts!, endsAt: ends!);
     if (mounted) Navigator.pop(context);
   }
 }

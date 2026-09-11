@@ -10,6 +10,8 @@ class OperatorWorkProfile(BaseModel):
     daily_hours = Column(Float, nullable=False, default=8)
     lunch_minutes = Column(Integer, nullable=False, default=60)
     days_off = Column(Text, nullable=False, default="[]")
+    work_modality = Column(String(20), nullable=False, default="8h")
+    bank_hours = Column(Float, nullable=False, default=0)
 
     def days_off_list(self):
         try:

@@ -17,6 +17,8 @@ from app.modules.payments.models import PartnerPaymentAccount, PaymentTransactio
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.users.models.user_model import User
 from app.modules.partners.operator_package_models import OperatorPackageRequest
+from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
+from app.modules.partners.operator_assignment_models import OperatorWorkShift
 
 
 config = context.config
