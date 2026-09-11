@@ -114,8 +114,10 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
               return const Center(child: Text("Nenhuma reserva encontrada."));
             }
 
+            // A reserva deve refletir a ordem da solicitação, inclusive para
+            // expiradas e canceladas. checkinTime preserva o created_at da API.
             final ordered = [...allReservations]
-              ..sort((a, b) => b.checkinAt.compareTo(a.checkinAt));
+              ..sort((a, b) => b.checkinTime.compareTo(a.checkinTime));
 
             final contractedServices = _contractedServices(ordered)
                 .where(

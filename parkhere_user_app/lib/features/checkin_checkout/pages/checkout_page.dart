@@ -174,7 +174,8 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
               amount: next.amount!,
               reservationId: widget.reservation.id,
               payNow: false,
-              onPaymentSuccess: () {
+              onPaymentSuccess: () async {
+                await _finalizeCheckoutOnServer();
                 ref.read(checkoutProvider.notifier).paymentSuccess();
               },
             ),
@@ -299,6 +300,16 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _finalizeCheckoutOnServer() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada. Entre novamente.');
+    await ApiService().postAuthorized(
+      '/reservations/${widget.reservation.id}/checkout',
+      {},
+      token,
     );
   }
 }
