@@ -55,6 +55,7 @@ class ParkingManagementRequest(BaseModel):
     available_spots: int | None = None
     has_vip_spots: bool = False
     has_24h_gate: bool = False
+    operating_hours: dict[str, dict[str, str] | None] = Field(default_factory=dict)
     has_security_system: bool = False
     wants_automatic_access: bool = False
     has_automatic_access: bool = False
@@ -95,6 +96,7 @@ class ParkingManagementResponse(BaseModel):
     has_covered_area: bool
     has_vip_spots: bool
     has_24h_gate: bool
+    operating_hours: dict[str, dict[str, str] | None] = Field(default_factory=dict)
     has_security_system: bool
     wants_automatic_access: bool
     has_automatic_access: bool

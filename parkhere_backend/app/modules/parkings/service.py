@@ -82,6 +82,7 @@ class ParkingManagementService:
             has_covered_area=data.covered_spots > 0,
             has_vip_spots=data.has_vip_spots or data.vip_spots > 0,
             has_24h_gate=data.has_24h_gate,
+            operating_hours=json.dumps(data.operating_hours),
             has_security_system=data.has_security_system,
             wants_automatic_access=data.wants_automatic_access,
             has_automatic_access=data.has_automatic_access,
@@ -153,6 +154,7 @@ class ParkingManagementService:
         parking.has_covered_area = data.covered_spots > 0
         parking.has_vip_spots = data.has_vip_spots or data.vip_spots > 0
         parking.has_24h_gate = data.has_24h_gate
+        parking.operating_hours = json.dumps(data.operating_hours)
         parking.has_security_system = data.has_security_system
         parking.wants_automatic_access = data.wants_automatic_access
         parking.has_automatic_access = data.has_automatic_access
@@ -270,6 +272,7 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
         has_covered_area=parking.has_covered_area,
         has_vip_spots=parking.has_vip_spots,
         has_24h_gate=parking.has_24h_gate,
+        operating_hours=json.loads(parking.operating_hours or '{}'),
         has_security_system=parking.has_security_system,
         wants_automatic_access=parking.wants_automatic_access,
         has_automatic_access=parking.has_automatic_access,
