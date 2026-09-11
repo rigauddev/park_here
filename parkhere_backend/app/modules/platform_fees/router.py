@@ -11,6 +11,7 @@ from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.parkings.models import Parking
 from app.modules.users.models.user_model import User
 from app.modules.partners.operator_package_models import OperatorPackageRequest
+from app.modules.partners.models import PartnerProfile
 
 router = APIRouter(prefix='/admin/platform-fees', tags=['Platform fees'])
 
@@ -49,6 +50,7 @@ async def admin_overview(
     tenants = (await db.scalars(select(Tenant))).all()
     parkings = (await db.scalars(select(Parking))).all()
     users = (await db.scalars(select(User))).all()
+    profiles = (await db.scalars(select(PartnerProfile))).all()
     city_rows = {}
     for parking in parkings:
         city = (parking.city or '').strip() or 'Não informado'
@@ -62,6 +64,7 @@ async def admin_overview(
         'users': len(users),
         'customers': sum(1 for user in users if user.role == UserRoleEnum.CUSTOMER),
         'partners': sum(1 for user in users if user.role != UserRoleEnum.CUSTOMER and user.role != UserRoleEnum.SUPER_ADMIN),
+        'partner_categories': {category: sum(1 for profile in profiles if profile.service_type == category) for category in ('parking', 'tour_guide', 'car_wash', 'hotel', 'restaurant', 'tourism_company', 'transport')},
         'cities': list(city_rows.values()),
         'plans': ['free', 'pro'],
         'plan_rules': {
