@@ -692,7 +692,10 @@ async def assign_operator_parkings(operator_id: str, data: OperatorParkingAssign
 @router.get("/shifts")
 async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_staff(db, current_user)
-    rows = (await db.scalars(select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id).order_by(OperatorWorkShift.starts_at.desc()))).all()
+    query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        query = query.where(OperatorWorkShift.operator_id == current_user.id)
+    rows = (await db.scalars(query.order_by(OperatorWorkShift.starts_at.desc()))).all()
     return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "starts_at": r.starts_at.isoformat(), "ends_at": r.ends_at.isoformat()} for r in rows]
 
 @router.post("/shifts", status_code=201)
