@@ -556,3 +556,5 @@ limpeza do endpoint.
   atribuição posterior, sem bloquear a criação da escala.
   O gerador consulta `operating_hours` da unidade por dia da semana, ignora dias
   fechados e limita o turno ao fechamento configurado.
+- `DELETE /partners/shifts/{shift_id}` cancela um turno e grava a alteração no
+  histórico de auditoria.
