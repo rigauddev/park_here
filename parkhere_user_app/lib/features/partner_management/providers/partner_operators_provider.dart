@@ -87,4 +87,10 @@ class PartnerOperatorsNotifier
     final data = await _api.getAuthorized('/partners/shifts', token);
     return data.cast<Map<String, dynamic>>();
   }
+
+  Future<void> cancelShift(String shiftId) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada.');
+    await _api.deleteAuthorized('/partners/shifts/$shiftId', token);
+  }
 }

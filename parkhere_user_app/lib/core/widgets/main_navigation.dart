@@ -491,7 +491,7 @@ class _WebMenu extends ConsumerWidget {
                     'Minha empresa',
                     _MainArea.management,
                   ),
-                if (isPartner && isPartnerOwner)
+                if (isPartner && !isGuide)
                   _MenuItem(Icons.schedule_outlined, 'Escalas', _MainArea.shifts),
                 if (isGuide)
                   _MenuItem(

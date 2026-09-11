@@ -202,6 +202,15 @@ class ApiService {
     throw Exception(_errorMessage(response));
   }
 
+  Future<void> deleteAuthorized(String endpoint, String token) async {
+    final response = await http
+        .delete(Uri.parse("${ApiConstants.baseUrl}$endpoint"), headers: _authorizedHeaders(token))
+        .timeout(_timeout);
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    await _handleUnauthorized(response);
+    throw Exception(_errorMessage(response));
+  }
+
   Map<String, String> _authorizedHeaders(String token) {
     return {
       'Content-Type': 'application/json',

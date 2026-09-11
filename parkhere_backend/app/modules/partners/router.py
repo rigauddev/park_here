@@ -707,6 +707,14 @@ async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = D
     db.add(shift); await db.commit(); await db.refresh(shift)
     return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id, "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
 
+@router.delete("/shifts/{shift_id}", status_code=204)
+async def cancel_operator_shift(shift_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await _ensure_parking_partner(db, current_user)
+    shift = await db.scalar(select(OperatorWorkShift).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(OperatorWorkShift.id == shift_id, Parking.tenant_id == current_user.tenant_id))
+    if shift is None: raise HTTPException(status_code=404, detail="Turno não encontrado")
+    db.add(OperatorScheduleHistory(parking_id=shift.parking_id, changed_by=current_user.id, action="cancelled", details=json.dumps({"shift_id": shift_id})))
+    await db.delete(shift); await db.commit()
+
 @router.get("/work-profiles")
 async def list_work_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
