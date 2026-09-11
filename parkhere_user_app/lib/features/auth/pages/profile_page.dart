@@ -14,6 +14,7 @@ import '../../reservation/pages/reservation_page.dart';
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
 import 'login_page.dart';
+import '../../partner_management/pages/partner_shifts_page.dart';
 
 enum _MfaPreference { email, phone, authenticator }
 
@@ -173,13 +174,23 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           if (isPartner) ...[
             const SizedBox(height: 14),
             Card(
-              child: ListTile(
-                leading: const Icon(Icons.directions_car_filled_outlined),
-                title: const Text('Veículos'),
-                subtitle: const Text('Cadastrar veículo para reservas operacionais'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VehiclesPage())),
-              ),
+              child: Column(children: [
+                ListTile(
+                  leading: const Icon(Icons.schedule_outlined),
+                  title: const Text('Minha escala'),
+                  subtitle: const Text('Dias e horários do meu turno'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PartnerShiftsPage())),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.directions_car_filled_outlined),
+                  title: const Text('Veículos'),
+                  subtitle: const Text('Cadastrar veículo para reservas operacionais'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VehiclesPage())),
+                ),
+              ]),
             ),
           ],
           const SizedBox(height: 14),

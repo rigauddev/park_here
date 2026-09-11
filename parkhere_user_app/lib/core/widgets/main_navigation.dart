@@ -301,7 +301,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.users:
         return isPartnerOwner ? const PartnerUsersPage() : const ProfilePage();
       case _MainArea.shifts:
-        return isPartnerOwner ? const PartnerShiftsPage() : const ProfilePage();
+        return isPartner ? const PartnerShiftsPage() : const ProfilePage();
       case _MainArea.dashboard:
         if (isGuide) return const GuideDashboardPage();
         return isPartnerOwner
