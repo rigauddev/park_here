@@ -61,17 +61,17 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                 ('Aprovações', Icons.approval_outlined),
                 ('Taxas e planos', Icons.payments_outlined),
                 ('Funcionalidades', Icons.extension_outlined),
-                ('Estacionamentos', Icons.business_outlined),
-                ('Usuários', Icons.people_outline),
+                ('Parceiros', Icons.business_outlined),
+                ('Clientes', Icons.people_outline),
               ])
                 Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: ChoiceChip(
                   selected: _section == const [
-                    'Visão geral', 'Aprovações', 'Taxas e planos', 'Funcionalidades', 'Estacionamentos', 'Usuários'
+                    'Visão geral', 'Aprovações', 'Taxas e planos', 'Funcionalidades', 'Parceiros', 'Clientes'
                   ].indexOf(item.$1),
                   avatar: Icon(item.$2, size: 18),
                   label: Text(item.$1),
                   onSelected: (_) => setState(() => _section = const [
-                    'Visão geral', 'Aprovações', 'Taxas e planos', 'Funcionalidades', 'Estacionamentos', 'Usuários'
+                    'Visão geral', 'Aprovações', 'Taxas e planos', 'Funcionalidades', 'Parceiros', 'Clientes'
                   ].indexOf(item.$1)),
                 )),
             ]),
@@ -152,9 +152,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       case 3:
         return [const Text('Funcionalidades pagas', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), const Card(child: ListTile(leading: Icon(Icons.analytics_outlined), title: Text('Indicadores avançados'), subtitle: Text('Habilite ou desabilite por parceiro após contratação.'))), const Card(child: ListTile(leading: Icon(Icons.account_balance_outlined), title: Text('Gestão financeira'), subtitle: Text('Controle de acesso ao módulo financeiro por plano.'))), const Card(child: ListTile(leading: Icon(Icons.groups_outlined), title: Text('Operadores adicionais'), subtitle: Text('Solicitações aprovadas ampliam o limite da empresa.')))];
       case 4:
-        return [const Text('Estacionamentos', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Unidades cadastradas', '${_overview['parkings'] ?? 0}', Icons.business), _overviewCard('Unidades ativas', '${_overview['active_parkings'] ?? 0}', Icons.check_circle_outline), const Card(child: ListTile(title: Text('Aprovação e ativação'), subtitle: Text('Acompanhe unidades, status e taxa de ativação.')))];
+        return [const Text('Parceiros', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Empresas parceiras', '${_overview['partners'] ?? 0}', Icons.business), _overviewCard('Unidades de estacionamento', '${_overview['parkings'] ?? 0}', Icons.local_parking), const Card(child: ListTile(title: Text('Serviços e funcionalidades'), subtitle: Text('Cada parceiro poderá ter serviços e funcionalidades liberados individualmente.')))];
       case 5:
-        return [const Text('Usuários', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Usuários na plataforma', '${_overview['users'] ?? 0}', Icons.people_outline), const Card(child: ListTile(title: Text('Perfis e permissões'), subtitle: Text('Consulte contas, papéis e funcionalidades liberadas.')))];
+        return [const Text('Clientes do app', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Clientes cadastrados', '${_overview['customers'] ?? 0}', Icons.people_outline), const Card(child: ListTile(title: Text('Usuários dos parceiros'), subtitle: Text('Consulte clientes que utilizam reservas e serviços da plataforma.')))];
       default:
         final cities = (_overview['cities'] as List?)?.cast<Map<String, dynamic>>() ?? const <Map<String, dynamic>>[];
         final categories = (_overview['partner_categories'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
