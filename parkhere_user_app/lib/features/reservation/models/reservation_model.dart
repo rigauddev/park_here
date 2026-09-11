@@ -24,6 +24,7 @@ class ReservationModel {
   final int? appRating;
   final String? ratingComment;
   final bool checkedIn;
+  final String paymentStatus;
 
   // Serviços adicionais
   final bool carWash;
@@ -53,6 +54,7 @@ class ReservationModel {
     this.appRating,
     this.ratingComment,
     this.checkedIn = false,
+    this.paymentStatus = 'pending_checkin',
   });
 
   ReservationModel copyWith({
@@ -64,6 +66,7 @@ class ReservationModel {
     int? parkingRating,
     int? appRating,
     String? ratingComment,
+    String? paymentStatus,
   }) {
     return ReservationModel(
       id: id,
@@ -88,6 +91,7 @@ class ReservationModel {
       appRating: appRating ?? this.appRating,
       ratingComment: ratingComment ?? this.ratingComment,
       checkedIn: checkedIn,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
     );
   }
 
@@ -110,6 +114,7 @@ class ReservationModel {
     'tourGuide': tourGuide,
     'transport': transport,
     'checkedIn': checkedIn,
+    'paymentStatus': paymentStatus,
     'parking': {
       'id': preCheckin.parking.id,
       'name': preCheckin.parking.name,
@@ -179,6 +184,7 @@ class ReservationModel {
       tourGuide: json['tourGuide'] as bool? ?? false,
       transport: json['transport'] as bool? ?? false,
       checkedIn: json['checkedIn'] as bool? ?? false,
+      paymentStatus: json['paymentStatus'] as String? ?? 'pending_checkin',
       firstHourPrice: (json['firstHourPrice'] as num?)?.toDouble() ?? 0,
       additionalHourPrice:
           (json['additionalHourPrice'] as num?)?.toDouble() ?? 0,
@@ -274,6 +280,7 @@ class ReservationModel {
         userLocationLng: 0,
       ),
       checkedIn: json['checked_in_at'] != null,
+      paymentStatus: json['payment_status'] as String? ?? 'pending_checkin',
     );
   }
 }

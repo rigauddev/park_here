@@ -163,7 +163,9 @@ class _PartnerReservationCard extends ConsumerWidget {
               ),
             ],
             if (reservation.status != 'completed' &&
-                reservation.status != 'cancelled') ...[
+                reservation.status != 'cancelled' &&
+                reservation.status != 'checked_in' &&
+                reservation.status != 'confirmed') ...[
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,

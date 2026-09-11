@@ -31,6 +31,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         ? AuthAccountType.partner
         : AuthAccountType.customer;
 
+    // A login/MFA flow may finish while this asynchronous startup check is
+    // reading storage. Never overwrite the freshly authenticated session
+    // (this was causing admin login to return with the previous customer role).
+    if (state.status == AuthStatus.authenticated) return;
+
     if (tokens["access"] != null && _isExpired(tokenClaims["exp"])) {
       await logout();
       return;
