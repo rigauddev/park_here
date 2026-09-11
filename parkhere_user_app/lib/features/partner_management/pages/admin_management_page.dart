@@ -18,6 +18,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   Map<String, dynamic> _overview = {};
   List<Map<String, dynamic>> _operatorRequests = [];
   bool _loading = true;
+  int _section = 0;
 
   @override
   void initState() {
@@ -47,15 +48,45 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Gestão do sistema / Admin panel')),
+      appBar: AppBar(
+        title: const Text('Gestão do sistema'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(58),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(children: [
+              for (final item in const [
+                ('Visão geral', Icons.dashboard_outlined),
+                ('Aprovações', Icons.approval_outlined),
+                ('Taxas e planos', Icons.payments_outlined),
+                ('Funcionalidades', Icons.extension_outlined),
+                ('Estacionamentos', Icons.business_outlined),
+                ('Usuários', Icons.people_outline),
+              ])
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: ChoiceChip(
+                  selected: _section == const [
+                    'Visão geral', 'Aprovações', 'Taxas e planos', 'Funcionalidades', 'Estacionamentos', 'Usuários'
+                  ].indexOf(item.$1),
+                  avatar: Icon(item.$2, size: 18),
+                  label: Text(item.$1),
+                  onSelected: (_) => setState(() => _section = const [
+                    'Visão geral', 'Aprovações', 'Taxas e planos', 'Funcionalidades', 'Estacionamentos', 'Usuários'
+                  ].indexOf(item.$1)),
+                )),
+            ]),
+          ),
+        ),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
                 padding: const EdgeInsets.all(16),
-                children: [
-                  const Card(
+                children: _sectionContent(),
+              ),
+/*                  const Card(
                     child: ListTile(
                       leading: Icon(Icons.admin_panel_settings),
                       title: Text('Funcionalidades dos planos'),
@@ -107,11 +138,31 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                         onTap: () => _editFee(fee),
                       ),
                     ),
-                ],
-              ),
+                ],*/
             ),
     );
   }
+
+  List<Widget> _sectionContent() {
+    switch (_section) {
+      case 1:
+        return [const Text('Aprovações', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), ..._operatorRequestCards()];
+      case 2:
+        return [const Text('Taxas e planos', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), ..._fees.map((fee) => Card(child: ListTile(title: Text(fee['service_type'] as String? ?? ''), subtitle: Text('${fee['percentage'] ?? 0}% + BRL ${fee['fixed_amount'] ?? 0}'), trailing: const Icon(Icons.edit_outlined), onTap: () => _editFee(fee))))];
+      case 3:
+        return [const Text('Funcionalidades pagas', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), const Card(child: ListTile(leading: Icon(Icons.analytics_outlined), title: Text('Indicadores avançados'), subtitle: Text('Habilite ou desabilite por parceiro após contratação.'))), const Card(child: ListTile(leading: Icon(Icons.account_balance_outlined), title: Text('Gestão financeira'), subtitle: Text('Controle de acesso ao módulo financeiro por plano.'))), const Card(child: ListTile(leading: Icon(Icons.groups_outlined), title: Text('Operadores adicionais'), subtitle: Text('Solicitações aprovadas ampliam o limite da empresa.')))];
+      case 4:
+        return [const Text('Estacionamentos', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Unidades cadastradas', '${_overview['parkings'] ?? 0}', Icons.business), _overviewCard('Unidades ativas', '${_overview['active_parkings'] ?? 0}', Icons.check_circle_outline), const Card(child: ListTile(title: Text('Aprovação e ativação'), subtitle: Text('Acompanhe unidades, status e taxa de ativação.')))];
+      case 5:
+        return [const Text('Usuários', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 8), _overviewCard('Usuários na plataforma', '${_overview['users'] ?? 0}', Icons.people_outline), const Card(child: ListTile(title: Text('Perfis e permissões'), subtitle: Text('Consulte contas, papéis e funcionalidades liberadas.')))];
+      default:
+        return [_overviewCard('Empresas', '${_overview['companies'] ?? 0}', Icons.apartment), _overviewCard('Estacionamentos', '${_overview['parkings'] ?? 0}', Icons.local_parking), _overviewCard('Usuários', '${_overview['users'] ?? 0}', Icons.people), const Card(child: ListTile(title: Text('Centro de gestão'), subtitle: Text('Use as abas acima para administrar cada domínio do sistema.')))];
+    }
+  }
+
+  Widget _overviewCard(String title, String value, IconData icon) => Card(child: ListTile(leading: Icon(icon), title: Text(title), trailing: Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))));
+
+  List<Widget> _operatorRequestCards() => _operatorRequests.isEmpty ? [const Card(child: ListTile(title: Text('Nenhuma solicitação pendente.')))] : [for (final request in _operatorRequests) Card(child: ListTile(title: Text('${request['quantity']} operador(es) · ${request['package_type']}'), subtitle: Text('${request['status']} · empresa ${request['tenant_id']}'), trailing: request['status'] == 'pending_review' ? Wrap(children: [IconButton(onPressed: () => _reviewOperatorRequest(request['id'] as String, 'approve'), icon: const Icon(Icons.check, color: Colors.green)), IconButton(onPressed: () => _reviewOperatorRequest(request['id'] as String, 'reject'), icon: const Icon(Icons.close, color: Colors.red))]) : null))];
 
   Future<void> _reviewOperatorRequest(String id, String decision) async {
     final token = ref.read(authProvider).accessToken;
