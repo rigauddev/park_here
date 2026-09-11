@@ -28,6 +28,7 @@ from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
+from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
@@ -65,6 +66,11 @@ class PartnerOperatorCreateRequest(BaseModel):
     password: str
     accepted_terms: bool
     permissions: list[str] | None = None
+
+class OperatorPackageRequestCreate(BaseModel):
+    quantity: int
+    package_type: str = "individual"
+    amount: float = 0
 
 class OperatorParkingAssignmentRequest(BaseModel):
     parking_ids: list[str]
@@ -468,11 +474,23 @@ async def get_partner_parking_map(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
-    owned = (await db.scalars(select(Parking).where(Parking.tenant_id == current_user.tenant_id).order_by(Parking.id).with_for_update())).all()
+    owned_query = select(Parking).where(Parking.tenant_id == current_user.tenant_id)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        now = datetime.utcnow()
+        assigned_ids = (await db.scalars(select(OperatorWorkShift.parking_id).where(
+            OperatorWorkShift.operator_id == current_user.id,
+            OperatorWorkShift.starts_at <= now,
+            OperatorWorkShift.ends_at >= now,
+        ))).all()
+        owned_query = owned_query.where(Parking.id.in_(assigned_ids)) if assigned_ids else owned_query.where(Parking.id == "__none__")
+    owned = (await db.scalars(owned_query.order_by(Parking.id).with_for_update())).all()
     for parking in owned:
         await expire_parking_reservations(db, parking)
     await db.commit()
     parkings = await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        allowed = {parking.id for parking in owned}
+        parkings = [parking for parking in parkings if parking.id in allowed]
     if not parkings:
         return {"parkings": []}
 
@@ -540,13 +558,17 @@ async def list_partner_reservations(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    reservation_query = select(Reservation, Parking, User, Vehicle).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).where(Parking.tenant_id == current_user.tenant_id)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        now = datetime.utcnow()
+        assigned_ids = (await db.scalars(select(OperatorWorkShift.parking_id).where(
+            OperatorWorkShift.operator_id == current_user.id,
+            OperatorWorkShift.starts_at <= now,
+            OperatorWorkShift.ends_at >= now,
+        ))).all()
+        reservation_query = reservation_query.where(Reservation.parking_id.in_(assigned_ids)) if assigned_ids else reservation_query.where(Reservation.parking_id == "__none__")
     result = await db.execute(
-        select(Reservation, Parking, User, Vehicle)
-        .join(Parking, Parking.id == Reservation.parking_id)
-        .outerjoin(User, User.id == Reservation.user_id)
-        .outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id)
-        .where(Parking.tenant_id == current_user.tenant_id)
-        .order_by(Reservation.created_at.desc())
+        reservation_query.order_by(Reservation.created_at.desc())
     )
 
     return [
@@ -634,11 +656,15 @@ async def create_partner_operator(
     )
     operator_count = count_result.scalar_one()
     parking_count = await db.scalar(select(func.count(Parking.id)).where(Parking.tenant_id == current_user.tenant_id, Parking.is_active.is_(True)))
-    operator_limit = max(FREE_OPERATOR_LIMIT, (parking_count or 1) * FREE_OPERATOR_LIMIT)
+    approved_extra = await db.scalar(select(func.coalesce(func.sum(OperatorPackageRequest.quantity), 0)).where(
+        OperatorPackageRequest.tenant_id == current_user.tenant_id,
+        OperatorPackageRequest.status == "approved",
+    )) or 0
+    operator_limit = max(FREE_OPERATOR_LIMIT, (parking_count or 1) * FREE_OPERATOR_LIMIT) + int(approved_extra)
     if operator_count >= operator_limit:
         raise HTTPException(
             status_code=402,
-            detail=f"O limite atual é de 2 operadores por estacionamento ({operator_limit} no total).",
+            detail=f"Limite de operadores atingido ({operator_limit}). Solicite operadores adicionais no painel de equipe.",
         )
 
     permissions = data.permissions or DEFAULT_OPERATOR_PERMISSIONS
@@ -669,6 +695,84 @@ async def create_partner_operator(
     await db.commit()
     await db.refresh(operator)
     return _operator_response(operator)
+
+
+def _operator_package_payload(item: OperatorPackageRequest) -> dict:
+    return {
+        "id": item.id,
+        "quantity": item.quantity,
+        "package_type": item.package_type,
+        "amount": item.amount,
+        "status": item.status,
+        "receipt_path": bool(item.receipt_path),
+        "created_at": item.created_at.isoformat() + "Z",
+    }
+
+
+@router.post("/operator-packages/requests", status_code=201)
+async def request_operator_package(
+    data: OperatorPackageRequestCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    if data.quantity < 1 or data.quantity > 100:
+        raise HTTPException(status_code=422, detail="A quantidade deve estar entre 1 e 100 operadores.")
+    if data.package_type not in {"individual", "package"}:
+        raise HTTPException(status_code=422, detail="Tipo de contratação inválido.")
+    item = OperatorPackageRequest(
+        tenant_id=current_user.tenant_id,
+        requested_by=current_user.id,
+        quantity=data.quantity,
+        package_type=data.package_type,
+        amount=max(0, data.amount),
+        status="pending_payment",
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return _operator_package_payload(item)
+
+
+@router.get("/operator-packages/requests")
+async def list_operator_package_requests(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    rows = (await db.scalars(select(OperatorPackageRequest).where(
+        OperatorPackageRequest.tenant_id == current_user.tenant_id
+    ).order_by(OperatorPackageRequest.created_at.desc()))).all()
+    return [_operator_package_payload(row) for row in rows]
+
+
+@router.post("/operator-packages/requests/{request_id}/receipt")
+async def upload_operator_package_receipt(
+    request_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    item = await db.scalar(select(OperatorPackageRequest).where(
+        OperatorPackageRequest.id == request_id,
+        OperatorPackageRequest.tenant_id == current_user.tenant_id,
+    ))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+    if file.content_type not in {"application/pdf", "image/jpeg", "image/png"}:
+        raise HTTPException(status_code=422, detail="Anexe um comprovante em PDF, JPG ou PNG.")
+    content = await file.read()
+    if len(content) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="O comprovante deve ter no máximo 30 MB.")
+    target_dir = Path("/app/storage/operator_packages") / current_user.tenant_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"{item.id}_{Path(file.filename or 'receipt').name}"
+    target.write_bytes(content)
+    item.receipt_path = str(target)
+    item.status = "pending_review"
+    await db.commit()
+    return _operator_package_payload(item)
 
 @router.get("/operators/{operator_id}/parkings")
 async def operator_parkings(operator_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):

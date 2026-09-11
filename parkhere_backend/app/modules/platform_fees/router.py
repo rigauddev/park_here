@@ -10,6 +10,7 @@ from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.parkings.models import Parking
 from app.modules.users.models.user_model import User
+from app.modules.partners.operator_package_models import OperatorPackageRequest
 
 router = APIRouter(prefix='/admin/platform-fees', tags=['Platform fees'])
 
@@ -94,3 +95,29 @@ def _fee_payload(row: PlatformFee) -> dict:
         'max_fee': row.max_fee,
         'is_active': row.is_active,
     }
+
+
+@router.get('/operator-packages/requests')
+async def list_operator_package_requests(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    rows = (await db.scalars(select(OperatorPackageRequest).order_by(OperatorPackageRequest.created_at.desc()))).all()
+    return [{
+        'id': row.id, 'tenant_id': row.tenant_id, 'quantity': row.quantity,
+        'package_type': row.package_type, 'amount': row.amount,
+        'status': row.status, 'has_receipt': bool(row.receipt_path),
+        'created_at': row.created_at.isoformat() + 'Z',
+    } for row in rows]
+
+
+@router.post('/operator-packages/requests/{request_id}/{decision}')
+async def review_operator_package_request(request_id: str, decision: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    if decision not in {'approve', 'reject'}:
+        raise HTTPException(status_code=422, detail='Decision must be approve or reject')
+    row = await db.scalar(select(OperatorPackageRequest).where(OperatorPackageRequest.id == request_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail='Solicitação não encontrada')
+    row.status = 'approved' if decision == 'approve' else 'rejected'
+    row.reviewed_by = current_user.id
+    await db.commit()
+    return {'id': row.id, 'status': row.status}

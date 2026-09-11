@@ -558,3 +558,13 @@ limpeza do endpoint.
   fechados e limita o turno ao fechamento configurado.
 - `DELETE /partners/shifts/{shift_id}` cancela um turno e grava a alteração no
   histórico de auditoria.
+
+## Operadores adicionais (parceiro e administrador)
+
+- `POST /partners/operator-packages/requests`: cria solicitação de operadores adicionais (`quantity`, `package_type`=`individual|package`, `amount`). Inicia em `pending_payment`.
+- `POST /partners/operator-packages/requests/{id}/receipt`: multipart com comprovante PDF/JPG/PNG (até 30 MB). Atualiza para `pending_review` e grava o arquivo no armazenamento local da VPS.
+- `GET /partners/operator-packages/requests`: lista solicitações da empresa.
+- `GET /admin/platform-fees/operator-packages/requests`: administrador lista solicitações de todas as empresas.
+- `POST /admin/platform-fees/operator-packages/requests/{id}/approve` ou `/reject`: administrador revisa a solicitação. Solicitações aprovadas ampliam o limite de operadores da empresa.
+
+Operadores só recebem dados dos estacionamentos em que possuem `operator_parking_assignments`; o mapa e as reservas operacionais aplicam esse filtro no backend.

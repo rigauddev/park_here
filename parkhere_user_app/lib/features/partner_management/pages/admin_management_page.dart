@@ -16,6 +16,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   final _api = ApiService();
   List<Map<String, dynamic>> _fees = [];
   Map<String, dynamic> _overview = {};
+  List<Map<String, dynamic>> _operatorRequests = [];
   bool _loading = true;
 
   @override
@@ -30,10 +31,12 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     try {
       final rows = await _api.getAuthorized('/admin/platform-fees', token);
       final overview = await _api.getAuthorizedMap('/admin/platform-fees/overview', token);
+      final requests = await _api.getAuthorized('/admin/platform-fees/operator-packages/requests', token);
       if (mounted) {
         setState(() {
           _fees = rows.cast<Map<String, dynamic>>();
           _overview = overview;
+          _operatorRequests = requests.cast<Map<String, dynamic>>();
         });
       }
     } finally {
@@ -70,6 +73,21 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                       ),
                     ),
                   const SizedBox(height: 12),
+                  const Text('Solicitações de operadores', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  if (_operatorRequests.isEmpty)
+                    const Card(child: ListTile(title: Text('Nenhuma solicitação pendente.')))
+                  else
+                    for (final request in _operatorRequests)
+                      Card(child: ListTile(
+                        leading: const Icon(Icons.groups),
+                        title: Text('${request['quantity']} operador(es) · ${request['package_type']}'),
+                        subtitle: Text('Empresa ${request['tenant_id']} · ${request['status']}${request['has_receipt'] == true ? ' · comprovante anexado' : ''}'),
+                        trailing: request['status'] == 'pending_review' ? Wrap(children: [
+                          IconButton(tooltip: 'Aprovar', onPressed: () => _reviewOperatorRequest(request['id'] as String, 'approve'), icon: const Icon(Icons.check, color: Colors.green)),
+                          IconButton(tooltip: 'Recusar', onPressed: () => _reviewOperatorRequest(request['id'] as String, 'reject'), icon: const Icon(Icons.close, color: Colors.red)),
+                        ]) : null,
+                      )),
+                  const SizedBox(height: 12),
                   const Text(
                     'Taxas globais',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -93,6 +111,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
               ),
             ),
     );
+  }
+
+  Future<void> _reviewOperatorRequest(String id, String decision) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    await _api.postAuthorized('/admin/platform-fees/operator-packages/requests/$id/$decision', {}, token);
+    await _load();
   }
 
   Future<void> _editFee(Map<String, dynamic> fee) async {

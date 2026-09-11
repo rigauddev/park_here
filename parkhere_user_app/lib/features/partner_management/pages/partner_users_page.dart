@@ -53,7 +53,7 @@ class PartnerUsersPage extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
             children: [
-              _LimitCard(count: items.length),
+              _LimitCard(count: items.length, onRequest: () => _openPackageRequest(context, ref)),
               const SizedBox(height: 14),
               if (items.isEmpty)
                 const Center(child: Text('Nenhum operador cadastrado.'))
@@ -76,19 +76,47 @@ class PartnerUsersPage extends ConsumerWidget {
   void _openAssignment(BuildContext context, WidgetRef ref, PartnerOperatorModel operator) {
     showDialog<void>(context: context, builder: (_) => _OperatorAssignmentDialog(operator: operator, ref: ref));
   }
+
+  void _openPackageRequest(BuildContext context, WidgetRef ref) {
+    final quantity = TextEditingController(text: '1');
+    showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('Adicionar operadores'),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('O limite incluído foi atingido. Solicite operadores adicionais e envie o comprovante para aprovação da gestão.'),
+        const SizedBox(height: 16),
+        TextField(controller: quantity, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantidade de operadores', border: OutlineInputBorder())),
+      ])),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancelar')),
+        FilledButton(onPressed: () async {
+          final value = int.tryParse(quantity.text) ?? 0;
+          if (value < 1) return;
+          try {
+            await ref.read(partnerOperatorsProvider.notifier).requestOperatorPackage(quantity: value, packageType: value == 1 ? 'individual' : 'package');
+            if (dialogContext.mounted) Navigator.pop(dialogContext);
+            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Solicitação enviada. Aguarde a aprovação da gestão.')));
+          } catch (error) {
+            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+          }
+        }, child: const Text('Solicitar')),
+      ],
+    ));
+  }
 }
 
 class _LimitCard extends StatelessWidget {
   final int count;
+  final VoidCallback onRequest;
 
-  const _LimitCard({required this.count});
+  const _LimitCard({required this.count, required this.onRequest});
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(
           children: [
             const CircleAvatar(
               backgroundColor: AppTheme.softCyan,
@@ -103,7 +131,10 @@ class _LimitCard extends StatelessWidget {
               ),
             ),
           ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(onPressed: onRequest, icon: const Icon(Icons.add_business_outlined), label: const Text('Solicitar operadores'))),
+        ]),
       ),
     );
   }

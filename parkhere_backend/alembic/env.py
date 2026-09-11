@@ -16,6 +16,7 @@ from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PartnerPaymentAccount, PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.users.models.user_model import User
+from app.modules.partners.operator_package_models import OperatorPackageRequest
 
 
 config = context.config

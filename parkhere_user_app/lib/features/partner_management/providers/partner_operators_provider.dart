@@ -53,6 +53,16 @@ class PartnerOperatorsNotifier
     state = await AsyncValue.guard(fetch);
   }
 
+  Future<void> requestOperatorPackage({required int quantity, required String packageType}) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada. Entre novamente.');
+    await _api.postAuthorized('/partners/operator-packages/requests', {
+      'quantity': quantity,
+      'package_type': packageType,
+      'amount': 0,
+    }, token);
+  }
+
   Future<void> assignParkings(String operatorId, List<String> parkingIds) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
