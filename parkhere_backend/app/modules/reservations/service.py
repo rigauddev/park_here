@@ -414,9 +414,11 @@ async def _calculate_cancellation_fee(
     if elapsed_minutes <= ReservationService.FREE_CANCELLATION_MINUTES:
         return 0
 
+    parking = await db.scalar(select(Parking).where(Parking.id == reservation.parking_id))
     lines = await PlatformFeeService.calculate_lines(
         db,
         {"cancellation": reservation.final_total or reservation.estimated_total or 0},
+        parking.tenant_id if parking else None,
     )
     return sum(line.fee_amount for line in lines)
 
@@ -509,7 +511,7 @@ async def _calculate_pricing(
     for service in selected_services:
         service_amounts[service.code] = service_amounts.get(service.code, 0) + service.price
 
-    platform_fee_lines = await PlatformFeeService.calculate_lines(db, service_amounts)
+    platform_fee_lines = await PlatformFeeService.calculate_lines(db, service_amounts, parking.tenant_id)
     platform_fee_amount = sum(line.fee_amount for line in platform_fee_lines)
     final_total = base_amount + services_amount + platform_fee_amount
 

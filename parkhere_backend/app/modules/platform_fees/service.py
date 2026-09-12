@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.platform_fees.models import PlatformFee
+from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee
 
 
 @dataclass
@@ -31,6 +31,7 @@ class PlatformFeeService:
     async def calculate_lines(
         db: AsyncSession,
         amounts_by_service_type: dict[str, float],
+        tenant_id: str | None = None,
     ) -> list[PlatformFeeLine]:
         if not amounts_by_service_type:
             return []
@@ -43,10 +44,18 @@ class PlatformFeeService:
         )
         fees = {fee.service_type: fee for fee in result.scalars().all()}
 
+        if tenant_id is not None:
+            overrides = await db.scalars(select(PartnerPlatformFee).where(
+                PartnerPlatformFee.tenant_id == tenant_id,
+                PartnerPlatformFee.service_type.in_(amounts_by_service_type.keys()),
+            ))
+            for override in overrides.all():
+                fees[override.service_type] = override
+
         return [
             _calculate_line(service_type, amount, fees.get(service_type))
             for service_type, amount in amounts_by_service_type.items()
-            if amount > 0 and fees.get(service_type) is not None
+            if amount > 0 and fees.get(service_type) is not None and fees[service_type].is_active
         ]
 
 

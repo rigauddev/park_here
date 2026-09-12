@@ -14,6 +14,8 @@ from app.modules.payments.schemas import CreatePaymentIntentRequest
 from app.modules.payments.service import PaymentService, _ensure_payable_reservation, settings
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.reservations.service import _selected_services
+from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee
+from app.modules.platform_fees.service import PlatformFeeService
 
 
 class ParkingRulesTests(unittest.TestCase):
@@ -95,6 +97,7 @@ class PaymentConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transaction.status, 'pending')
         db.commit.assert_not_called()
 
+
     async def test_real_provider_cannot_be_manually_confirmed(self):
         await self.assert_confirmation_rejected(provider='mercado_pago', status='confirmed', expected=403)
 
@@ -103,6 +106,36 @@ class PaymentConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_other_customer_payment_is_forbidden(self):
         await self.assert_confirmation_rejected(owner='other-customer', expected=403)
+
+
+class PlatformFeeOverrideTests(unittest.IsolatedAsyncioTestCase):
+    async def test_partner_override_replaces_global_fee_only_for_that_tenant(self):
+        global_fee = PlatformFee(
+            service_type='parking', fee_mode='hybrid', fixed_amount=1,
+            percentage=5, min_fee=0, max_fee=None, is_active=True,
+        )
+        override = PartnerPlatformFee(
+            tenant_id='tenant1', service_type='parking', fee_mode='percentage',
+            fixed_amount=0, percentage=12, min_fee=0, max_fee=None,
+            is_active=True,
+        )
+
+        def scalar_result(rows):
+            return SimpleNamespace(all=lambda: rows)
+
+        db = AsyncMock()
+        db.execute.return_value = SimpleNamespace(scalars=lambda: scalar_result([global_fee]))
+        db.scalars.side_effect = [scalar_result([override]), scalar_result([])]
+
+        partner_lines = await PlatformFeeService.calculate_lines(
+            db, {'parking': 100}, tenant_id='tenant1'
+        )
+        other_lines = await PlatformFeeService.calculate_lines(
+            db, {'parking': 100}, tenant_id='tenant2'
+        )
+
+        self.assertEqual(partner_lines[0].fee_amount, 12)
+        self.assertEqual(other_lines[0].fee_amount, 6)
 
 
 if __name__ == '__main__':

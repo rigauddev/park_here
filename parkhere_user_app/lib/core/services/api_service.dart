@@ -202,9 +202,28 @@ class ApiService {
     throw Exception(_errorMessage(response));
   }
 
+  Future<Map<String, dynamic>> patchAuthorized(
+    String endpoint,
+    Map<String, dynamic> body,
+    String token,
+  ) async {
+    final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
+    final response = await http
+        .patch(url, headers: _authorizedHeaders(token), body: jsonEncode(body))
+        .timeout(_timeout);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    await _handleUnauthorized(response);
+    throw Exception(_errorMessage(response));
+  }
+
   Future<void> deleteAuthorized(String endpoint, String token) async {
     final response = await http
-        .delete(Uri.parse("${ApiConstants.baseUrl}$endpoint"), headers: _authorizedHeaders(token))
+        .delete(
+          Uri.parse("${ApiConstants.baseUrl}$endpoint"),
+          headers: _authorizedHeaders(token),
+        )
         .timeout(_timeout);
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     await _handleUnauthorized(response);

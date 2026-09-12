@@ -19,6 +19,7 @@ from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_assignment_models import OperatorWorkShift
 from app.modules.reservations.models import Reservation
+from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee
 
 
 config = context.config

@@ -35,6 +35,16 @@ Nao habilitar `PAYMENT_PROVIDER=mercado_pago` para cobrancas ainda: o endpoint r
 Gestao ainda tem itens de roadmap abertos: fotos em storage seguro, politicas por parceiro,
 incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao concluidos.
 
+## Gestão administrativa do sistema — 12/09/2026
+
+Correção do painel administrativo em andamento: acesso do `SUPER_ADMIN` global,
+menu mobile próprio, listagem de empresas, usuários e clientes reais, taxas
+globais com substituição por parceiro e suspensão de contas. A regra comercial
+de capacidade segue dois operadores por unidade ativa e soma pacotes aprovados.
+Preço/contratação de unidades e serviços adicionais ainda não está implementado.
+O backlog detalhado, regras de negócio e tarefas restantes estão em
+[`admin-panel-backlog.md`](admin-panel-backlog.md).
+
 ## Fase 0: Organizacao
 
 - Inicializar Git.

@@ -41,6 +41,7 @@ class PaymentService:
         lines = await PlatformFeeService.calculate_lines(
             db,
             {'establishment': (reservation.base_amount or 0) + (reservation.services_amount or 0)},
+            parking.tenant_id,
         )
         establishment_fee = sum(line.fee_amount for line in lines)
         return {
@@ -103,6 +104,7 @@ class PaymentService:
                 fee_lines = await PlatformFeeService.calculate_lines(
                     db,
                     {'establishment': (reservation.base_amount or 0) + (reservation.services_amount or 0)},
+                    parking.tenant_id,
                 )
                 establishment_fee_amount = sum(line.fee_amount for line in fee_lines)
             platform_fee_amount = customer_fee_amount + establishment_fee_amount

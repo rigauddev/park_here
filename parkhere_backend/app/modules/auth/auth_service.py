@@ -249,6 +249,9 @@ class AuthService:
         if not user:
             return None
 
+        if not user.is_active:
+            return None
+
         if not verify_password(data.password, user.password_hash):
             return None
 
@@ -294,6 +297,9 @@ class AuthService:
         user = result.scalar_one_or_none()
 
         if not user:
+            return None
+
+        if not user.is_active:
             return None
 
         access_token = create_access_token({

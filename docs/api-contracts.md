@@ -56,6 +56,59 @@ e `PUT /admin/platform-fees/{service_type}`. Esses endpoints exigem o papel
 `GET /admin/platform-fees/overview` apresenta indicadores das empresas,
 unidades ativas, usuários e regras dos planos Free/Pro para o painel do admin.
 
+### Gestão administrativa de parceiros, taxas individuais e clientes
+
+Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
+
+- `GET /admin/platform-fees/partners` lista empresas (`tenants`), mesmo quando
+  ainda não existe `PartnerProfile`, com `tenant_id`, nome/status, categoria e
+  aprovação quando disponíveis, usuários associados, unidades, serviços
+  ativos, quantidade de operadores e limite permitido. O limite incluído é de
+  dois operadores por unidade ativa, acrescido de solicitações de pacotes
+  aprovadas.
+- O item de parceiro inclui `services`, com serviço/código/preço/status e,
+  quando aplicável, a unidade à qual pertence.
+- `PATCH /admin/platform-fees/partners/{tenant_id}/services/{service_type}/{service_id}/status`
+  recebe `{"is_active": false}` para ativar/desativar serviços existentes dos
+  tipos `parking` ou `tour_guide`. A API valida que o serviço pertence à
+  empresa do caminho.
+- `GET /admin/platform-fees/partners/{tenant_id}/fees` lista taxas globais e
+  substituições individuais. Cada item contém `service_type`, modo, valor fixo,
+  percentual, mínimo, máximo, `is_active` e `source` (`global` ou `partner`).
+  Sem substituição individual, aplica-se a taxa global.
+- `PUT /admin/platform-fees/partners/{tenant_id}/fees/{service_type}` grava a
+  taxa específica do parceiro usando o payload padrão de taxa:
+
+```json
+{
+  "service_type": "parking",
+  "fee_mode": "hybrid",
+  "fixed_amount": 0,
+  "percentage": 5,
+  "min_fee": 0,
+  "max_fee": null,
+  "is_active": true
+}
+```
+
+- `GET /admin/platform-fees/customers?query=...` lista até 500 clientes do app;
+  a busca opcional corresponde a nome, e-mail ou telefone.
+- `PATCH /admin/platform-fees/users/{user_id}/status` recebe
+  `{"is_active": false}` para suspender ou reativar uma conta. Não permite
+  alterar o superadministrador. Contas suspensas não podem iniciar login nem
+  usar tokens previamente emitidos.
+
+### Precedência e limites comerciais
+
+Taxas globais são os padrões da plataforma. Uma taxa individual ativa substitui
+o padrão para aquele parceiro e tipo de serviço; a taxa fica registrada em
+`partner_platform_fees`. A regra comercial planejada para unidades e serviços é
+um serviço incluído por parceiro e cobrança para unidades/serviços adicionais;
+ela ainda precisa de catálogo de preços, contratação, confirmação de pagamento,
+entitlements e auditoria antes de ser aplicada em produção. O limite atual
+calculado para operadores é duas vagas por unidade ativa mais quantidades de
+pacotes aprovados manualmente.
+
 Guias parceiros usam `GET/POST /partners/guide/services` para cadastrar seus
 próprios serviços turísticos, separados das afiliações a estacionamentos.
 
