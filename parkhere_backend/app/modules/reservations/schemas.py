@@ -34,6 +34,9 @@ class PreCheckinReservationRequest(BaseModel):
     pricing_plan: str = "hourly"
     duration_hours: int = 1
     service_codes: list[str] = Field(default_factory=list)
+    terms_accepted: bool = False
+    terms_locale: str = "pt_BR"
+    terms_version: str
 
 
     @field_validator("walk_in_plate")
@@ -94,6 +97,10 @@ class ReservationResponse(BaseModel):
     platform_fees: list[ReservationPlatformFeeSnapshot]
     payment_status: str
     payment_method: str | None = None
+    terms_accepted_at: str | None = None
+    terms_version: str | None = None
+    terms_locale: str | None = None
+    accepted_terms: list[dict] = Field(default_factory=list)
     notification_status: str
     cancelled_at: str | None = None
     cancellation_fee_amount: float = 0

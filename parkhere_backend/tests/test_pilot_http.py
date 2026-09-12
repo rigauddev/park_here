@@ -83,7 +83,9 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         return await self.request('/reservations/pre-checkin', dict(
             parking_id=self.parkings[0], spot_code=code, spot_type='uncovered',
             route_minutes=1, arrival_now=True, is_manual_arrival=True,
-            walk_in_plate='ABC-1234', walk_in_phone='(75) 99999-0000', **kwargs), user=user)
+            walk_in_plate='ABC-1234', walk_in_phone='(75) 99999-0000',
+            terms_accepted=True, terms_version='reservation-terms-2026-09-v1',
+            terms_locale='pt_BR', **kwargs), user=user)
 
     async def pay(self, reservation, method='pix'):
         intent = await self.request(f'/payments/reservations/{reservation["id"]}/intent',
@@ -95,9 +97,17 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(self.parkings[0], [p['id'] for p in parkings])
         reservation = await self.request('/reservations/pre-checkin', {
             'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
-            'route_minutes': 10, 'spot_type': 'uncovered', 'service_codes': ['car_wash', 'car_wash']}, user=self.customer)
+            'route_minutes': 10, 'spot_type': 'uncovered', 'service_codes': ['car_wash', 'car_wash'],
+            'terms_accepted': True, 'terms_version': 'reservation-terms-2026-09-v1',
+            'terms_locale': 'pt_BR'}, user=self.customer)
         self.assertEqual(reservation['services_amount'], 5)
         self.assertEqual(reservation['spot_code'], 'V001')
+        self.assertEqual(reservation['terms_version'], 'reservation-terms-2026-09-v1')
+        self.assertEqual(reservation['terms_locale'], 'pt_BR')
+        self.assertEqual(
+            [term['service_type'] for term in reservation['accepted_terms']],
+            ['platform', 'parking', 'car_wash'],
+        )
         intent = await self.request(f'/payments/reservations/{reservation["id"]}/intent', {'method': 'pix'}, user=self.customer)
         self.assertEqual(intent['gross_amount'], reservation['final_total'])
         await self.request(f'/payments/{intent["id"]}/confirm', {}, user=self.customer)
@@ -106,6 +116,17 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'completed')
         layout = await self.request('/partners/parking-map')
         self.assertEqual(layout['parkings'][0]['available_spots'], 10)
+
+    async def test_reservation_requires_current_terms_acceptance(self):
+        payload = {
+            'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
+            'route_minutes': 10, 'terms_version': 'reservation-terms-2026-09-v1',
+            'terms_locale': 'pt_BR', 'terms_accepted': False,
+        }
+        status, body = await self.request(
+            '/reservations/pre-checkin', payload, user=self.customer, expected=None
+        )
+        self.assertEqual(status, 422, body)
 
     async def test_walkin_pix_arrival_is_now_and_tenant_isolation(self):
         start = datetime.utcnow()
@@ -119,7 +140,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(r['id'], [x['id'] for x in other])
 
     async def test_same_spot_concurrency_and_cancellation(self):
-        payload = dict(parking_id=self.parkings[0], spot_code='V001', spot_type='uncovered', route_minutes=1, arrival_now=True, walk_in_plate='ABC1234', walk_in_phone='75999990000')
+        payload = dict(parking_id=self.parkings[0], spot_code='V001', spot_type='uncovered', route_minutes=1, arrival_now=True, walk_in_plate='ABC1234', walk_in_phone='75999990000', terms_accepted=True, terms_version='reservation-terms-2026-09-v1', terms_locale='pt_BR')
         responses = await asyncio.gather(*[self.request('/reservations/pre-checkin', payload, expected=None) for _ in range(2)])
         self.assertEqual(sorted(s for s, _ in responses), [200, 409])
         r = next(body for status, body in responses if status == 200)

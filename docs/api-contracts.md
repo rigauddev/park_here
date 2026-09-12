@@ -406,7 +406,10 @@ Request:
   "duration_hours": 2,
   "route_minutes": 14,
   "guide_user_id": null,
-  "service_codes": ["car_wash"]
+  "service_codes": ["car_wash"],
+  "terms_accepted": true,
+  "terms_version": "reservation-terms-2026-09-v1",
+  "terms_locale": "pt_BR"
 }
 ```
 
@@ -427,13 +430,24 @@ Response:
   "base_amount": 12.0,
   "services_amount": 35.0,
   "platform_fee_amount": 3.0,
-  "final_total": 50.0
+  "final_total": 50.0,
+  "terms_accepted_at": "2026-08-17T10:22:00Z",
+  "terms_version": "reservation-terms-2026-09-v1",
+  "terms_locale": "pt_BR",
+  "accepted_terms": [
+    {"service_type": "platform", "version": "reservation-terms-2026-09-v1", "text": "..."},
+    {"service_type": "parking", "version": "reservation-terms-2026-09-v1", "text": "..."},
+    {"service_type": "car_wash", "version": "reservation-terms-2026-09-v1", "text": "..."}
+  ]
 }
 ```
 
 Regras:
 
 - Backend recalcula valores e nao confia em total enviado pelo app.
+- `terms_accepted=true`, `terms_version` atual e `terms_locale` (`pt_BR` ou `en`) sao obrigatorios. Sem aceite a API retorna `422`; se a versão estiver desatualizada retorna `409` para o app exibir novamente os termos.
+- O backend persiste timestamp UTC, versão, idioma e snapshot do texto de intermediação, estacionamento e cada serviço selecionado; a resposta inclui `accepted_terms` para auditoria e consulta posterior.
+- A versão atual é `reservation-terms-2026-09-v1`. Atualizar versão quando o texto mudar materialmente e atualizar o cliente antes de exigir a nova versão.
 - Cliente deve informar `vehicle_id`; parceiro/operador deve informar `walk_in_plate` e `walk_in_phone`.
 - Para reserva criada por operador/parceiro, `arrival_now=true` grava o horario atual no servidor; se for agendada, `arrival_estimate_at` deve vir com timezone ou sera tratado como horario local de `America/Bahia`.
 - Expiracao da pre-reserva usa `arrival_estimate_at + arrival_tolerance_minutes`.

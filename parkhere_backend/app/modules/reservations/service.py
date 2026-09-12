@@ -24,6 +24,10 @@ from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.platform_fees.models import PlatformFee
+from app.modules.reservations.terms_catalog import (
+    TERMS_VERSION,
+    build_terms_snapshot,
+)
 
 
 @dataclass
@@ -48,6 +52,26 @@ class ReservationService:
         data: PreCheckinReservationRequest,
         current_user: User,
     ) -> ReservationResponse:
+        if not data.terms_accepted:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "You must accept the booking and selected service terms."
+                    if data.terms_locale == "en"
+                    else "É necessário aceitar os termos da reserva e dos serviços selecionados."
+                ),
+            )
+        if data.terms_version != TERMS_VERSION:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The terms were updated. Review and accept the current version before booking."
+                    if data.terms_locale == "en"
+                    else "Os termos foram atualizados. Revise e aceite a versão atual antes de reservar."
+                ),
+            )
+        if data.terms_locale not in {"pt_BR", "en"}:
+            raise HTTPException(status_code=422, detail="Idioma dos termos inválido.")
         parking = await _get_parking_with_services(db, data.parking_id)
         await _ensure_reservation_permission(db, data, current_user, parking)
 
@@ -91,6 +115,13 @@ class ReservationService:
                 [service.model_dump() for service in pricing.services_snapshot]
             ),
             platform_fee_snapshot=json.dumps(pricing.platform_fee_snapshot),
+            terms_accepted_at=datetime.utcnow(),
+            terms_version=TERMS_VERSION,
+            terms_locale=data.terms_locale,
+            accepted_terms_snapshot=json.dumps(
+                build_terms_snapshot(data.service_codes, data.terms_locale),
+                ensure_ascii=False,
+            ),
         )
 
         db.add(reservation)
@@ -699,6 +730,9 @@ def to_response(reservation: Reservation) -> ReservationResponse:
             ReservationPlatformFeeSnapshot(**fee)
             for fee in json.loads(reservation.platform_fee_snapshot)
         ]
+    accepted_terms = []
+    if reservation.accepted_terms_snapshot:
+        accepted_terms = json.loads(reservation.accepted_terms_snapshot)
 
     return ReservationResponse(
         id=reservation.id,
@@ -739,6 +773,14 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         platform_fees=platform_fees,
         payment_status=reservation.payment_status,
         payment_method=getattr(reservation, "payment_method", None),
+        terms_accepted_at=(
+            reservation.terms_accepted_at.isoformat() + "Z"
+            if reservation.terms_accepted_at
+            else None
+        ),
+        terms_version=reservation.terms_version,
+        terms_locale=reservation.terms_locale,
+        accepted_terms=accepted_terms,
         notification_status=reservation.notification_status,
         cancelled_at=reservation.cancelled_at.isoformat() + "Z"
         if reservation.cancelled_at

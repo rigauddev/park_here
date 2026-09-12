@@ -171,3 +171,12 @@ docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s te
 9. Confirme que a decisão manual não representa pagamento confirmado. Ativação
    automática, cobrança, webhook e vigência continuam pendentes da integração
    Mercado Pago.
+# Aceite e privacidade antes de reservar
+
+- Inicie uma reserva em português e confirme que os termos do estacionamento e dos serviços escolhidos aparecem antes de abrir o app de mapas.
+- Tente continuar sem marcar o aceite; a reserva/pré-reserva não deve ser criada.
+- Marque aceite e conclua; confira que a resposta da API contém `terms_accepted_at`, `terms_version`, `terms_locale` e snapshot `accepted_terms` com plataforma, estacionamento e cada serviço selecionado.
+- Repita em inglês e confirme que os textos e `terms_locale=en` correspondem ao idioma selecionado.
+- Simule app antigo enviando versão anterior; API retorna `409` e a tela precisa solicitar novo aceite.
+- Na reserva operacional, o operador deve visualizar os termos do estacionamento e confirmar que o cliente os revisou antes de criar.
+- Aceite de marketing personalizado deve permanecer opcional, separado de reserva e conta, desmarcado por padrão e revogável em preferências. Esse controle ainda deve ser desenvolvido antes de qualquer segmentação de anúncios.

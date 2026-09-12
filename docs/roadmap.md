@@ -260,3 +260,13 @@ módulos quando o entitlement expirar; tela de auditoria no app; busca/paginaç�
 de parceiros/clientes; afiliação genérica de guias a serviços que não sejam
 estacionamentos; idioma preferido de e-mail por usuário; módulos operacionais
 de hotel, lava-jato, restaurante, turismo e transporte.
+# Marketing, termos e privacidade — bloco atual
+
+- [x] Preparar copy bilíngue e esqueleto responsivo para a subpágina ParkHere na Wix; distinguir módulos ativos de roadmap.
+- [x] Criar arte hero de campanha piloto para Valença-BA.
+- [x] Adicionar aceite obrigatório e snapshot versionado/localizado por reserva no fluxo cliente e no fluxo operacional.
+- [x] Adicionar prévia de template de e-mail no painel administrativo.
+- [x] Criar skill interna de triagem jurídico-documental.
+- [ ] Revisão de advogado brasileiro das minutas por categoria, contratos de intermediação e política de privacidade.
+- [ ] Definir controladores/operadores, retenção e base legal para cada integração de anúncios; implementar tela separada de preferências e revogação antes de publicidade personalizada.
+- [ ] Ligar botões, políticas, suporte, URLs de download e logos finais na Wix após publicação/aprovação editorial.

@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/services/routes/route_service.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/constants/terms_constants.dart';
 import '../../account/pages/vehicles_page.dart';
 import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -1286,6 +1287,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     if (!mounted) return;
 
     Navigator.of(context).pop();
+    final termsLocale = Localizations.localeOf(context).languageCode == 'en'
+        ? 'en'
+        : 'pt_BR';
 
     final preCheckin = PreCheckinModel(
       parking: parking,
@@ -1304,17 +1308,6 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
         builder: (_) => RoutePreviewPage(
           preCheckin: preCheckin,
           onRouteSelected: () async {
-            await ref
-                .read(preReservationProvider.notifier)
-                .createPreReservation(
-                  parkingId: parking.id,
-                  parkingName: parking.name,
-                  routeMinutes: minutes,
-                  plan: plan.name,
-                  spotType: areaPreference.name,
-                  total: total,
-                  availableSpots: parking.availableSpots,
-                );
             final token = ref.read(authProvider).accessToken;
             if (token == null) {
               throw Exception('Sessao expirada. Entre novamente.');
@@ -1323,6 +1316,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               '/reservations/pre-checkin',
               {
                 'parking_id': parking.id,
+                'terms_accepted': true,
+                'terms_version': reservationTermsVersion,
+                'terms_locale': termsLocale,
                 'route_minutes': minutes,
                 'estimated_total': total,
                 'vehicle_id': activeVehicle.id,
@@ -1349,6 +1345,18 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               token,
             );
             preCheckin.reservationId = response['id'] as String?;
+            await ref
+                .read(preReservationProvider.notifier)
+                .createPreReservation(
+                  parkingId: parking.id,
+                  parkingName: parking.name,
+                  routeMinutes: minutes,
+                  reservationId: response['id'] as String?,
+                  plan: plan.name,
+                  spotType: areaPreference.name,
+                  total: total,
+                  availableSpots: parking.availableSpots,
+                );
           },
         ),
       ),

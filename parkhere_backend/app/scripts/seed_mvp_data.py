@@ -19,6 +19,7 @@ from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.payments.models import PartnerPaymentAccount
 from app.modules.reservations.models import Reservation
+from app.modules.reservations.terms_catalog import TERMS_VERSION, build_terms_snapshot
 from app.modules.tenants.models.tenant_model_plan_enum import PlanEnum
 from app.modules.tenants.models.tenant_model_status_enum import TenantStatusEnum
 from app.modules.tenants.models.tenant_models import Tenant
@@ -488,6 +489,12 @@ async def seed():
                     platform_fee_amount=0,
                     final_total=40,
                     selected_services_snapshot="[]",
+                    terms_accepted_at=datetime.utcnow(),
+                    terms_version=TERMS_VERSION,
+                    terms_locale="pt_BR",
+                    accepted_terms_snapshot=json.dumps(
+                        build_terms_snapshot([], "pt_BR"), ensure_ascii=False
+                    ),
                 ),
             ]
         )
@@ -1473,6 +1480,16 @@ async def ensure_seed_reservations(db, commit=True):
         reservation.platform_fee_amount = scenario["platform_fee_amount"]
         reservation.final_total = scenario["final_total"]
         reservation.selected_services_snapshot = scenario["services"]
+        selected_snapshot = json.loads(scenario["services"] or "[]")
+        selected_codes = [
+            item["code"] for item in selected_snapshot if item.get("code")
+        ]
+        reservation.terms_accepted_at = datetime.utcnow()
+        reservation.terms_version = TERMS_VERSION
+        reservation.terms_locale = "pt_BR"
+        reservation.accepted_terms_snapshot = json.dumps(
+            build_terms_snapshot(selected_codes, "pt_BR"), ensure_ascii=False
+        )
         reservation.platform_fee_snapshot = "[]"
         reservation.status = scenario["status"]
         reservation.payment_status = scenario["payment_status"]

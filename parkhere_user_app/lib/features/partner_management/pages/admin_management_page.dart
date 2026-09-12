@@ -14,6 +14,50 @@ class AdminManagementPage extends ConsumerStatefulWidget {
       _AdminManagementPageState();
 }
 
+class _EmailPreviewBlock extends StatelessWidget {
+  final String html;
+  final Color background;
+
+  const _EmailPreviewBlock({
+    required this.html,
+    this.background = Colors.white,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: background,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Text(
+        _emailHtmlAsText(html),
+        style: const TextStyle(color: Color(0xFF243047), height: 1.45),
+      ),
+    );
+  }
+}
+
+String _emailHtmlAsText(String html) {
+  return html
+      .replaceAll(
+        RegExp(r'<(script|style)\b[^>]*>[\s\S]*?</\1>', caseSensitive: false),
+        '',
+      )
+      .replaceAll(RegExp(r'<\s*br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(
+        RegExp(r'</\s*(p|div|h[1-6]|li|tr)\s*>', caseSensitive: false),
+        '\n\n',
+      )
+      .replaceAll(RegExp(r'<\s*li\b[^>]*>', caseSensitive: false), '• ')
+      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .trim();
+}
+
 class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   final _api = ApiService();
   List<Map<String, dynamic>> _fees = [];
@@ -1708,6 +1752,19 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
             ),
           ),
           actions: [
+            TextButton.icon(
+              onPressed: () => _previewEmailTemplate(
+                context,
+                name: name.text,
+                subject: subject.text,
+                locale: template['locale'] as String? ?? 'pt_BR',
+                headerHtml: header.text,
+                bodyHtml: body.text,
+                footerHtml: footer.text,
+              ),
+              icon: const Icon(Icons.visibility_outlined),
+              label: Text(_tr('Visualizar', 'Preview')),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: Text(_tr('Cancelar', 'Cancel')),
@@ -1751,6 +1808,84 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     header.dispose();
     body.dispose();
     footer.dispose();
+  }
+
+  Future<void> _previewEmailTemplate(
+    BuildContext context, {
+    required String name,
+    required String subject,
+    required String locale,
+    required String headerHtml,
+    required String bodyHtml,
+    required String footerHtml,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (previewContext) => AlertDialog(
+        title: Text(_tr('Prévia do e-mail', 'Email preview')),
+        content: SizedBox(
+          width: 620,
+          child: SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFFE3E8F0)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                        child: Text(
+                          '$name · $locale',
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Text(
+                          subject,
+                          style: const TextStyle(
+                            color: Color(0xFF101B4D),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      if (headerHtml.trim().isNotEmpty)
+                        _EmailPreviewBlock(
+                          html: headerHtml,
+                          background: const Color(0xFFF4F8FF),
+                        ),
+                      _EmailPreviewBlock(html: bodyHtml),
+                      if (footerHtml.trim().isNotEmpty)
+                        _EmailPreviewBlock(
+                          html: footerHtml,
+                          background: const Color(0xFFF8FAFC),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(previewContext),
+            child: Text(_tr('Fechar prévia', 'Close preview')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _setPartnerServiceActive(

@@ -99,7 +99,10 @@ class _PartnerParkingMapPageState extends ConsumerState<PartnerParkingMapPage> {
                       for (final layout in items)
                         SingleChildScrollView(
                           padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
-                          child: _ParkingLayoutPanel(layout: layout, showFinancialSummary: true),
+                          child: _ParkingLayoutPanel(
+                            layout: layout,
+                            showFinancialSummary: true,
+                          ),
                         ),
                     ],
                   ),
@@ -445,7 +448,11 @@ class _ParkingSlotTile extends ConsumerStatefulWidget {
   final PartnerParkingSlot slot;
   final Map<String, double> pricing;
 
-  const _ParkingSlotTile({required this.parkingId, required this.slot, required this.pricing});
+  const _ParkingSlotTile({
+    required this.parkingId,
+    required this.slot,
+    required this.pricing,
+  });
 
   @override
   ConsumerState<_ParkingSlotTile> createState() => _ParkingSlotTileState();
@@ -497,8 +504,8 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
     return InkWell(
       onTap: slot.reservation == null
           ? slot.status == 'blocked'
-              ? null
-              : () => _showCreateReservation(context, widget.parkingId, slot)
+                ? null
+                : () => _showCreateReservation(context, widget.parkingId, slot)
           : () => _showReservation(context, ref, slot),
       onLongPress: slot.reservation == null
           ? () => _toggleBlocked(context, slot)
@@ -577,10 +584,17 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
     );
   }
 
-  Future<void> _toggleBlocked(BuildContext context, PartnerParkingSlot slot) async {
+  Future<void> _toggleBlocked(
+    BuildContext context,
+    PartnerParkingSlot slot,
+  ) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
-    await toggleParkingSlotBlock(token: token, parkingId: widget.parkingId, slotCode: slot.code);
+    await toggleParkingSlotBlock(
+      token: token,
+      parkingId: widget.parkingId,
+      slotCode: slot.code,
+    );
     ref.invalidate(partnerParkingMapProvider);
   }
 
@@ -943,6 +957,7 @@ class _FreeSlotReservationDialogState
   double? finalTotal;
   double? changeAmount;
   bool isSubmitting = false;
+  bool customerAcceptedTerms = false;
 
   @override
   void initState() {
@@ -1155,23 +1170,66 @@ class _FreeSlotReservationDialogState
                     ),
                   ),
               ],
+              TextButton.icon(
+                onPressed: () => _showParkingReservationTerms(context),
+                icon: const Icon(Icons.description_outlined),
+                label: Text(
+                  Localizations.localeOf(context).languageCode == 'en'
+                      ? 'Review reservation terms'
+                      : 'Consultar termos da reserva',
+                ),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: customerAcceptedTerms,
+                onChanged: isSubmitting || createdReservationId != null
+                    ? null
+                    : (value) => setState(
+                        () => customerAcceptedTerms = value ?? false,
+                      ),
+                title: Text(
+                  Localizations.localeOf(context).languageCode == 'en'
+                      ? 'I confirm the customer reviewed and accepted the reservation terms.'
+                      : 'Confirmo que o cliente revisou e aceitou os termos da reserva.',
+                ),
+              ),
               if (mode == _OperationalReservationMode.preReserve) ...[
                 const SizedBox(height: 14),
                 DropdownButtonFormField<_OperationalPricingPlan>(
                   initialValue: pricingPlan,
                   decoration: const InputDecoration(labelText: 'Modalidade'),
                   items: const [
-                    DropdownMenuItem(value: _OperationalPricingPlan.hourly, child: Text('Por hora')),
-                    DropdownMenuItem(value: _OperationalPricingPlan.daily, child: Text('Diária')),
-                    DropdownMenuItem(value: _OperationalPricingPlan.weekly, child: Text('Semanal')),
-                    DropdownMenuItem(value: _OperationalPricingPlan.monthly, child: Text('Mensal')),
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.hourly,
+                      child: Text('Por hora'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.daily,
+                      child: Text('Diária'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.weekly,
+                      child: Text('Semanal'),
+                    ),
+                    DropdownMenuItem(
+                      value: _OperationalPricingPlan.monthly,
+                      child: Text('Mensal'),
+                    ),
                   ],
-                  onChanged: isSubmitting ? null : (value) {
-                    if (value != null) setState(() => pricingPlan = value);
-                  },
+                  onChanged: isSubmitting
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            setState(() => pricingPlan = value);
+                          }
+                        },
                 ),
                 const SizedBox(height: 8),
-                _OperationalPricePreview(plan: pricingPlan, pricing: widget.pricing),
+                _OperationalPricePreview(
+                  plan: pricingPlan,
+                  pricing: widget.pricing,
+                ),
               ],
               if (mode == _OperationalReservationMode.paidReservation &&
                   payTiming == _OperationalPayTiming.now) ...[
@@ -1305,9 +1363,37 @@ class _FreeSlotReservationDialogState
     );
   }
 
+  Future<void> _showParkingReservationTerms(BuildContext context) async {
+    final english = Localizations.localeOf(context).languageCode == 'en';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          english ? 'Parking reservation terms' : 'Termos do estacionamento',
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            english
+                ? 'ParkHere facilitates discovery, communication and the digital booking flow. The identified provider performs the booked service. ParkHere remains responsible for its own platform duties as required by law; this acceptance does not waive consumer rights.\n\nI reviewed the location, parking-space category, period, vehicle plate, price, fees, arrival estimate, grace period and cancellation terms. The identified business operates the parking service; statutory rights remain.'
+                : 'O ParkHere facilita a descoberta, comunicação e fluxo digital da reserva. O prestador identificado executa o serviço contratado. O ParkHere mantém as obrigações próprias da plataforma conforme sua atuação e a legislação; este aceite não renuncia a direitos legais do consumidor.\n\nRevisei unidade, categoria da vaga, período, placa, preço, taxas, previsão de chegada, tolerância e cancelamento. O estabelecimento identificado opera o estacionamento e informa as regras de guarda e permanência; continuam válidos os direitos previstos em lei.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(english ? 'Close' : 'Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
+    final termsLocale = Localizations.localeOf(context).languageCode == 'en'
+        ? 'en'
+        : 'pt_BR';
 
     setState(() => isSubmitting = true);
     try {
@@ -1338,6 +1424,9 @@ class _FreeSlotReservationDialogState
       if (phone.length < 10 || phone.length > 13) {
         throw Exception('Informe o telefone do proprietário com DDD.');
       }
+      if (!customerAcceptedTerms) {
+        throw Exception('Confirme o aceite dos termos pelo cliente.');
+      }
       final reservation = createdReservationId == null
           ? await createOperationalReservation(
               token: token,
@@ -1352,6 +1441,8 @@ class _FreeSlotReservationDialogState
               arrivalNow: arrivalNow,
               plate: plate,
               ownerPhone: phone,
+              termsAccepted: customerAcceptedTerms,
+              termsLocale: termsLocale,
             )
           : {'id': createdReservationId};
       createdReservationId = reservation['id'] as String;
