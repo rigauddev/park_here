@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
@@ -47,7 +48,11 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Dashboard do guia / Guide dashboard')),
+    appBar: AppBar(
+      title: Text(
+        context.strings.isEnglish ? 'Guide dashboard' : 'Dashboard do guia',
+      ),
+    ),
     body: RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -82,7 +87,9 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
             children: [
               Expanded(
                 child: _StatCard(
-                  'Indicações concluídas',
+                  context.strings.isEnglish
+                      ? 'Completed referrals'
+                      : 'Indicações concluídas',
                   '$_indications',
                   Icons.people,
                 ),
@@ -98,7 +105,11 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
             ],
           ),
           const SizedBox(height: 12),
-          Text('Indicações aguardando conclusão: $_pendingIndications'),
+          Text(
+            context.strings.isEnglish
+                ? 'Referrals waiting for completion: $_pendingIndications'
+                : 'Indicações aguardando conclusão: $_pendingIndications',
+          ),
           const SizedBox(height: 8),
           Card(
             child: ListTile(

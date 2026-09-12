@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/services/routes/route_service.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/location_service.dart';
 import '../../account/pages/vehicles_page.dart';
 import '../../account/providers/account_provider.dart';
@@ -584,7 +585,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
                   const SizedBox(height: 16),
                   Text(
-                    'Indicação de guia (opcional) / Guide referral (optional)',
+                    context.strings.isEnglish
+                        ? 'Guide referral (optional)'
+                        : 'Indicação de guia (opcional)',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -601,14 +604,22 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           hintText:
                               snapshot.connectionState ==
                                   ConnectionState.waiting
-                              ? 'Carregando guias... / Loading guides...'
-                              : 'Selecione um guia / Select a guide',
+                              ? (context.strings.isEnglish
+                                    ? 'Loading guides...'
+                                    : 'Carregando guias...')
+                              : (context.strings.isEnglish
+                                    ? 'Select a guide'
+                                    : 'Selecione um guia'),
                           border: const OutlineInputBorder(),
                         ),
                         items: [
-                          const DropdownMenuItem<String?>(
+                          DropdownMenuItem<String?>(
                             value: null,
-                            child: Text('Sem indicação / No referral'),
+                            child: Text(
+                              context.strings.isEnglish
+                                  ? 'No referral'
+                                  : 'Sem indicação',
+                            ),
                           ),
                           for (final rawGuide in guides)
                             DropdownMenuItem<String?>(
@@ -622,7 +633,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                                         true
                                     ? (rawGuide)['name'] as String
                                     : (rawGuide)['email'] as String? ??
-                                          'Guia / Guide',
+                                          (context.strings.isEnglish
+                                              ? 'Guide'
+                                              : 'Guia'),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),

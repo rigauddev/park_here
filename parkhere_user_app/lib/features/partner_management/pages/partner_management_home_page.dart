@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../models/partner_profile_model.dart';
 import '../providers/partner_profile_provider.dart';
 import 'partner_financial_locked_page.dart';
@@ -171,9 +172,12 @@ class _PartnerManagementBody extends StatelessWidget {
           ),
           _ManagementAction(
             icon: Icons.percent_outlined,
-            title: 'Afiliação e comissões',
-            description:
-                'Escolha se cada unidade aceita afiliados e configure a oferta por modalidade.',
+            title: context.strings.isEnglish
+                ? 'Affiliations and commissions'
+                : 'Afiliação e comissões',
+            description: context.strings.isEnglish
+                ? 'Choose whether each location accepts affiliates and set plan offers.'
+                : 'Escolha se cada unidade aceita afiliados e configure a oferta por modalidade.',
             onTap: () => _open(context, const GuideOfferSettingsPage()),
           ),
           _ManagementAction(
