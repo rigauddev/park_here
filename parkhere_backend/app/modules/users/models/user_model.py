@@ -34,5 +34,6 @@ class User(BaseModel):
     permissions = Column(Text, nullable=True)
 
     is_active = Column(Boolean, default=True)
+    deactivation_reason = Column(Text, nullable=True)
 
     tenant = relationship("Tenant")

@@ -29,6 +29,8 @@ from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
+from app.modules.platform_fees.models import PartnerFeatureEntitlement
+from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
@@ -180,6 +182,22 @@ async def get_my_partner_profile(
         .where(PartnerPaymentAccount.is_active.is_(True))
     )
     payment_account = payment_result.scalar_one_or_none()
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    approved_extra = await db.scalar(select(func.coalesce(func.sum(OperatorPackageRequest.quantity), 0)).where(
+        OperatorPackageRequest.tenant_id == current_user.tenant_id,
+        OperatorPackageRequest.status == 'approved',
+    )) or 0
+    parking_count = await db.scalar(select(func.count(Parking.id)).where(
+        Parking.tenant_id == current_user.tenant_id, Parking.is_active.is_(True)
+    )) or 0
+    base_operator_limit = (
+        tenant.operator_limit_override if tenant and tenant.operator_limit_override is not None
+        else max(FREE_OPERATOR_LIMIT, int(parking_count or 1) * FREE_OPERATOR_LIMIT)
+    )
+    entitlements = (await db.scalars(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
+        PartnerFeatureEntitlement.is_enabled.is_(True),
+    ))).all()
 
     return {
         "tenant_id": current_user.tenant_id,
@@ -194,6 +212,16 @@ async def get_my_partner_profile(
         "approval_status": profile.approval_status
         if profile
         else "missing_profile",
+        "operator_limit": int(base_operator_limit) + int(approved_extra),
+        "features": {
+            item.feature_key: {
+                "is_enabled": item.is_enabled,
+                "is_paid": item.is_paid,
+                "price": item.price,
+                "billing_period": item.billing_period,
+            }
+            for item in entitlements
+        },
         "payment_account": {
             "provider": payment_account.provider,
             "status": payment_account.status,
@@ -662,7 +690,12 @@ async def create_partner_operator(
         OperatorPackageRequest.tenant_id == current_user.tenant_id,
         OperatorPackageRequest.status == "approved",
     )) or 0
-    operator_limit = max(FREE_OPERATOR_LIMIT, (parking_count or 1) * FREE_OPERATOR_LIMIT) + int(approved_extra)
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    base_limit = (
+        tenant.operator_limit_override if tenant and tenant.operator_limit_override is not None
+        else max(FREE_OPERATOR_LIMIT, int(parking_count or 1) * FREE_OPERATOR_LIMIT)
+    )
+    operator_limit = int(base_limit) + int(approved_extra)
     if operator_count >= operator_limit:
         raise HTTPException(
             status_code=402,

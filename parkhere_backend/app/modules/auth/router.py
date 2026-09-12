@@ -74,8 +74,11 @@ async def verify_mfa(data: MFARequest, db: AsyncSession = Depends(get_db)):
     return tokens
 
 @router.post("/email/request-code")
-async def request_email_code(data: EmailCodeRequest):
-    return await AuthService.request_email_verification(data.email)
+async def request_email_code(
+    data: EmailCodeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await AuthService.request_email_verification(data.email, db)
 
 @router.post("/email/verify-code")
 async def verify_email_code(data: VerifyEmailCodeRequest):

@@ -38,12 +38,9 @@ class PaymentService:
         parking = await _get_parking(db, reservation.parking_id)
         _ensure_payment_permission(current_user, reservation, parking)
         customer_fee = reservation.platform_fee_amount or 0
-        lines = await PlatformFeeService.calculate_lines(
-            db,
-            {'establishment': (reservation.base_amount or 0) + (reservation.services_amount or 0)},
-            parking.tenant_id,
+        establishment_fee = await _reservation_establishment_fee(
+            db, reservation, parking
         )
-        establishment_fee = sum(line.fee_amount for line in lines)
         return {
             'reservation_amount': round((reservation.final_total or reservation.estimated_total) - customer_fee, 2),
             'customer_fee_amount': round(customer_fee, 2),
@@ -101,12 +98,9 @@ class PaymentService:
             customer_fee_amount = reservation.platform_fee_amount
             establishment_fee_amount = 0.0
             if purpose == 'reservation':
-                fee_lines = await PlatformFeeService.calculate_lines(
-                    db,
-                    {'establishment': (reservation.base_amount or 0) + (reservation.services_amount or 0)},
-                    parking.tenant_id,
+                establishment_fee_amount = await _reservation_establishment_fee(
+                    db, reservation, parking
                 )
-                establishment_fee_amount = sum(line.fee_amount for line in fee_lines)
             platform_fee_amount = customer_fee_amount + establishment_fee_amount
             if reservation.status == "checked_in" and reservation.pricing_plan == "hourly":
                 excess_minutes, excess_amount = calculate_checkout_excess(
@@ -334,6 +328,38 @@ def _ensure_payable_reservation(reservation: Reservation) -> None:
     if (reservation.status == "pre_reserved" and reservation.hold_expires_at
             and reservation.hold_expires_at <= datetime.utcnow()):
         raise HTTPException(status_code=409, detail="Pre-reservation expired")
+
+
+def _reservation_fee_amounts(reservation: Reservation) -> dict[str, float]:
+    amounts = {"parking": float(reservation.base_amount or 0)}
+    if reservation.selected_services_snapshot:
+        for item in json.loads(reservation.selected_services_snapshot):
+            code = item.get("code")
+            if code:
+                amounts[code] = amounts.get(code, 0) + float(item.get("price") or 0)
+    return amounts
+
+
+async def _reservation_establishment_fee(
+    db: AsyncSession, reservation: Reservation, parking: Parking
+) -> float:
+    # Use the rate snapshot accepted when the reservation was created. Admin
+    # changes to current rates must not silently change an existing quote.
+    if reservation.platform_fee_snapshot:
+        return round(
+            sum(
+                float(item.get('fee_amount', 0))
+                for item in json.loads(reservation.platform_fee_snapshot)
+            ),
+            2,
+        )
+    lines = await PlatformFeeService.calculate_lines(
+        db,
+        _reservation_fee_amounts(reservation),
+        parking.tenant_id,
+        parking.id,
+    )
+    return round(sum(line.fee_amount for line in lines), 2)
 
 
 def _mock_checkout_url(external_reference: str) -> str:

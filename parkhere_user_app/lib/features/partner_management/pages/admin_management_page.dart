@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/i18n/app_localizations.dart';
 
 class AdminManagementPage extends ConsumerStatefulWidget {
   final int initialSection;
@@ -20,6 +21,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   List<Map<String, dynamic>> _operatorRequests = [];
   List<Map<String, dynamic>> _partners = [];
   List<Map<String, dynamic>> _customers = [];
+  List<Map<String, dynamic>> _emailTemplates = [];
+  List<Map<String, dynamic>> _featureRows = [];
+  String? _featureTenantId;
   String? _loadError;
   bool _loading = true;
   int _section = 0;
@@ -29,7 +33,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   @override
   void initState() {
     super.initState();
-    _section = widget.initialSection.clamp(0, 5).toInt();
+    _section = widget.initialSection.clamp(0, 6).toInt();
     _load();
   }
 
@@ -83,6 +87,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         'Clientes',
         () => _api.getAuthorized('/admin/platform-fees/customers', token),
       ),
+      safe(
+        'Templates',
+        () => _api.getAuthorized('/admin/platform-fees/email-templates', token),
+      ),
     ]);
     if (!mounted) return;
     setState(() {
@@ -99,9 +107,18 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       if (values[4] != null) {
         _customers = (values[4] as List).cast<Map<String, dynamic>>();
       }
+      if (values[5] != null) {
+        _emailTemplates = (values[5] as List).cast<Map<String, dynamic>>();
+      }
+      if (_featureTenantId == null && _partners.isNotEmpty) {
+        _featureTenantId = _partners.first['tenant_id'] as String?;
+      }
       _loadError = errors.isEmpty ? null : errors.join('\n');
       _loading = false;
     });
+    if (_section == 3 && _featureTenantId != null) {
+      await _loadPartnerFeatures(_featureTenantId!);
+    }
   }
 
   @override
@@ -123,6 +140,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                   ('Funcionalidades', Icons.extension_outlined),
                   ('Parceiros', Icons.business_outlined),
                   ('Clientes', Icons.people_outline),
+                  ('Templates', Icons.mark_email_read_outlined),
                 ])
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -136,6 +154,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                             'Funcionalidades',
                             'Parceiros',
                             'Clientes',
+                            'Templates',
                           ].indexOf(item.$1),
                       avatar: Icon(item.$2, size: 18),
                       label: Text(item.$1),
@@ -147,6 +166,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                           'Funcionalidades',
                           'Parceiros',
                           'Clientes',
+                          'Templates',
                         ].indexOf(item.$1),
                       ),
                     ),
@@ -265,40 +285,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           ),
         ];
       case 3:
-        return [
-          const Text(
-            'Funcionalidades pagas',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.analytics_outlined),
-              title: Text('Indicadores avançados'),
-              subtitle: Text(
-                'Habilite ou desabilite por parceiro após contratação.',
-              ),
-            ),
-          ),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.account_balance_outlined),
-              title: Text('Gestão financeira'),
-              subtitle: Text(
-                'Controle de acesso ao módulo financeiro por plano.',
-              ),
-            ),
-          ),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.groups_outlined),
-              title: Text('Operadores adicionais'),
-              subtitle: Text(
-                'Solicitações aprovadas ampliam o limite da empresa.',
-              ),
-            ),
-          ),
-        ];
+        return _partnerFeatureManager();
       case 4:
         final search = _partnerSearch.text.trim().toLowerCase();
         final filtered = _partners
@@ -443,6 +430,8 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                 ),
               ),
         ];
+      case 6:
+        return _emailTemplateSection();
       default:
         final cities =
             (_overview['cities'] as List?)?.cast<Map<String, dynamic>>() ??
@@ -619,6 +608,55 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _editOperatorCapacity(partner),
+                        icon: const Icon(Icons.groups_outlined),
+                        label: Text(_tr('Limite de usuários', 'User limit')),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(dialogContext);
+                          final tenantId = partner['tenant_id'] as String;
+                          setState(() {
+                            _featureTenantId = tenantId;
+                            _section = 3;
+                          });
+                          _loadPartnerFeatures(tenantId);
+                        },
+                        icon: const Icon(Icons.extension_outlined),
+                        label: Text(_tr('Funcionalidades', 'Features')),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _setPartnerActive(
+                      partner,
+                      partner['tenant_status'] == 'SUSPENDED',
+                      dialogContext,
+                    ),
+                    icon: Icon(
+                      partner['tenant_status'] == 'SUSPENDED'
+                          ? Icons.play_circle_outline
+                          : Icons.pause_circle_outline,
+                    ),
+                    label: Text(
+                      partner['tenant_status'] == 'SUSPENDED'
+                          ? _tr('Reativar parceiro', 'Reactivate partner')
+                          : _tr('Desativar parceiro', 'Deactivate partner'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 const Text(
                   'Equipe',
                   style: TextStyle(fontWeight: FontWeight.bold),
@@ -659,7 +697,12 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                     leading: const Icon(Icons.store_outlined),
                     title: Text(unit['name'] as String? ?? ''),
                     subtitle: Text(
-                      '${unit['city'] ?? ''} · ${unit['is_active'] == true ? 'Ativo' : 'Inativo'}',
+                      '${unit['address'] ?? ''}, ${unit['city'] ?? ''} · ${unit['is_active'] == true ? 'Ativo' : 'Inativo'}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _editPartnerUnit(
+                      partner['tenant_id'] as String,
+                      unit as Map<String, dynamic>,
                     ),
                   ),
                 const SizedBox(height: 8),
@@ -722,6 +765,881 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         ],
       ),
     );
+  }
+
+  String _tr(String portuguese, String english) =>
+      context.strings.isEnglish ? english : portuguese;
+
+  List<Widget> _partnerFeatureManager() {
+    Map<String, dynamic>? selected;
+    for (final partner in _partners) {
+      if (partner['tenant_id'] == _featureTenantId) {
+        selected = partner;
+        break;
+      }
+    }
+    return [
+      Text(
+        _tr('Funcionalidades por parceiro', 'Partner features'),
+        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+      ),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<String>(
+        initialValue: _featureTenantId,
+        decoration: InputDecoration(
+          labelText: _tr('Parceiro', 'Partner'),
+          border: const OutlineInputBorder(),
+        ),
+        items: [
+          for (final partner in _partners)
+            DropdownMenuItem<String>(
+              value: partner['tenant_id'] as String,
+              child: Text(
+                partner['company_name'] as String? ??
+                    partner['tenant_name'] as String? ??
+                    _tr('Parceiro', 'Partner'),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: (tenantId) {
+          if (tenantId == null) return;
+          setState(() {
+            _featureTenantId = tenantId;
+            _featureRows = [];
+          });
+          _loadPartnerFeatures(tenantId);
+        },
+      ),
+      const SizedBox(height: 8),
+      if (selected != null)
+        Text(
+          '${_categoryLabel(selected['service_type'] as String? ?? '')} · ${selected['tenant_status'] ?? ''}',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      if (_featureTenantId == null)
+        Card(
+          child: ListTile(
+            title: Text(
+              _tr('Nenhum parceiro cadastrado.', 'No partner registered.'),
+            ),
+          ),
+        )
+      else if (_featureRows.isEmpty)
+        Card(
+          child: ListTile(
+            leading: const SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            title: Text(
+              _tr('Carregando funcionalidades…', 'Loading features…'),
+            ),
+          ),
+        )
+      else
+        for (final feature in _featureRows)
+          Card(
+            child: ListTile(
+              leading: Icon(
+                feature['is_enabled'] == true
+                    ? Icons.toggle_on_outlined
+                    : Icons.toggle_off_outlined,
+              ),
+              title: Text(
+                feature['name'] as String? ?? feature['key'] as String,
+              ),
+              subtitle: Text(
+                '${feature['description'] ?? ''}\n'
+                '${feature['is_paid'] == true ? _tr('Paga', 'Paid') : _tr('Incluída/gratuita', 'Included/free')} · '
+                '${feature['price'] ?? 0} / ${feature['billing_period'] ?? 'monthly'}',
+              ),
+              isThreeLine: true,
+              trailing: Wrap(
+                spacing: 0,
+                children: [
+                  IconButton(
+                    tooltip: _tr('Configurar preço', 'Configure price'),
+                    onPressed: () => _editPartnerFeature(feature),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                  Switch(
+                    value: feature['is_enabled'] == true,
+                    onChanged: (enabled) =>
+                        _savePartnerFeature(feature, isEnabled: enabled),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      const SizedBox(height: 8),
+      Text(
+        _tr(
+          'A liberação do módulo fica registrada por empresa. Recursos ainda sem tela ou endpoint aparecem desativados e não ficam acessíveis até serem conectados.',
+          'Feature access is recorded per company. Features without a working screen or API remain disabled until connected.',
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _editOperatorCapacity(Map<String, dynamic> partner) async {
+    final tenantId = partner['tenant_id'] as String?;
+    final token = ref.read(authProvider).accessToken;
+    if (tenantId == null || token == null) return;
+    final input = TextEditingController(
+      text:
+          '${partner['operator_limit_override'] ?? partner['base_operator_limit'] ?? 2}',
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_tr('Usuários permitidos', 'Allowed users')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _tr(
+                'O total atual é ${partner['operator_limit'] ?? 2}: base ${partner['base_operator_limit'] ?? 2} + ${partner['approved_extra_operators'] ?? 0} usuário(s) de pacotes aprovados. O valor abaixo ajusta somente a base; pacotes aprovados continuam somados.',
+                'Current total is ${partner['operator_limit'] ?? 2}: base ${partner['base_operator_limit'] ?? 2} + ${partner['approved_extra_operators'] ?? 0} approved package user(s). The value below changes only the base; approved packages remain added.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: input,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: _tr('Número de operadores', 'Operator count'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(_tr('Cancelar', 'Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(_tr('Salvar', 'Save')),
+          ),
+        ],
+      ),
+    );
+    if (saved == true) {
+      final value = int.tryParse(input.text.trim());
+      if (value == null || value < 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _tr('Informe um número válido.', 'Enter a valid number.'),
+              ),
+            ),
+          );
+        }
+      } else {
+        try {
+          await _api.putAuthorized(
+            '/admin/platform-fees/partners/$tenantId/operator-capacity',
+            {'operator_limit': value},
+            token,
+          );
+          await _load();
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Limite: $error')));
+          }
+        }
+      }
+    }
+    input.dispose();
+  }
+
+  Future<void> _setPartnerActive(
+    Map<String, dynamic> partner,
+    bool active,
+    BuildContext dialogContext,
+  ) async {
+    final tenantId = partner['tenant_id'] as String?;
+    final token = ref.read(authProvider).accessToken;
+    if (tenantId == null || token == null) return;
+    final reasonController = TextEditingController();
+    String? reason;
+    if (!active) {
+      reason = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(_tr('Desativar parceiro', 'Deactivate partner')),
+          content: TextField(
+            controller: reasonController,
+            minLines: 2,
+            maxLines: 4,
+            decoration: InputDecoration(
+              labelText: _tr(
+                'Motivo (enviado por e-mail)',
+                'Reason (emailed to partner)',
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(_tr('Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(context, reasonController.text.trim()),
+              child: Text(_tr('Desativar', 'Deactivate')),
+            ),
+          ],
+        ),
+      );
+      if (reason == null || reason.trim().length < 5) {
+        reasonController.dispose();
+        return;
+      }
+    }
+    try {
+      await _api.patchAuthorized(
+        '/admin/platform-fees/partners/$tenantId/status',
+        {'is_active': active, if (!active) 'reason': reason},
+        token,
+      );
+      if (dialogContext.mounted) Navigator.pop(dialogContext);
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Parceiro: $error')));
+      }
+    } finally {
+      reasonController.dispose();
+    }
+  }
+
+  Future<void> _editPartnerUnit(
+    String tenantId,
+    Map<String, dynamic> unitSummary,
+  ) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    Map<String, dynamic> unit;
+    try {
+      unit = await _api.getAuthorizedMap(
+        '/admin/platform-fees/partners/$tenantId/units/${unitSummary['id']}',
+        token,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Unidade: $error')));
+      }
+      return;
+    }
+    final name = TextEditingController(text: unit['name'] as String? ?? '');
+    final address = TextEditingController(
+      text: unit['address'] as String? ?? '',
+    );
+    final city = TextEditingController(text: unit['city'] as String? ?? '');
+    final lat = TextEditingController(text: '${unit['lat'] ?? ''}');
+    final lng = TextEditingController(text: '${unit['lng'] ?? ''}');
+    if (!mounted) {
+      name.dispose();
+      address.dispose();
+      city.dispose();
+      lat.dispose();
+      lng.dispose();
+      return;
+    }
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(unit['name'] as String? ?? _tr('Unidade', 'Unit')),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: InputDecoration(
+                    labelText: _tr('Nome da unidade', 'Unit name'),
+                  ),
+                ),
+                TextField(
+                  controller: address,
+                  decoration: InputDecoration(
+                    labelText: _tr('Endereço', 'Address'),
+                  ),
+                ),
+                TextField(
+                  controller: city,
+                  decoration: InputDecoration(labelText: _tr('Cidade', 'City')),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: lat,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                          signed: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Latitude',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: lng,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                          signed: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Longitude',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${_tr('Vagas', 'Spots')}: ${unit['total_spots']} · ${_tr('Disponíveis', 'Available')}: ${unit['available_spots']}',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(_tr('Fechar', 'Close')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 'fees'),
+            child: Text(_tr('Taxas da unidade', 'Unit fees')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, 'save'),
+            child: Text(_tr('Salvar dados', 'Save details')),
+          ),
+        ],
+      ),
+    );
+    if (result == 'save') {
+      try {
+        await _api.patchAuthorized(
+          '/admin/platform-fees/partners/$tenantId/units/${unit['id']}',
+          {
+            'name': name.text.trim(),
+            'address': address.text.trim(),
+            'city': city.text.trim(),
+            'lat': double.tryParse(lat.text.replaceAll(',', '.')),
+            'lng': double.tryParse(lng.text.replaceAll(',', '.')),
+          },
+          token,
+        );
+        await _load();
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Dados da unidade: $error')));
+        }
+      }
+    } else if (result == 'fees') {
+      await _editPartnerUnitFees(tenantId, unit['id'] as String);
+    }
+    name.dispose();
+    address.dispose();
+    city.dispose();
+    lat.dispose();
+    lng.dispose();
+  }
+
+  Future<void> _editPartnerUnitFees(String tenantId, String parkingId) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = (await _api.getAuthorized(
+        '/admin/platform-fees/partners/$tenantId/units/$parkingId/fees',
+        token,
+      )).cast<Map<String, dynamic>>();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Taxas da unidade: $error')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          _tr('Taxas do app nesta unidade', 'App fees for this unit'),
+        ),
+        content: SizedBox(
+          width: 520,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Text(
+                _tr(
+                  'A configuração da unidade prevalece sobre a taxa do parceiro, que prevalece sobre o padrão global.',
+                  'Unit settings override partner rates, which override global defaults.',
+                ),
+              ),
+              for (final fee in rows)
+                ListTile(
+                  title: Text(
+                    _categoryLabel(fee['service_type'] as String? ?? ''),
+                  ),
+                  subtitle: Text(
+                    '${fee['source']} · ${fee['percentage']}% + R\$ ${fee['fixed_amount']}',
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () async {
+                      final changed = await _editUnitFee(
+                        tenantId,
+                        parkingId,
+                        fee,
+                      );
+                      if (changed && dialogContext.mounted) {
+                        // Re-open with fresh effective values after save.
+                        Navigator.pop(dialogContext);
+                        if (mounted) {
+                          await _editPartnerUnitFees(tenantId, parkingId);
+                        }
+                      }
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(_tr('Fechar', 'Close')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _editUnitFee(
+    String tenantId,
+    String parkingId,
+    Map<String, dynamic> fee,
+  ) async {
+    final percentage = TextEditingController(text: '${fee['percentage'] ?? 0}');
+    final fixed = TextEditingController(text: '${fee['fixed_amount'] ?? 0}');
+    var active = fee['is_active'] == true;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            '${_tr('Taxa da unidade', 'Unit fee')}: ${_categoryLabel(fee['service_type'] as String? ?? '')}',
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: percentage,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: _tr('Percentual (%)', 'Percentage (%)'),
+                ),
+              ),
+              TextField(
+                controller: fixed,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: _tr('Valor fixo (R\$)', 'Fixed amount (BRL)'),
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(_tr('Taxa ativa', 'Fee active')),
+                value: active,
+                onChanged: (value) => setDialogState(() => active = value),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(_tr('Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(_tr('Salvar', 'Save')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) {
+      percentage.dispose();
+      fixed.dispose();
+      return false;
+    }
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) {
+      percentage.dispose();
+      fixed.dispose();
+      return false;
+    }
+    try {
+      await _api.putAuthorized(
+        '/admin/platform-fees/partners/$tenantId/units/$parkingId/fees/${fee['service_type']}',
+        {
+          'service_type': fee['service_type'],
+          'fee_mode': fee['fee_mode'] ?? 'hybrid',
+          'fixed_amount': double.tryParse(fixed.text.replaceAll(',', '.')) ?? 0,
+          'percentage':
+              double.tryParse(percentage.text.replaceAll(',', '.')) ?? 0,
+          'min_fee': fee['min_fee'] ?? 0,
+          'max_fee': fee['max_fee'],
+          'is_active': active,
+        },
+        token,
+      );
+      return true;
+    } finally {
+      percentage.dispose();
+      fixed.dispose();
+    }
+  }
+
+  Future<void> _loadPartnerFeatures(String tenantId) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      final rows = (await _api.getAuthorized(
+        '/admin/platform-fees/partners/$tenantId/features',
+        token,
+      )).cast<Map<String, dynamic>>();
+      if (mounted && tenantId == _featureTenantId) {
+        setState(() => _featureRows = rows);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Funcionalidades: $error')));
+      }
+    }
+  }
+
+  Future<void> _savePartnerFeature(
+    Map<String, dynamic> feature, {
+    bool? isEnabled,
+    bool? isPaid,
+    double? price,
+    String? billingPeriod,
+  }) async {
+    final tenantId = _featureTenantId;
+    final token = ref.read(authProvider).accessToken;
+    if (tenantId == null || token == null) return;
+    try {
+      await _api.putAuthorized(
+        '/admin/platform-fees/partners/$tenantId/features/${feature['key']}',
+        {
+          'is_enabled': isEnabled ?? feature['is_enabled'] == true,
+          'is_paid': isPaid ?? feature['is_paid'] == true,
+          'price': price ?? (feature['price'] as num? ?? 0).toDouble(),
+          'billing_period':
+              billingPeriod ?? feature['billing_period'] ?? 'monthly',
+          'notes': feature['notes'],
+        },
+        token,
+      );
+      await _loadPartnerFeatures(tenantId);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível salvar: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editPartnerFeature(Map<String, dynamic> feature) async {
+    var enabled = feature['is_enabled'] == true;
+    var paid = feature['is_paid'] == true;
+    var period = feature['billing_period'] as String? ?? 'monthly';
+    final price = TextEditingController(
+      text: '${feature['price'] ?? 0}'.replaceAll('.', ','),
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(feature['name'] as String? ?? feature['key'] as String),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _tr('Ativa para o parceiro', 'Enabled for partner'),
+                    ),
+                    value: enabled,
+                    onChanged: (value) => setDialogState(() => enabled = value),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(_tr('Funcionalidade paga', 'Paid feature')),
+                    value: paid,
+                    onChanged: (value) => setDialogState(() => paid = value),
+                  ),
+                  TextField(
+                    controller: price,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr('Preço (BRL)', 'Price (BRL)'),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: period,
+                    decoration: InputDecoration(
+                      labelText: _tr('Cobrança', 'Billing period'),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'monthly',
+                        child: Text(_tr('Mensal', 'Monthly')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'annual',
+                        child: Text(_tr('Anual', 'Annual')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'one_time',
+                        child: Text(_tr('Única', 'One time')),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setDialogState(() => period = value);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(_tr('Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(_tr('Salvar', 'Save')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved == true) {
+      await _savePartnerFeature(
+        feature,
+        isEnabled: enabled,
+        isPaid: paid,
+        price: double.tryParse(price.text.replaceAll(',', '.')) ?? 0,
+        billingPeriod: period,
+      );
+    }
+    price.dispose();
+  }
+
+  List<Widget> _emailTemplateSection() => [
+    Text(
+      _tr('Templates de e-mail', 'Email templates'),
+      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+    ),
+    const SizedBox(height: 8),
+    Text(
+      _tr(
+        'Edite assunto, cabeçalho, conteúdo e rodapé. O cabeçalho inclui a logo ParkHere; variáveis disponíveis: {{name}}, {{code}}, {{reason}}, {{company}}.',
+        'Edit the subject, header, body and footer. The header includes the ParkHere logo. Available variables: {{name}}, {{code}}, {{reason}}, {{company}}.',
+      ),
+    ),
+    const SizedBox(height: 8),
+    if (_emailTemplates.isEmpty)
+      Card(
+        child: ListTile(
+          title: Text(
+            _tr('Nenhum template retornado.', 'No templates returned.'),
+          ),
+        ),
+      )
+    else
+      for (final template in _emailTemplates)
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.mark_email_read_outlined),
+            title: Text(
+              template['display_name'] as String? ??
+                  template['template_key'] as String,
+            ),
+            subtitle: Text('${template['locale']} · ${template['subject']}'),
+            trailing: Icon(
+              template['is_active'] == true
+                  ? Icons.check_circle_outline
+                  : Icons.pause_circle_outline,
+            ),
+            onTap: () => _editEmailTemplate(template),
+          ),
+        ),
+  ];
+
+  Future<void> _editEmailTemplate(Map<String, dynamic> template) async {
+    final name = TextEditingController(
+      text: template['display_name'] as String? ?? '',
+    );
+    final subject = TextEditingController(
+      text: template['subject'] as String? ?? '',
+    );
+    final header = TextEditingController(
+      text: template['header_html'] as String? ?? '',
+    );
+    final body = TextEditingController(
+      text: template['body_html'] as String? ?? '',
+    );
+    final footer = TextEditingController(
+      text: template['footer_html'] as String? ?? '',
+    );
+    var active = template['is_active'] == true;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('${template['display_name']} · ${template['locale']}'),
+          content: SizedBox(
+            width: 700,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: name,
+                    decoration: InputDecoration(labelText: _tr('Nome', 'Name')),
+                  ),
+                  TextField(
+                    controller: subject,
+                    decoration: InputDecoration(
+                      labelText: _tr('Assunto', 'Subject'),
+                    ),
+                  ),
+                  TextField(
+                    controller: header,
+                    minLines: 3,
+                    maxLines: 6,
+                    decoration: InputDecoration(
+                      labelText: _tr('HTML do cabeçalho', 'Header HTML'),
+                    ),
+                  ),
+                  TextField(
+                    controller: body,
+                    minLines: 5,
+                    maxLines: 12,
+                    decoration: InputDecoration(
+                      labelText: _tr('HTML do corpo', 'Body HTML'),
+                    ),
+                  ),
+                  TextField(
+                    controller: footer,
+                    minLines: 3,
+                    maxLines: 6,
+                    decoration: InputDecoration(
+                      labelText: _tr('HTML do rodapé', 'Footer HTML'),
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(_tr('Template ativo', 'Template active')),
+                    value: active,
+                    onChanged: (value) => setDialogState(() => active = value),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(_tr('Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(_tr('Salvar', 'Save')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved == true) {
+      final token = ref.read(authProvider).accessToken;
+      if (token != null) {
+        try {
+          await _api.putAuthorized(
+            '/admin/platform-fees/email-templates/${template['template_key']}/${template['locale']}',
+            {
+              'display_name': name.text,
+              'subject': subject.text,
+              'header_html': header.text,
+              'body_html': body.text,
+              'footer_html': footer.text,
+              'is_active': active,
+            },
+            token,
+          );
+          await _load();
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Template: $error')));
+          }
+        }
+      }
+    }
+    name.dispose();
+    subject.dispose();
+    header.dispose();
+    body.dispose();
+    footer.dispose();
   }
 
   Future<void> _setPartnerServiceActive(
@@ -887,10 +1805,44 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   Future<void> _setUserActive(Map<String, dynamic> user, bool active) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
+    String? reason;
+    if (!active) {
+      final controller = TextEditingController();
+      reason = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(_tr('Desativar usuário', 'Deactivate user')),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            decoration: InputDecoration(
+              labelText: _tr(
+                'Motivo (será enviado por e-mail)',
+                'Reason (sent by email)',
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(_tr('Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: Text(_tr('Desativar', 'Deactivate')),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (reason == null || reason.trim().length < 5) return;
+    }
     try {
       await _api.patchAuthorized(
         '/admin/platform-fees/users/${user['id']}/status',
-        {'is_active': active},
+        {'is_active': active, if (!active) 'reason': reason},
         token,
       );
       if (mounted) {

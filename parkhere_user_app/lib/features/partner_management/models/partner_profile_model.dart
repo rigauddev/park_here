@@ -28,6 +28,7 @@ class PartnerProfileModel {
   final String? companyName;
   final String approvalStatus;
   final PartnerPaymentAccountSummary? paymentAccount;
+  final Map<String, dynamic> features;
 
   const PartnerProfileModel({
     required this.tenantId,
@@ -39,6 +40,7 @@ class PartnerProfileModel {
     required this.companyName,
     required this.approvalStatus,
     required this.paymentAccount,
+    required this.features,
   });
 
   factory PartnerProfileModel.fromJson(Map<String, dynamic> json) {
@@ -62,8 +64,12 @@ class PartnerProfileModel {
       paymentAccount: paymentJson is Map<String, dynamic>
           ? PartnerPaymentAccountSummary.fromJson(paymentJson)
           : null,
+      features: (json['features'] as Map<String, dynamic>?) ?? const {},
     );
   }
+
+  bool hasFeature(String key) =>
+      (features[key] as Map<String, dynamic>?)?['is_enabled'] == true;
 
   String get serviceTypeLabel {
     switch (serviceType) {

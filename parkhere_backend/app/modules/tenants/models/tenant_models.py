@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Enum, DateTime
+from sqlalchemy import Column, String, Enum, DateTime, Integer
 from sqlalchemy.sql import func
 from app.db.base import BaseModel
 
@@ -15,5 +15,6 @@ class Tenant(BaseModel):
 
     plan = Column(Enum(PlanEnum), default=PlanEnum.FREE)
     status = Column(Enum(TenantStatusEnum), default=TenantStatusEnum.TRIAL)
+    operator_limit_override = Column(Integer, nullable=True)
 
     trial_ends_at = Column(DateTime(timezone=True), nullable=True)

@@ -3,7 +3,11 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee
+from app.modules.platform_fees.models import (
+    PlatformFee,
+    PartnerPlatformFee,
+    ParkingPlatformFee,
+)
 
 
 @dataclass
@@ -32,6 +36,7 @@ class PlatformFeeService:
         db: AsyncSession,
         amounts_by_service_type: dict[str, float],
         tenant_id: str | None = None,
+        parking_id: str | None = None,
     ) -> list[PlatformFeeLine]:
         if not amounts_by_service_type:
             return []
@@ -50,6 +55,15 @@ class PlatformFeeService:
                 PartnerPlatformFee.service_type.in_(amounts_by_service_type.keys()),
             ))
             for override in overrides.all():
+                fees[override.service_type] = override
+
+        if parking_id is not None and tenant_id is not None:
+            unit_overrides = await db.scalars(select(ParkingPlatformFee).where(
+                ParkingPlatformFee.tenant_id == tenant_id,
+                ParkingPlatformFee.parking_id == parking_id,
+                ParkingPlatformFee.service_type.in_(amounts_by_service_type.keys()),
+            ))
+            for override in unit_overrides.all():
                 fees[override.service_type] = override
 
         return [

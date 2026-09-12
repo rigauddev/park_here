@@ -226,3 +226,19 @@ O backlog detalhado, regras de negócio e tarefas restantes estão em
 - Marketplace de servicos.
 - Campanhas pagas de divulgacao para estabelecimentos.
 - Observabilidade, SLAs e antifraude.
+
+## Gestão administrativa — revisão 12/09/2026
+
+Implementado neste bloco: detalhes reais de parceiro e unidade de
+estacionamento; edição de endereço/coordenadas; taxa por unidade com precedência
+unidade > parceiro > global; cota-base de operadores sem dupla contagem de
+pacotes aprovados; entitlements por parceiro; suspensão auditada com motivo e
+templates de e-mail PT/EN com marca ParkHere. O snapshot da taxa é preservado
+na reserva para que uma alteração administrativa futura não modifique uma
+cobrança já apresentada.
+
+Ainda pendente: cobrança/renovação dos módulos pagos e bloqueio backend dos
+módulos quando o entitlement expirar; tela de auditoria no app; busca/paginação
+de parceiros/clientes; afiliação genérica de guias a serviços que não sejam
+estacionamentos; idioma preferido de e-mail por usuário; módulos operacionais
+de hotel, lava-jato, restaurante, turismo e transporte.

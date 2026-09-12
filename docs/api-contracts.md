@@ -94,15 +94,60 @@ Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
 - `GET /admin/platform-fees/customers?query=...` lista até 500 clientes do app;
   a busca opcional corresponde a nome, e-mail ou telefone.
 - `PATCH /admin/platform-fees/users/{user_id}/status` recebe
-  `{"is_active": false}` para suspender ou reativar uma conta. Não permite
-  alterar o superadministrador. Contas suspensas não podem iniciar login nem
-  usar tokens previamente emitidos.
+  `{"is_active": false, "reason": "..."}` para suspender uma conta; o motivo
+  (mínimo 5 caracteres) é obrigatório e é enviado ao usuário por e-mail. Para
+  reativar, envie `{"is_active": true}`. Não permite alterar o
+  superadministrador. Contas suspensas não podem iniciar login nem usar tokens
+  previamente emitidos.
+- `PATCH /admin/platform-fees/partners/{tenant_id}/status` suspende/reativa a
+  empresa. A suspensão exige `reason`, grava auditoria e envia e-mail aos
+  usuários ativos do parceiro. A reativação não reativa usuários suspensos
+  individualmente.
+- `PUT /admin/platform-fees/partners/{tenant_id}/operator-capacity` recebe
+  `{"operator_limit": 6}` para definir a cota base manual. Pacotes aprovados
+  continuam somados. A listagem separa `base_operator_limit`,
+  `approved_extra_operators`, `operator_limit_override` e total efetivo para
+  evitar contagem duplicada.
+- `GET /admin/platform-fees/partners/{tenant_id}/units/{parking_id}` e `PATCH`
+  exibem/alteram nome, endereço, cidade e coordenadas da unidade. A API valida
+  que a unidade pertence ao parceiro informado.
+- `GET /admin/platform-fees/partners/{tenant_id}/units/{parking_id}/fees`
+  retorna a taxa efetiva por tipo de serviço e sua origem (`global`, `partner`
+  ou `unit`). A precedência é unidade > parceiro > padrão global.
+- `PUT /admin/platform-fees/partners/{tenant_id}/units/{parking_id}/fees/{service_type}`
+  grava uma taxa específica da unidade. O cálculo de cobrança da reserva usa a
+  mesma precedência para a taxa do estabelecimento.
+- `GET /admin/platform-fees/partners/{tenant_id}/features` lista os módulos
+  disponíveis e seu estado/preço por parceiro. `PUT
+  /admin/platform-fees/partners/{tenant_id}/features/{feature_key}` grava
+  ativação, classificação como paga, preço e periodicidade (`monthly`,
+  `annual`, `one_time`). Isso administra entitlement e preço; cobrança,
+  vigência e bloqueio de cada módulo ainda dependem da implementação do módulo
+  e do fluxo de pagamento.
+- `GET /admin/platform-fees/email-templates` lista modelos em `pt_BR` e `en`.
+  `PUT /admin/platform-fees/email-templates/{template_key}/{locale}` atualiza
+  nome, assunto e fragmentos HTML. Tipos iniciais: `welcome`, `mfa_code`,
+  `user_deactivation`, `partner_deactivation`. Variáveis: `{{name}}`,
+  `{{code}}`, `{{reason}}`, `{{company}}`, `{{slogan}}` e
+  `{{company_footer}}`. A logo é anexada inline com Content-ID
+  `parkhere-logo`; falhas de SMTP não desfazem alterações de conta.
+- `GET /admin/platform-fees/audit-logs?limit=100` lista eventos administrativos
+  (máximo 500) com autor, alvo, horário e detalhes.
+
+Unidades administrativas atualmente são registros reais da tabela `parkings`;
+parceiros de guia e demais categorias permanecem empresas/serviços próprios e
+não recebem unidades de estacionamento artificiais. O relacionamento de
+afiliação de guias continua limitado ao módulo atual de estacionamento. Antes
+de lançar afiliação para hotéis, lava-jatos ou outros serviços, criar um vínculo
+genérico entre guia, parceiro e serviço, com comissão por indicação e
+aprovação do parceiro.
 
 ### Precedência e limites comerciais
 
 Taxas globais são os padrões da plataforma. Uma taxa individual ativa substitui
-o padrão para aquele parceiro e tipo de serviço; a taxa fica registrada em
-`partner_platform_fees`. A regra comercial planejada para unidades e serviços é
+o padrão para aquele parceiro e tipo de serviço; uma taxa de unidade substitui
+as duas anteriores. Os registros ficam em `partner_platform_fees` e
+`parking_platform_fees`. A regra comercial planejada para unidades e serviços é
 um serviço incluído por parceiro e cobrança para unidades/serviços adicionais;
 ela ainda precisa de catálogo de preços, contratação, confirmação de pagamento,
 entitlements e auditoria antes de ser aplicada em produção. O limite atual

@@ -46,6 +46,23 @@ itens pendentes como funcionalidades disponíveis para cobrança.
 - [x] Usuário suspenso não inicia login nem pode usar token já emitido.
 - [x] Erros de carregamento das seções são isolados para que uma API com falha
   não oculte dados carregados pelas outras.
+- [x] Detalhes administrativos de parceiro exibem equipe, serviços e unidades
+  reais; parceiros sem registros `parkings` não ganham unidades artificiais.
+- [x] Unidade de estacionamento pode editar nome, endereço, cidade e
+  coordenadas e configurar taxa ParkHere por categoria/serviço.
+- [x] Taxa efetiva obedece unidade > parceiro > padrão global e a cobrança da
+  reserva consulta essa mesma precedência.
+- [x] Administração pode ajustar a base de operadores, mantendo separados os
+  limites por unidade, ajustes manuais e pacotes adicionais aprovados.
+- [x] Administração pode ativar/desativar funcionalidades por parceiro e
+  cadastrar preço e periodicidade; mudanças são auditadas.
+- [x] Clientes e empresas podem ser suspensos com motivo; o motivo é enviado
+  pelos templates de e-mail e a suspensão é auditada.
+- [x] Editor de templates HTML em português e inglês para boas-vindas, MFA,
+  desativação de usuário e desativação de parceiro; inclui logo inline e slogan.
+- [x] API de auditoria administrativa registra ações de taxas globais e por
+  unidade/parceiro, capacidade, funcionalidades, suspensão, análise de pacotes,
+  ativação de serviços e edição de templates.
 
 ## Próximas tarefas
 
@@ -53,15 +70,15 @@ itens pendentes como funcionalidades disponíveis para cobrança.
 
 - [ ] Adicionar pesquisa paginada no servidor e filtros por categoria, status,
   cidade/unidade e situação documental.
-- [ ] Abrir detalhes completos de parceiro: documentos, aprovações, unidades,
-  serviços ofertados e histórico operacional.
+- [ ] Completar detalhes de parceiro com documentos, aprovações e histórico
+  operacional; hoje a tela lista equipe, serviços e unidades.
 - [ ] Permitir aprovar, reprovar, suspender e reativar parceiros com motivo,
   autor e data registrados.
 - [ ] Criar catálogo genérico para lava-jato, hotel, restaurante, turismo e
   transporte conforme os módulos forem adicionados; incluir auditoria nas
   mudanças de status de serviço.
-- [ ] Permitir alterar dados do usuário parceiro e associá-lo às unidades por
-  meio das telas já usadas pelo gestor, sem quebrar isolamento multi-tenant.
+- [ ] Permitir editar dados de usuário parceiro e associá-lo às unidades na
+  tela administrativa, respeitando isolamento multi-tenant.
 - [ ] Implementar preço de unidade adicional e cobrança antes de ativar a filial.
 - [ ] Implementar regra de um serviço incluído e preço para serviço adicional,
   com entitlements e validação no backend (não somente no Flutter).
@@ -72,8 +89,8 @@ itens pendentes como funcionalidades disponíveis para cobrança.
   para usuários parceiros e clientes.
 - [ ] Exibir detalhe do cliente com reservas, pagamentos e veículos com acesso
   restrito e registro de consulta; não expor dados de cartão.
-- [ ] Permitir ajuste administrativo auditado de capacidade de operadores,
-  distinguindo unidades pagas, pacotes aprovados e ajustes manuais.
+- [x] Permitir ajuste administrativo auditado de capacidade de operadores,
+  distinguindo capacidade base, pacotes aprovados e ajuste manual.
 - [ ] Garantir idempotência e conciliação de pagamento de pacotes de operadores
   e unidades antes de liberar capacidade automaticamente.
 
@@ -81,11 +98,21 @@ itens pendentes como funcionalidades disponíveis para cobrança.
 
 - [ ] Definir catálogo, moeda, vigência e limites de taxas/planos; registrar
   versões para que pagamentos antigos mantenham o snapshot que foi aceito.
-- [ ] Adicionar log administrativo para alteração de taxas, suspensão de conta,
-  aprovação e mudança de capacidade.
-- [ ] Criar gestão de funcionalidades pagas por parceiro, com origem da liberação
-  (plano, pagamento, teste ou concessão administrativa), vigência e revogação.
+- [x] Adicionar log administrativo para alteração de taxas, suspensão de conta,
+  edição de unidade, funcionalidades, capacidade, pacotes e serviços.
+- [ ] Exibir os logs administrativos na tela do app e acrescentar filtros por
+  parceiro, autor, ação e período.
+- [x] Criar gestão inicial de funcionalidades pagas por parceiro, com ativação,
+  preço e periodicidade editáveis.
+- [ ] Registrar origem da liberação (plano, pagamento, teste ou concessão),
+  período de vigência e histórico de revogação.
 - [ ] Ligar preços das funcionalidades à solicitação e conciliação financeira.
+- [ ] Criar vínculo genérico de afiliado entre guia, parceiro e serviço. O fluxo
+  entregue hoje usa `GuideParkingLink`; não modelar hotéis, lava-jatos ou outros
+  serviços como estacionamentos para contornar essa limitação.
+- [ ] Guardar preferência de idioma no perfil do usuário para enviar e-mails de
+  sistema no idioma escolhido. Templates existem em `pt_BR` e `en`; os envios
+  atuais usam português como padrão.
 
 ### Qualidade e publicação
 
