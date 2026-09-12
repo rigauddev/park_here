@@ -19,6 +19,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   List<Map<String, dynamic>> _fees = [];
   Map<String, dynamic> _overview = {};
   List<Map<String, dynamic>> _operatorRequests = [];
+  List<Map<String, dynamic>> _featureRequests = [];
   List<Map<String, dynamic>> _partners = [];
   List<Map<String, dynamic>> _customers = [];
   List<Map<String, dynamic>> _emailTemplates = [];
@@ -81,6 +82,11 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         ),
       ),
       safe(
+        'Solicitações de funcionalidades',
+        () =>
+            _api.getAuthorized('/admin/platform-fees/feature-requests', token),
+      ),
+      safe(
         'Parceiros',
         () => _api.getAuthorized('/admin/platform-fees/partners', token),
       ),
@@ -103,13 +109,16 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         _operatorRequests = (values[2] as List).cast<Map<String, dynamic>>();
       }
       if (values[3] != null) {
-        _partners = (values[3] as List).cast<Map<String, dynamic>>();
+        _featureRequests = (values[3] as List).cast<Map<String, dynamic>>();
       }
       if (values[4] != null) {
-        _customers = (values[4] as List).cast<Map<String, dynamic>>();
+        _partners = (values[4] as List).cast<Map<String, dynamic>>();
       }
       if (values[5] != null) {
-        _emailTemplates = (values[5] as List).cast<Map<String, dynamic>>();
+        _customers = (values[5] as List).cast<Map<String, dynamic>>();
+      }
+      if (values[6] != null) {
+        _emailTemplates = (values[6] as List).cast<Map<String, dynamic>>();
       }
       if (_featureTenantId == null && _partners.isNotEmpty) {
         _featureTenantId = _partners.first['tenant_id'] as String?;
@@ -264,6 +273,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           ),
           const SizedBox(height: 8),
           ..._operatorRequestCards(),
+          const SizedBox(height: 20),
+          const Text(
+            'Solicitações de funcionalidades e capacidade',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ..._featureRequestCards(),
         ];
       case 2:
         return [
@@ -569,6 +585,65 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
             ),
         ];
 
+  List<Widget> _featureRequestCards() => _featureRequests.isEmpty
+      ? [
+          const Card(
+            child: ListTile(
+              title: Text('Nenhuma solicitação de funcionalidade.'),
+            ),
+          ),
+        ]
+      : [
+          for (final request in _featureRequests)
+            Card(
+              child: ListTile(
+                isThreeLine: true,
+                leading: Icon(
+                  request['status'] == 'pending_review'
+                      ? Icons.lock_clock_outlined
+                      : request['status'] == 'approved'
+                      ? Icons.check_circle_outline
+                      : Icons.cancel_outlined,
+                ),
+                title: Text(
+                  '${request['tenant_name'] ?? request['tenant_id']} · ${request['feature_name'] ?? request['feature_key']}',
+                ),
+                subtitle: Text(
+                  '${request['requested_by'] ?? ''} · ${request['quantity']} item(ns) · '
+                  'R\$ ${((request['total_price'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} '
+                  '${request['billing_period'] == 'monthly'
+                      ? '/ mês'
+                      : request['billing_period'] == 'annual'
+                      ? '/ ano'
+                      : 'uma vez'}\n'
+                  'Status: ${request['status']}',
+                ),
+                trailing: request['status'] == 'pending_review'
+                    ? Wrap(
+                        children: [
+                          IconButton(
+                            tooltip: 'Aprovar e liberar',
+                            onPressed: () => _reviewFeatureRequest(
+                              request['id'] as String,
+                              'approve',
+                            ),
+                            icon: const Icon(Icons.check, color: Colors.green),
+                          ),
+                          IconButton(
+                            tooltip: 'Recusar',
+                            onPressed: () => _reviewFeatureRequest(
+                              request['id'] as String,
+                              'reject',
+                            ),
+                            icon: const Icon(Icons.close, color: Colors.red),
+                          ),
+                        ],
+                      )
+                    : null,
+              ),
+            ),
+        ];
+
   void _showPartnerDetails(Map<String, dynamic> partner) {
     final users = (partner['users'] as List?) ?? const [];
     final parkings = (partner['parkings'] as List?) ?? const [];
@@ -852,14 +927,14 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
             leading: const Icon(Icons.info_outline),
             title: Text(
               _tr(
-                'Este tipo de parceiro ainda não possui complementos pagos ativos no app.',
-                'This partner type has no paid add-ons currently available in the app.',
+                'Nenhuma funcionalidade compatível está disponível para este tipo de parceiro.',
+                'No compatible features are available for this partner type.',
               ),
             ),
             subtitle: Text(
               _tr(
-                'Cotas de unidades e operadores são geridas nos controles próprios. O caixa e o dashboard operacional básico já estão incluídos.',
-                'Unit and operator quotas are managed in their own controls. Basic cash and the operating dashboard are included.',
+                'Configure aqui as funções incluídas ou pagas. A quantidade de operadores continua seguindo a regra de unidades e pacotes de usuários.',
+                'Configure included or paid features here. Operator quantity continues to follow unit and user-package rules.',
               ),
             ),
           ),
@@ -906,8 +981,8 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       const SizedBox(height: 8),
       Text(
         _tr(
-          'Este catálogo lista somente complementos ligados a uma tela e a dados reais. A ativação administrativa libera o módulo; a cobrança automática ainda não está integrada.',
-          'This catalog lists only add-ons connected to a screen and real data. Admin activation enables the module; automatic billing is not integrated yet.',
+          'O catálogo inclui as funções existentes em Minha empresa e extras por quantidade. A equipe pode definir preço, gratuidade e acesso por parceiro. A cobrança automática ainda não está integrada; a liberação de pedidos é manual.',
+          'This catalog includes current Minha empresa features and quantity add-ons. Management can set price, free/paid status and access per partner. Automatic billing is not integrated; requests are manually reviewed.',
         ),
       ),
     ];
@@ -1909,6 +1984,27 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       token,
     );
     await _load();
+  }
+
+  Future<void> _reviewFeatureRequest(String id, String decision) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      await _api.putAuthorized(
+        '/admin/platform-fees/feature-requests/$id/$decision',
+        {},
+        token,
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível analisar a solicitação: $error'),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _editFee(Map<String, dynamic> fee) async {

@@ -140,23 +140,34 @@ Fluxo completo HTTP/MySQL:
 docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s tests -p test_pilot_http.py -v
 ```
 
-## Entitlements administrativos e Financeiro Pro
+## Funcionalidades, cotas e aprovações administrativas
 
-1. Entre como administrador do sistema e abra **Parceiros → Funcionalidades**.
-2. Selecione um estacionamento. Confirme que há somente `Financeiro Pro` no
-   catálogo atual; unidades e operadores continuam nos controles de capacidade.
-3. Configure o módulo como pago, informe valor e periodicidade, mas mantenha-o
-   desativado. Salve e confira que a ação aparece na auditoria administrativa.
-4. Entre como gestor desse estacionamento, abra **Minha empresa** e toque em
-   **Financeiro Pro**. O app deve mostrar preço e estado bloqueado; o caixa
-   básico e dashboard continuam disponíveis.
-5. Volte ao admin e habilite o complemento. Atualize o perfil do parceiro e
-   abra Financeiro Pro. Deve carregar o relatório real de reservas, recebidos,
-   taxas administrativas e filtros de período.
-6. Repita com operador: o menu Financeiro Pro não aparece e uma chamada direta
-   autenticada a `GET /partners/financial-report` deve retornar `403`.
-7. Repita com guia ou outra categoria sem módulo financeiro conectado: a aba
-   administrativa deve informar que ainda não há complemento liberável.
-8. Confirme que não houve cobrança automática: preço e entitlement já são
-   administráveis, mas solicitação, pagamento e vigência ainda aguardam a
-   integração financeira.
+1. Entre como admin do sistema e abra **Funcionalidades**. Selecione um parceiro
+   estacionamento e confira dashboard, unidades, mapa/reservas, serviços,
+   equipe, afiliações, caixa básico, Financeiro Pro, unidade adicional e serviço
+   adicional. Para guia, confira dashboard, serviços, afiliações e serviço extra.
+2. Configure `Financeiro Pro` como pago, informe valor e periodicidade, mantendo
+   desativado. Entre como gestor e toque no card. Deve abrir o resumo com preço,
+   cadeado e botão **Solicitar liberação**.
+3. Envie a solicitação. Confira estado pendente em **Minha empresa** ao reabrir
+   a funcionalidade e no painel admin em **Aprovações**. Não deve ocorrer débito.
+4. Aprove o pedido como admin; atualize o perfil e abra o Financeiro Pro. Deve
+   carregar dados reais de reservas, valores recebidos e taxas administrativas.
+   Confirme o registro em auditoria.
+5. Faça o mesmo para `additional_services`: cadastre o primeiro serviço sem
+   custo; tente incluir outro e confira o popup com valor. A API deve rejeitar
+   cadastro acima da capacidade até que a solicitação seja aprovada. Após
+   aprovação, o segundo serviço deve ser salvo.
+6. Faça o mesmo para `additional_units`. Antes da aprovação, o primeiro
+   estacionamento deve ser criado e o próximo deve abrir o pedido de unidade.
+   Depois de aprovar, crie a unidade e confira que a cota de dois operadores
+   daquela unidade continua obedecendo a regra existente.
+7. Confira caixa básico sem complemento Pro. Depois habilite Pro e confirme que
+   o relatório detalhado abre. Operador não deve ter acesso aos controles de
+   gestão nem ao Financeiro Pro.
+8. Configure uma função como gratuita e desativada: o app deve mostrar bloqueio
+   e instrução para procurar a equipe, sem exibir botão de compra. Reative-a no
+   admin e valide o acesso.
+9. Confirme que a decisão manual não representa pagamento confirmado. Ativação
+   automática, cobrança, webhook e vigência continuam pendentes da integração
+   Mercado Pago.

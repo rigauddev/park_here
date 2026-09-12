@@ -443,3 +443,21 @@ atual, remover a entrada e adicionar novamente antes de salvar. Reservas existen
 mantem o snapshot contratado. Valores negativos e nao finitos sao rejeitados.
 A chegada manual no minuto atual permanece hoje; horarios anteriores indicam o dia seguinte.
 A simulacao de pagamento e identificada no retorno da API e na mensagem do app.
+
+## Catalogo De Funcionalidades E Limites
+
+O admin configura por parceiro quais capacidades de `Minha empresa` estao
+incluidas, pagas e habilitadas: dashboard, unidades, mapa/reservas, servicos,
+equipe, afiliacoes, caixa basico e Financeiro Pro. A disponibilidade tambem e
+validada nas rotas da API; ocultar o card nao substitui autorizacao do backend.
+
+O parceiro comeca com uma unidade e um servico incluidos. Servicos extras sao
+contabilizados entre unidades da mesma empresa; servicos desativados ainda
+ocupam uma vaga. Unidades e servicos extras sao solicitados com preco e
+quantidade, ficam pendentes e so aumentam a capacidade apos aprovacao manual.
+Uma unidade extra continua incluindo dois operadores, somados a cota existente;
+operadores adicionais ainda usam o fluxo de pacotes proprio.
+
+Essas solicitacoes nao cobram automaticamente. O preco fica registrado como
+snapshot para revisao administrativa; pagamento, conciliacao, vigencia e
+liberacao automatica via Mercado Pago permanecem pendentes.

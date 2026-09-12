@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -11,10 +12,11 @@ from app.modules.platform_fees.models import (
     PartnerPlatformFee,
     ParkingPlatformFee,
     PartnerFeatureEntitlement,
+    PartnerFeatureRequest as PartnerFeatureRequestModel,
     EmailTemplate,
     AdminAuditLog,
 )
-from app.modules.platform_fees.feature_catalog import features_for_service_type
+from app.modules.platform_fees.feature_catalog import feature_by_key, features_for_service_type
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.tenants.models.tenant_model_status_enum import TenantStatusEnum
@@ -414,11 +416,13 @@ async def get_partner_features(tenant_id: str, db: AsyncSession = Depends(get_db
         **feature,
         'service_types': list(feature['service_types']),
         'tenant_id': tenant_id,
-        'is_enabled': by_key[feature['key']].is_enabled if feature['key'] in by_key else False,
-        'is_paid': by_key[feature['key']].is_paid if feature['key'] in by_key else False,
+        'is_enabled': by_key[feature['key']].is_enabled if feature['key'] in by_key else feature['default_is_enabled'],
+        'is_paid': by_key[feature['key']].is_paid if feature['key'] in by_key else feature['default_is_paid'],
         'price': by_key[feature['key']].price if feature['key'] in by_key else 0,
-        'billing_period': by_key[feature['key']].billing_period if feature['key'] in by_key else 'monthly',
+        'billing_period': by_key[feature['key']].billing_period if feature['key'] in by_key else feature['default_billing_period'],
         'notes': by_key[feature['key']].notes if feature['key'] in by_key else None,
+        'requestable': feature['requestable'],
+        'quantity_based': feature.get('quantity_based', False),
     } for feature in catalog]
 
 
@@ -455,6 +459,121 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
     return {'tenant_id': tenant_id, 'feature_key': feature_key, 'is_enabled': item.is_enabled,
             'is_paid': item.is_paid, 'price': item.price, 'billing_period': item.billing_period,
             'notes': item.notes}
+
+
+@router.get('/feature-requests')
+async def list_partner_feature_requests(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    rows = (await db.execute(
+        select(PartnerFeatureRequestModel, Tenant, User, PartnerProfile)
+        .join(Tenant, Tenant.id == PartnerFeatureRequestModel.tenant_id)
+        .join(User, User.id == PartnerFeatureRequestModel.requested_by)
+        .outerjoin(PartnerProfile, PartnerProfile.tenant_id == Tenant.id)
+        .order_by(PartnerFeatureRequestModel.created_at.desc())
+    )).all()
+    return [
+        {
+            'id': request.id,
+            'tenant_id': request.tenant_id,
+            'tenant_name': tenant.name,
+            'service_type': profile.service_type if profile else None,
+            'requested_by': user.email,
+            'feature_key': request.feature_key,
+            'feature_name': (feature_by_key(profile.service_type if profile else None, request.feature_key) or {}).get('name', request.feature_key),
+            'quantity': request.quantity,
+            'unit_price': request.unit_price,
+            'total_price': request.total_price,
+            'billing_period': request.billing_period,
+            'status': request.status,
+            'notes': request.notes,
+            'created_at': request.created_at.isoformat() + 'Z',
+        }
+        for request, tenant, user, profile in rows
+    ]
+
+
+@router.put('/feature-requests/{request_id}/{decision}')
+async def review_partner_feature_request(
+    request_id: str,
+    decision: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    if decision not in {'approve', 'reject'}:
+        raise HTTPException(status_code=422, detail='Decisão inválida')
+    request = await db.get(PartnerFeatureRequestModel, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail='Solicitação não encontrada')
+    if request.status != 'pending_review':
+        raise HTTPException(status_code=409, detail='Solicitação já analisada')
+    tenant = await db.get(Tenant, request.tenant_id)
+    profile = await db.scalar(select(PartnerProfile).where(
+        PartnerProfile.tenant_id == request.tenant_id
+    ))
+    feature = feature_by_key(profile.service_type if profile else None, request.feature_key)
+    if feature is None:
+        raise HTTPException(status_code=409, detail='Funcionalidade incompatível com o parceiro')
+
+    if decision == 'approve':
+        if request.feature_key in {'additional_units', 'additional_services'}:
+            if request.feature_key == 'additional_units':
+                current_capacity = int(await db.scalar(select(func.count(Parking.id)).where(
+                    Parking.tenant_id == request.tenant_id
+                )) or 0)
+            elif profile and profile.service_type == 'parking':
+                current_capacity = int(await db.scalar(
+                    select(func.count(ParkingService.id))
+                    .join(Parking, Parking.id == ParkingService.parking_id)
+                    .where(Parking.tenant_id == request.tenant_id)
+                ) or 0)
+            else:
+                guide_ids = select(User.id).where(User.tenant_id == request.tenant_id)
+                current_capacity = int(await db.scalar(
+                    select(func.count(GuideService.id)).where(GuideService.guide_user_id.in_(guide_ids))
+                ) or 0)
+            request.capacity_after = current_capacity + request.quantity
+        else:
+            entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+                PartnerFeatureEntitlement.tenant_id == request.tenant_id,
+                PartnerFeatureEntitlement.feature_key == request.feature_key,
+            ))
+            if entitlement is None:
+                entitlement = PartnerFeatureEntitlement(
+                    tenant_id=request.tenant_id,
+                    feature_key=request.feature_key,
+                )
+                db.add(entitlement)
+            entitlement.is_enabled = True
+        request.status = 'approved'
+    else:
+        request.status = 'rejected'
+    request.reviewed_by = current_user.id
+    request.reviewed_at = datetime.utcnow()
+    _audit(
+        db,
+        current_user,
+        f'partner.feature_request.{request.status}',
+        'partner_feature_request',
+        request.id,
+        request.tenant_id,
+        {
+            'feature_key': request.feature_key,
+            'quantity': request.quantity,
+            'total_price': request.total_price,
+        },
+    )
+    await db.commit()
+    return {
+        'id': request.id,
+        'tenant_id': request.tenant_id,
+        'feature_key': request.feature_key,
+        'status': request.status,
+        'enabled': decision == 'approve',
+    }
 
 
 @router.get('/email-templates')

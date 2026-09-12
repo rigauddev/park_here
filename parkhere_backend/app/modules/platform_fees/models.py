@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from app.db.base import BaseModel
 
@@ -57,6 +57,23 @@ class PartnerFeatureEntitlement(BaseModel):
     price = Column(Float, nullable=False, default=0)
     billing_period = Column(String(20), nullable=False, default="monthly")
     notes = Column(String(500), nullable=True)
+
+
+class PartnerFeatureRequest(BaseModel):
+    __tablename__ = 'partner_feature_requests'
+
+    tenant_id = Column(String(36), ForeignKey('tenants.id'), nullable=False, index=True)
+    feature_key = Column(String(80), nullable=False, index=True)
+    requested_by = Column(String(36), ForeignKey('users.id'), nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    capacity_after = Column(Integer, nullable=True)
+    unit_price = Column(Float, nullable=False, default=0)
+    total_price = Column(Float, nullable=False, default=0)
+    billing_period = Column(String(20), nullable=False, default='one_time')
+    status = Column(String(30), nullable=False, default='pending_review', index=True)
+    notes = Column(String(500), nullable=True)
+    reviewed_by = Column(String(36), ForeignKey('users.id'), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class EmailTemplate(BaseModel):

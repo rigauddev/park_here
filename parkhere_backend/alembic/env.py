@@ -24,6 +24,7 @@ from app.modules.platform_fees.models import (
     PartnerPlatformFee,
     ParkingPlatformFee,
     PartnerFeatureEntitlement,
+    PartnerFeatureRequest,
     EmailTemplate,
     AdminAuditLog,
 )

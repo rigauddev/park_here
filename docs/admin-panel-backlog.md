@@ -13,8 +13,14 @@ itens pendentes como funcionalidades disponíveis para cobrança.
 - O limite pode ser liberado por confirmação automática do pagamento ou por
   aprovação manual da equipe administrativa. A confirmação automática requer
   integração de pagamento e webhook conciliado.
-- O primeiro serviço do parceiro está incluído. Unidades ou serviços adicionais
-  terão preço definido no painel administrativo antes de poderem ser ativados.
+- O primeiro serviço e a primeira unidade do parceiro estão incluídos. Serviços
+  ou unidades adicionais recebem preço por quantidade no painel e só são
+  liberados após análise administrativa. Cada unidade mantém os dois operadores
+  incluídos na regra atual.
+- As funções visíveis em `Minha empresa` são configuráveis por parceiro:
+  dashboard, unidades, mapa/reservas, serviços, equipe, afiliações, caixa
+  básico e Financeiro Pro. Caixa básico começa incluído; Financeiro Pro e extras
+  podem ser configurados como pagos.
 - Taxas padrão são cadastradas pela equipe ParkHere. O parceiro pode ter taxa
   individual por categoria/serviço; quando configurada, ela substitui a taxa
   padrão daquele parceiro e serviço.
@@ -56,10 +62,15 @@ itens pendentes como funcionalidades disponíveis para cobrança.
   limites por unidade, ajustes manuais e pacotes adicionais aprovados.
 - [x] Administração pode ativar/desativar funcionalidades por parceiro e
   cadastrar preço e periodicidade; mudanças são auditadas.
-- [x] Catálogo de funcionalidades ligado às telas disponíveis: Financeiro Pro
-  para estacionamento. Dashboard e caixa operacionais básicos permanecem
-  incluídos; cotas de unidades e operadores são controladas em suas próprias
-  rotas, sem duplicação na aba de funcionalidades.
+- [x] Catálogo de funcionalidades ligado às telas disponíveis de estacionamento
+  e guia: dashboard, unidades, mapa/reservas, serviços, equipe, afiliações,
+  caixa básico/Pro, unidade adicional e serviço adicional.
+- [x] Primeiro serviço/unidade incluídos; capacidade adicional quantificada,
+  bloqueada no backend até aprovação e somada à capacidade existente.
+- [x] Solicitações de funcionalidades persistidas com preço registrado,
+  histórico visível ao parceiro e aprovação/recusa no painel administrativo.
+- [x] Operadores continuam seguindo as cotas de unidades e pacotes existentes;
+  o catálogo não substitui a compra de usuários.
 - [x] Perfil `/partners/me` informa também os complementos desligados e seus
   preços, permitindo que Minha empresa mostre o estado real do acesso.
 - [x] Financeiro Pro exibe dados reais de reservas e pagamentos quando liberado
@@ -87,9 +98,8 @@ itens pendentes como funcionalidades disponíveis para cobrança.
   mudanças de status de serviço.
 - [ ] Permitir editar dados de usuário parceiro e associá-lo às unidades na
   tela administrativa, respeitando isolamento multi-tenant.
-- [ ] Implementar preço de unidade adicional e cobrança antes de ativar a filial.
-- [ ] Implementar regra de um serviço incluído e preço para serviço adicional,
-  com entitlements e validação no backend (não somente no Flutter).
+- [ ] Integrar pagamento e conciliação automática para ativações e capacidades
+  adicionais; a aprovação manual atual é para homologação.
 
 ### Usuários e capacidade
 
@@ -114,13 +124,13 @@ itens pendentes como funcionalidades disponíveis para cobrança.
   preço e periodicidade editáveis.
 - [ ] Registrar origem da liberação (plano, pagamento, teste ou concessão),
   período de vigência e histórico de revogação.
-- [ ] Ligar preços das funcionalidades à solicitação, cobrança e conciliação
-  financeira; o painel hoje registra preço e liberação administrativa, mas não
-  cobra automaticamente.
+- [ ] Ligar preços das funcionalidades à cobrança, vigência e conciliação
+  financeira; o pedido atual registra preço e depende de análise manual, sem
+  iniciar pagamento.
 - [ ] Implementar a camada de gráficos/indicadores avançados do dashboard e sua
   API antes de adicionar `advanced_dashboard` ao catálogo de complementos.
-- [ ] Definir e validar cotas de serviços adicionais antes de oferecer esse
-  recurso como item pago; hoje não existe bloqueio de capacidade associado.
+- [x] Definir e validar cotas de serviços e unidades adicionais antes de
+  oferecer esses recursos como itens pagos.
 - [ ] Criar vínculo genérico de afiliado entre guia, parceiro e serviço. O fluxo
   entregue hoje usa `GuideParkingLink`; não modelar hotéis, lava-jatos ou outros
   serviços como estacionamentos para contornar essa limitação.

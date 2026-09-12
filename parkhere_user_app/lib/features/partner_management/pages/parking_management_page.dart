@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/managed_parking_model.dart';
 import '../providers/partner_parking_provider.dart';
+import '../models/partner_profile_model.dart';
+import '../providers/partner_profile_provider.dart';
+import 'partner_feature_access_page.dart';
 
 class ParkingManagementPage extends ConsumerWidget {
   const ParkingManagementPage({super.key});
@@ -11,6 +14,7 @@ class ParkingManagementPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final parkings = ref.watch(partnerParkingProvider);
+    final partner = ref.watch(partnerProfileProvider).asData?.value;
 
     return Scaffold(
       appBar: AppBar(
@@ -24,7 +28,21 @@ class ParkingManagementPage extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
+        onPressed: () {
+          if (partner != null && partner.unitCount >= partner.unitLimit) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartnerFeatureAccessPage(
+                  partner: partner,
+                  featureKey: 'additional_units',
+                ),
+              ),
+            );
+            return;
+          }
+          _openForm(context, partner: partner);
+        },
         icon: const Icon(Icons.add),
         label: const Text('Novo'),
       ),
@@ -47,7 +65,8 @@ class ParkingManagementPage extends ConsumerWidget {
             itemBuilder: (context, index) {
               return _ManagedParkingCard(
                 parking: items[index],
-                onEdit: () => _openForm(context, items[index]),
+                onEdit: () =>
+                    _openForm(context, parking: items[index], partner: partner),
               );
             },
           );
@@ -56,11 +75,16 @@ class ParkingManagementPage extends ConsumerWidget {
     );
   }
 
-  void _openForm(BuildContext context, [ManagedParkingModel? parking]) {
+  void _openForm(
+    BuildContext context, {
+    ManagedParkingModel? parking,
+    PartnerProfileModel? partner,
+  }) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ParkingManagementFormPage(parking: parking),
+        builder: (_) =>
+            ParkingManagementFormPage(parking: parking, partner: partner),
       ),
     );
   }
@@ -286,8 +310,9 @@ class _PriceLine extends StatelessWidget {
 
 class ParkingManagementFormPage extends ConsumerStatefulWidget {
   final ManagedParkingModel? parking;
+  final PartnerProfileModel? partner;
 
-  const ParkingManagementFormPage({super.key, this.parking});
+  const ParkingManagementFormPage({super.key, this.parking, this.partner});
 
   @override
   ConsumerState<ParkingManagementFormPage> createState() =>
@@ -754,6 +779,39 @@ class _ParkingManagementFormPageState
 
     if (services.any((service) => service.code == serviceCode)) {
       _showMessage('Este tipo de serviço já foi adicionado.');
+      return;
+    }
+
+    final partner = widget.partner;
+    if (partner != null && !partner.hasFeature('services_management')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'services_management',
+          ),
+        ),
+      );
+      return;
+    }
+    final currentUnitServices = widget.parking?.services.length ?? 0;
+    final nextTenantCount =
+        (partner?.serviceCount ?? 0) -
+        currentUnitServices +
+        services.length +
+        1;
+    if (partner != null && nextTenantCount > partner.serviceLimit) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'additional_services',
+            requestedQuantity: nextTenantCount - partner.serviceLimit,
+          ),
+        ),
+      );
       return;
     }
 

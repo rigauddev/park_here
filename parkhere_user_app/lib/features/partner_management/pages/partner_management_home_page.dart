@@ -17,6 +17,7 @@ import 'guide_requests_page.dart';
 import 'guide_services_page.dart';
 import 'partner_cash_report_page.dart';
 import 'guide_offer_settings_page.dart';
+import 'partner_feature_access_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -75,7 +76,7 @@ class _PartnerManagementBody extends StatelessWidget {
             mainAxisExtent: 142,
           ),
           itemBuilder: (context, index) =>
-              _ManagementActionCard(action: actions[index]),
+              _ManagementActionCard(action: actions[index], partner: partner),
         ),
         const SizedBox(height: 18),
         _ScopeNotice(serviceTypeLabel: partner.serviceTypeLabel),
@@ -96,18 +97,21 @@ class _PartnerManagementBody extends StatelessWidget {
               title: 'Mapa de vagas',
               description: 'Vagas livres, pre-reservadas e ocupadas.',
               onTap: () => _open(context, const PartnerParkingMapPage()),
+              featureKey: 'parking_operations',
             ),
             _ManagementAction(
               icon: Icons.confirmation_number_outlined,
               title: 'Reservas recebidas',
               description: 'Acompanhar reservas, pagamentos e entrada.',
               onTap: () => _open(context, const PartnerReservationsPage()),
+              featureKey: 'parking_operations',
             ),
             _ManagementAction(
               icon: Icons.point_of_sale_outlined,
               title: 'Caixa e movimentações',
               description: 'Entradas, saídas e fechamento operacional.',
               onTap: () => _open(context, const PartnerCashReportPage()),
+              featureKey: 'cash_management_basic',
             ),
           ];
         }
@@ -118,12 +122,14 @@ class _PartnerManagementBody extends StatelessWidget {
             title: 'Dashboard',
             description: 'Reservas, recebimentos e ticket médio.',
             onTap: () => _open(context, const ParkingDashboardPage()),
+            featureKey: 'dashboard',
           ),
           _ManagementAction(
             icon: Icons.local_parking,
             title: 'Estacionamento',
             description: 'Vagas, areas cobertas, tarifas e disponibilidade.',
             onTap: () => _open(context, const ParkingManagementPage()),
+            featureKey: 'parking_management',
           ),
           _ManagementAction(
             icon: Icons.map_outlined,
@@ -131,6 +137,7 @@ class _PartnerManagementBody extends StatelessWidget {
             description:
                 'Painel visual das vagas livres, pre-reservadas e ocupadas.',
             onTap: () => _open(context, const PartnerParkingMapPage()),
+            featureKey: 'parking_operations',
           ),
           _ManagementAction(
             icon: Icons.point_of_sale_outlined,
@@ -138,12 +145,14 @@ class _PartnerManagementBody extends StatelessWidget {
             description:
                 'Entradas, saídas, recebimentos e fechamento do turno.',
             onTap: () => _open(context, const PartnerCashReportPage()),
+            featureKey: 'cash_management_basic',
           ),
           _ManagementAction(
             icon: Icons.design_services_outlined,
             title: 'Servicos cadastrados',
             description: 'Lava jato, seguro, transporte e servicos extras.',
             onTap: () => _open(context, const ParkingManagementPage()),
+            featureKey: 'services_management',
           ),
           _ManagementAction(
             icon: Icons.account_balance_wallet_outlined,
@@ -156,12 +165,14 @@ class _PartnerManagementBody extends StatelessWidget {
             title: 'Usuarios',
             description: 'Crie ate 2 operadores no plano atual.',
             onTap: () => _open(context, const PartnerUsersPage()),
+            featureKey: 'team_management',
           ),
           _ManagementAction(
             icon: Icons.handshake_outlined,
             title: 'Solicitações de guias',
             description: 'Aprove afiliações e defina a comissão por indicação.',
             onTap: () => _open(context, const GuideRequestsPage()),
+            featureKey: 'guide_affiliations',
           ),
           _ManagementAction(
             icon: Icons.percent_outlined,
@@ -172,14 +183,14 @@ class _PartnerManagementBody extends StatelessWidget {
                 ? 'Choose whether each location accepts affiliates and set plan offers.'
                 : 'Escolha se cada unidade aceita afiliados e configure a oferta por modalidade.',
             onTap: () => _open(context, const GuideOfferSettingsPage()),
+            featureKey: 'guide_affiliations',
           ),
           _ManagementAction(
-            icon: partner.hasFeature('financial_management')
-                ? Icons.account_balance_outlined
-                : Icons.lock_outline,
+            icon: Icons.account_balance_outlined,
             title: 'Financeiro Pro',
             description: _financialDescription(context, partner),
             onTap: () => _open(context, const PartnerFinancialPage()),
+            featureKey: 'financial_management',
           ),
         ];
       case 'car_wash':
@@ -232,18 +243,21 @@ class _PartnerManagementBody extends StatelessWidget {
             title: 'Dashboard',
             description: 'Serviços, afiliações e indicações do guia.',
             onTap: () => _open(context, const GuideDashboardPage()),
+            featureKey: 'dashboard',
           ),
           _ManagementAction(
             icon: Icons.local_parking_outlined,
             title: 'Estacionamentos',
             description: 'Solicite afiliação e acompanhe as comissões.',
             onTap: () => _open(context, const GuideAffiliationsPage()),
+            featureKey: 'guide_affiliations',
           ),
           _ManagementAction(
             icon: Icons.tour_outlined,
             title: 'Serviços turísticos',
             description: 'Roteiros, idiomas, agenda, capacidade e valores.',
             onTap: () => _open(context, const GuideServicesPage()),
+            featureKey: 'services_management',
           ),
         ];
       case 'tourism_company':
@@ -357,21 +371,49 @@ class _PartnerHeader extends StatelessWidget {
 
 class _ManagementActionCard extends StatelessWidget {
   final _ManagementAction action;
+  final PartnerProfileModel partner;
 
-  const _ManagementActionCard({required this.action});
+  const _ManagementActionCard({required this.action, required this.partner});
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: InkWell(
-        onTap: action.onTap,
+        onTap: () {
+          final featureKey = action.featureKey;
+          if (featureKey != null && !partner.hasFeature(featureKey)) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartnerFeatureAccessPage(
+                  partner: partner,
+                  featureKey: featureKey,
+                ),
+              ),
+            );
+            return;
+          }
+          action.onTap();
+        },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(action.icon, color: AppTheme.secondary, size: 28),
+              Row(
+                children: [
+                  Icon(action.icon, color: AppTheme.secondary, size: 28),
+                  const Spacer(),
+                  if (action.featureKey != null &&
+                      !partner.hasFeature(action.featureKey!))
+                    const Icon(
+                      Icons.lock_outline,
+                      size: 20,
+                      color: AppTheme.textMuted,
+                    ),
+                ],
+              ),
               const Spacer(),
               Text(
                 action.title,
@@ -421,11 +463,13 @@ class _ManagementAction {
   final String title;
   final String description;
   final VoidCallback onTap;
+  final String? featureKey;
 
   const _ManagementAction({
     required this.icon,
     required this.title,
     required this.description,
     required this.onTap,
+    this.featureKey,
   });
 }

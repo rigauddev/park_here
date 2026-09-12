@@ -35,13 +35,30 @@ Nao habilitar `PAYMENT_PROVIDER=mercado_pago` para cobrancas ainda: o endpoint r
 Gestao ainda tem itens de roadmap abertos: fotos em storage seguro, politicas por parceiro,
 incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao concluidos.
 
+## Catálogo de funcionalidades do parceiro — 12/09/2026
+
+`Minha empresa` agora recebe um catálogo por categoria de parceiro para
+dashboard, unidades, mapa/reservas, serviços, equipe, afiliações, caixa básico
+e Financeiro Pro. O administrador define preço, periodicidade, gratuidade e
+acesso por parceiro; cards bloqueados mostram preço e enviam solicitações para
+aprovação manual. O backend persiste a solicitação e o snapshot do preço,
+protege os módulos por entitlement e aplica as cotas do primeiro serviço e da
+primeira unidade incluídos. Extras de serviço/unidade aprovados aumentam a
+capacidade; unidade extra segue acrescentando dois operadores, sem alterar o
+fluxo de pacotes de usuários.
+
+Pagamento automático, conciliação e ativação por webhook continuam no caminho
+crítico antes de produção; no MVP de homologação, a equipe admin aprova a
+solicitação manualmente. Os testes de aceitação estão em
+[`manual-tests.md`](manual-tests.md#funcionalidades-cotas-e-aprovações-administrativas).
+
 ## Gestão administrativa do sistema — 12/09/2026
 
 Correção do painel administrativo em andamento: acesso do `SUPER_ADMIN` global,
 menu mobile próprio, listagem de empresas, usuários e clientes reais, taxas
 globais com substituição por parceiro e suspensão de contas. A regra comercial
 de capacidade segue dois operadores por unidade ativa e soma pacotes aprovados.
-Preço/contratação de unidades e serviços adicionais ainda não está implementado.
+Solicitação, cotas e aprovação manual de unidades/serviços extras estão implementadas; pagamento e conciliação automáticos ainda não.
 O backlog detalhado, regras de negócio e tarefas restantes estão em
 [`admin-panel-backlog.md`](admin-panel-backlog.md).
 

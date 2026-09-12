@@ -109,3 +109,14 @@ V2:
 - Reconhecimento facial.
 - Cameras e dispositivos integrados por eventos.
 - Validacao automatica com fallback manual.
+
+## Funcionalidades e cotas comerciais por parceiro
+
+O painel de gestao controla por empresa acesso e classificacao gratuita/paga
+para dashboard, unidades, mapa/reservas, servicos, equipe, afiliacoes, caixa
+basico e Financeiro Pro, conforme a categoria do parceiro. Um servico e uma
+unidade sao incluidos; extras possuem valor e quantidade configurados no admin,
+solicitacao persistida e aprovacao manual. A API aplica os limites e os
+entitlements. Compra automatica, conciliacao, vigencia e webhook permanecem
+pendentes do Mercado Pago. Pacotes de operadores continuam no fluxo de cotas
+existente; cada unidade adiciona dois operadores conforme a regra atual.

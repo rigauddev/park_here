@@ -17,7 +17,7 @@ from app.core.security import hash_password
 from app.modules.auth.auth_service import AuthService
 from app.modules.auth.schemas import PartnerSignupRequest
 from app.modules.customer_assets.models import Vehicle
-from app.modules.parkings.models import Parking
+from app.modules.parkings.models import Parking, ParkingService
 from app.modules.parkings.schemas import (
     ParkingManagementRequest,
     ParkingManagementResponse,
@@ -29,8 +29,8 @@ from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
-from app.modules.platform_fees.models import PartnerFeatureEntitlement
-from app.modules.platform_fees.feature_catalog import features_for_service_type
+from app.modules.platform_fees.models import PartnerFeatureEntitlement, PartnerFeatureRequest
+from app.modules.platform_fees.feature_catalog import feature_by_key, features_for_service_type
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
@@ -133,6 +133,12 @@ class GuideServiceRequest(BaseModel):
     schedule: dict[str, str] | None = None
 
 
+class PartnerFeatureActivationRequest(BaseModel):
+    feature_key: str
+    quantity: int = 1
+    notes: str | None = None
+
+
 @router.post("/signup")
 async def partner_signup(
     data: PartnerSignupRequest,
@@ -192,6 +198,9 @@ async def get_my_partner_profile(
     parking_count = await db.scalar(select(func.count(Parking.id)).where(
         Parking.tenant_id == current_user.tenant_id, Parking.is_active.is_(True)
     )) or 0
+    total_parking_count = await db.scalar(select(func.count(Parking.id)).where(
+        Parking.tenant_id == current_user.tenant_id
+    )) or 0
     base_operator_limit = (
         tenant.operator_limit_override if tenant and tenant.operator_limit_override is not None
         else max(FREE_OPERATOR_LIMIT, int(parking_count or 1) * FREE_OPERATOR_LIMIT)
@@ -208,12 +217,57 @@ async def get_my_partner_profile(
             'name_en': feature['name_en'],
             'description': feature['description'],
             'description_en': feature['description_en'],
-            'is_enabled': item.is_enabled if item else False,
-            'is_paid': item.is_paid if item else False,
+            'is_enabled': item.is_enabled if item else feature['default_is_enabled'],
+            'is_paid': item.is_paid if item else feature['default_is_paid'],
             'price': item.price if item else 0,
-            'billing_period': item.billing_period if item else 'monthly',
+            'billing_period': item.billing_period if item else feature['default_billing_period'],
             'notes': item.notes if item else None,
+            'requestable': feature['requestable'],
+            'quantity_based': feature.get('quantity_based', False),
         }
+
+    unit_count = int(total_parking_count)
+    service_count = 0
+    if profile and profile.service_type == 'parking':
+        service_count = int(await db.scalar(
+            select(func.count(ParkingService.id))
+            .join(Parking, Parking.id == ParkingService.parking_id)
+            .where(Parking.tenant_id == current_user.tenant_id)
+        ) or 0)
+    elif profile and profile.service_type == 'tour_guide':
+        service_count = int(await db.scalar(
+            select(func.count(GuideService.id))
+            .join(User, User.id == GuideService.guide_user_id)
+            .where(User.tenant_id == current_user.tenant_id)
+        ) or 0)
+    approved_requests = (await db.scalars(select(PartnerFeatureRequest).where(
+        PartnerFeatureRequest.tenant_id == current_user.tenant_id,
+        PartnerFeatureRequest.status == 'approved',
+        PartnerFeatureRequest.feature_key.in_(['additional_units', 'additional_services']),
+    ))).all()
+    approved_capacities = {
+        key: max(
+            [
+                int(item.capacity_after or 0)
+                for item in approved_requests
+                if item.feature_key == key
+            ]
+            or [1]
+        )
+        for key in ('additional_units', 'additional_services')
+    }
+    unit_addon = partner_features.get('additional_units', {})
+    service_addon = partner_features.get('additional_services', {})
+    unit_limit = max(unit_count, approved_capacities['additional_units'])
+    service_limit = max(service_count, approved_capacities['additional_services'])
+    if unit_addon.get('is_paid') is False:
+        unit_limit = 1000000
+    elif unit_addon.get('is_enabled') is False:
+        unit_limit = unit_count
+    if service_addon.get('is_paid') is False:
+        service_limit = 1000000
+    elif service_addon.get('is_enabled') is False:
+        service_limit = service_count
 
     return {
         "tenant_id": current_user.tenant_id,
@@ -229,6 +283,10 @@ async def get_my_partner_profile(
         if profile
         else "missing_profile",
         "operator_limit": int(base_operator_limit) + int(approved_extra),
+        "unit_count": unit_count,
+        "unit_limit": unit_limit,
+        "service_count": service_count,
+        "service_limit": service_limit,
         "features": partner_features,
         "payment_account": {
             "provider": payment_account.provider,
@@ -237,6 +295,105 @@ async def get_my_partner_profile(
         }
         if payment_account
         else None,
+    }
+
+
+@router.get('/feature-requests')
+async def list_my_partner_feature_requests(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    rows = (await db.scalars(
+        select(PartnerFeatureRequest)
+        .where(PartnerFeatureRequest.tenant_id == current_user.tenant_id)
+        .order_by(PartnerFeatureRequest.created_at.desc())
+    )).all()
+    return [
+        {
+            'id': row.id,
+            'feature_key': row.feature_key,
+            'quantity': row.quantity,
+            'total_price': row.total_price,
+            'billing_period': row.billing_period,
+            'status': row.status,
+            'created_at': row.created_at.isoformat() + 'Z',
+        }
+        for row in rows
+    ]
+
+
+@router.post('/feature-requests', status_code=201)
+async def request_partner_feature(
+    data: PartnerFeatureActivationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail='Somente gestor pode solicitar funcionalidades')
+    if data.quantity < 1 or data.quantity > 100:
+        raise HTTPException(status_code=422, detail='Quantidade inválida')
+    profile = await db.scalar(select(PartnerProfile).where(
+        PartnerProfile.tenant_id == current_user.tenant_id
+    ))
+    feature = feature_by_key(profile.service_type if profile else None, data.feature_key)
+    if feature is None or not feature['requestable']:
+        raise HTTPException(status_code=404, detail='Funcionalidade não disponível para este parceiro')
+    if not feature.get('quantity_based') and data.quantity != 1:
+        raise HTTPException(status_code=422, detail='Esta solicitação não aceita quantidade')
+
+    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
+        PartnerFeatureEntitlement.feature_key == data.feature_key,
+    ))
+    is_enabled = entitlement.is_enabled if entitlement else feature['default_is_enabled']
+    is_paid = entitlement.is_paid if entitlement else feature['default_is_paid']
+    unit_price = float(entitlement.price if entitlement else 0)
+    billing_period = entitlement.billing_period if entitlement else feature['default_billing_period']
+    if not is_paid:
+        raise HTTPException(status_code=409, detail='Esta funcionalidade está configurada como gratuita; solicite ajuda ao suporte')
+    if data.feature_key in {'additional_units', 'additional_services'} and not is_enabled:
+        raise HTTPException(status_code=403, detail={
+            'code': 'feature_locked', 'feature_key': data.feature_key,
+            'message': 'A gestão do sistema desativou novas solicitações para este recurso.',
+        })
+    if unit_price <= 0:
+        raise HTTPException(status_code=409, detail='O preço desta funcionalidade ainda não foi configurado')
+    if data.feature_key not in {'additional_units', 'additional_services'} and is_enabled:
+        raise HTTPException(status_code=409, detail='Esta funcionalidade já está liberada')
+
+    pending = await db.scalar(select(PartnerFeatureRequest).where(
+        PartnerFeatureRequest.tenant_id == current_user.tenant_id,
+        PartnerFeatureRequest.feature_key == data.feature_key,
+        PartnerFeatureRequest.status == 'pending_review',
+    ))
+    if pending:
+        raise HTTPException(status_code=409, detail='Já existe uma solicitação pendente para esta funcionalidade')
+
+    request = PartnerFeatureRequest(
+        tenant_id=current_user.tenant_id,
+        feature_key=data.feature_key,
+        requested_by=current_user.id,
+        quantity=data.quantity,
+        unit_price=unit_price,
+        total_price=round(unit_price * data.quantity, 2),
+        billing_period=billing_period,
+        notes=(data.notes or '').strip() or None,
+    )
+    db.add(request)
+    await db.commit()
+    await db.refresh(request)
+    return {
+        'id': request.id,
+        'tenant_id': request.tenant_id,
+        'feature_key': request.feature_key,
+        'quantity': request.quantity,
+        'unit_price': request.unit_price,
+        'total_price': request.total_price,
+        'billing_period': request.billing_period,
+        'status': request.status,
+        'created_at': request.created_at.isoformat() + 'Z',
     }
 
 
@@ -296,6 +453,7 @@ async def guide_parkings(
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
     if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type not in {'tour_guide', 'tourism_company'}):
         raise HTTPException(status_code=403, detail='Guide account required')
+    await _ensure_partner_feature(db, current_user, 'guide_affiliations')
     links = (await db.scalars(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id))).all()
     linked = {link.parking_id: link for link in links}
     parkings = list((await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all())
@@ -330,6 +488,7 @@ async def request_guide_parking_link(
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
     if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type not in {'tour_guide', 'tourism_company'}):
         raise HTTPException(status_code=403, detail='Guide account required')
+    await _ensure_partner_feature(db, current_user, 'guide_affiliations')
     parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.is_active.is_(True)))
     if parking is None:
         raise HTTPException(status_code=404, detail='Parking not found')
@@ -351,6 +510,7 @@ async def update_guide_offer(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'guide_affiliations')
     parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.tenant_id == current_user.tenant_id))
     if parking is None:
         raise HTTPException(status_code=404, detail='Parking not found')
@@ -393,6 +553,7 @@ async def get_guide_offer(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'guide_affiliations')
     parking = await db.scalar(select(Parking).where(
         Parking.id == parking_id,
         Parking.tenant_id == current_user.tenant_id,
@@ -414,6 +575,7 @@ async def list_guide_services(
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
     if current_user.role != UserRoleEnum.TOUR_GUIDE and (not profile or profile.service_type != 'tour_guide'):
         raise HTTPException(status_code=403, detail='Guide account required')
+    await _ensure_partner_feature(db, current_user, 'services_management')
     services = (await db.scalars(select(GuideService).where(GuideService.guide_user_id == current_user.id).order_by(GuideService.created_at.desc()))).all()
     return [_guide_service_payload(service) for service in services]
 
@@ -429,6 +591,12 @@ async def create_guide_service(
         raise HTTPException(status_code=403, detail='Guide account required')
     if not data.name.strip() or data.price < 0:
         raise HTTPException(status_code=422, detail='Invalid guide service')
+    await _ensure_partner_feature(db, current_user, 'services_management')
+    tenant_service_count = int(await db.scalar(
+        select(func.count(GuideService.id)).join(User, User.id == GuideService.guide_user_id)
+        .where(User.tenant_id == current_user.tenant_id)
+    ) or 0)
+    await _ensure_service_capacity(db, current_user.tenant_id, tenant_service_count + 1)
     service = GuideService(
         guide_user_id=current_user.id,
         name=data.name.strip(),
@@ -452,6 +620,7 @@ async def approve_guide_parking_link(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'guide_affiliations')
     if data.commission_type not in {'percentage', 'fixed'} or data.commission_value < 0:
         raise HTTPException(status_code=422, detail='Invalid commission terms')
     link = await db.scalar(select(GuideParkingLink).where(GuideParkingLink.id == link_id))
@@ -493,6 +662,7 @@ async def list_guide_requests(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'guide_affiliations')
     result = await db.execute(
         select(GuideParkingLink, User, Parking)
         .join(User, User.id == GuideParkingLink.guide_user_id)
@@ -523,6 +693,7 @@ async def guide_dashboard(
 ):
     if current_user.role != UserRoleEnum.TOUR_GUIDE:
         raise HTTPException(status_code=403, detail='Guide account required')
+    await _ensure_partner_feature(db, current_user, 'dashboard')
     indications = await db.scalar(select(func.count(Reservation.id)).where(Reservation.guide_user_id == current_user.id)) or 0
     completed_indications = await db.scalar(select(func.count(Reservation.id)).where(
         Reservation.guide_user_id == current_user.id,
@@ -575,6 +746,7 @@ async def get_partner_parking_map(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'parking_operations')
     owned_query = select(Parking).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
         now = datetime.utcnow()
@@ -659,6 +831,10 @@ async def list_partner_reservations(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    await _ensure_any_partner_feature(
+        db, current_user,
+        ('parking_operations', 'cash_management_basic', 'dashboard', 'financial_management'),
+    )
     reservation_query = select(Reservation, Parking, User, Vehicle).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
         now = datetime.utcnow()
@@ -708,13 +884,7 @@ async def get_partner_financial_report(
 ):
     """Finance Pro report: manager-only and protected by admin entitlement."""
     await _ensure_parking_partner(db, current_user)
-    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
-        PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
-        PartnerFeatureEntitlement.feature_key == 'financial_management',
-        PartnerFeatureEntitlement.is_enabled.is_(True),
-    ))
-    if entitlement is None:
-        raise HTTPException(status_code=403, detail='Finance Pro is not enabled for this partner')
+    await _ensure_partner_feature(db, current_user, 'financial_management')
     return await list_partner_reservations(db, current_user)
 
 
@@ -724,6 +894,7 @@ async def list_partner_operators(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     result = await db.execute(
         select(User)
         .where(User.tenant_id == current_user.tenant_id)
@@ -740,6 +911,7 @@ async def create_partner_operator(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
 
     if not data.accepted_terms:
         raise HTTPException(status_code=422, detail="Terms acceptance is required")
@@ -839,6 +1011,7 @@ async def request_operator_package(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     if data.quantity < 1 or data.quantity > 100:
         raise HTTPException(status_code=422, detail="A quantidade deve estar entre 1 e 100 operadores.")
     if data.package_type not in {"individual", "package"}:
@@ -877,6 +1050,7 @@ async def upload_operator_package_receipt(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     item = await db.scalar(select(OperatorPackageRequest).where(
         OperatorPackageRequest.id == request_id,
         OperatorPackageRequest.tenant_id == current_user.tenant_id,
@@ -900,6 +1074,7 @@ async def upload_operator_package_receipt(
 @router.get("/operators/{operator_id}/parkings")
 async def operator_parkings(operator_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     operator = await db.scalar(select(User).where(User.id == operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
     if operator is None: raise HTTPException(status_code=404, detail="Operador não encontrado")
     rows = (await db.scalars(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == operator_id))).all()
@@ -908,6 +1083,7 @@ async def operator_parkings(operator_id: str, db: AsyncSession = Depends(get_db)
 @router.put("/operators/{operator_id}/parkings")
 async def assign_operator_parkings(operator_id: str, data: OperatorParkingAssignmentRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     operator = await db.scalar(select(User).where(User.id == operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
     if operator is None: raise HTTPException(status_code=404, detail="Operador não encontrado")
     valid = (await db.scalars(select(Parking.id).where(Parking.tenant_id == current_user.tenant_id, Parking.id.in_(data.parking_ids)))).all()
@@ -919,6 +1095,8 @@ async def assign_operator_parkings(operator_id: str, data: OperatorParkingAssign
 @router.get("/shifts")
 async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_staff(db, current_user)
+    if current_user.role != UserRoleEnum.OPERATOR:
+        await _ensure_partner_feature(db, current_user, 'team_management')
     query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
         query = query.where(OperatorWorkShift.operator_id == current_user.id)
@@ -928,6 +1106,7 @@ async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user:
 @router.post("/shifts", status_code=201)
 async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     if data.ends_at <= data.starts_at: raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
     operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
     parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
@@ -940,6 +1119,7 @@ async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = D
 @router.delete("/shifts/{shift_id}", status_code=204)
 async def cancel_operator_shift(shift_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     shift = await db.scalar(select(OperatorWorkShift).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(OperatorWorkShift.id == shift_id, Parking.tenant_id == current_user.tenant_id))
     if shift is None: raise HTTPException(status_code=404, detail="Turno não encontrado")
     db.add(OperatorScheduleHistory(parking_id=shift.parking_id, changed_by=current_user.id, action="cancelled", details=json.dumps({"shift_id": shift_id})))
@@ -948,12 +1128,14 @@ async def cancel_operator_shift(shift_id: str, db: AsyncSession = Depends(get_db
 @router.get("/work-profiles")
 async def list_work_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     rows = (await db.scalars(select(OperatorWorkProfile).join(User, User.id == OperatorWorkProfile.operator_id).where(User.tenant_id == current_user.tenant_id))).all()
     return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "daily_hours": r.daily_hours, "lunch_minutes": r.lunch_minutes, "days_off": r.days_off_list(), "work_modality": r.work_modality, "bank_hours": r.bank_hours} for r in rows]
 
 @router.put("/work-profiles", status_code=200)
 async def save_work_profile(data: OperatorWorkProfileRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     if data.work_modality not in {"8h", "12h", "24h"} or not 1 <= data.daily_hours <= 24 or not 0 <= data.lunch_minutes <= 180 or data.bank_hours < 0 or any(day < 0 or day > 6 for day in data.days_off):
         raise HTTPException(status_code=422, detail="Jornada ou folgas inválidas")
     operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
@@ -972,6 +1154,7 @@ async def save_work_profile(data: OperatorWorkProfileRequest, db: AsyncSession =
 @router.get("/schedule-history")
 async def schedule_history(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     rows = (await db.scalars(select(OperatorScheduleHistory).join(Parking, Parking.id == OperatorScheduleHistory.parking_id).where(Parking.tenant_id == current_user.tenant_id).order_by(OperatorScheduleHistory.created_at.desc()))).all()
     return [{"id": r.id, "parking_id": r.parking_id, "changed_by": r.changed_by, "action": r.action, "details": json.loads(r.details or "{}"), "created_at": r.created_at.isoformat()} for r in rows]
 
@@ -979,6 +1162,7 @@ async def schedule_history(db: AsyncSession = Depends(get_db), current_user: Use
 async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Sugere uma escala rotativa; o gestor pode editar antes de confirmar."""
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
     if data.ends_on < data.starts_on or not 1 <= data.daily_hours <= 12:
         raise HTTPException(status_code=422, detail="Período, operadores ou carga horária inválidos")
     parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
@@ -1029,6 +1213,7 @@ async def list_managed_parkings(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'parking_management')
     return await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
 
 
@@ -1043,10 +1228,13 @@ async def create_managed_parking(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'parking_management')
+    await _ensure_unit_capacity(db, current_user.tenant_id)
+    if data.services:
+        await _ensure_partner_feature(db, current_user, 'services_management')
+    await _ensure_service_capacity(db, current_user.tenant_id, len(data.services))
     return await ParkingManagementService.create_for_tenant(
-        db,
-        current_user.tenant_id,
-        data,
+        db, current_user.tenant_id, data,
     )
 
 
@@ -1060,6 +1248,7 @@ async def get_managed_parking(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'parking_management')
     return await ParkingManagementService.get_for_tenant(
         db,
         current_user.tenant_id,
@@ -1078,12 +1267,124 @@ async def update_managed_parking(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_partner(db, current_user)
-    return await ParkingManagementService.update_for_tenant(
-        db,
-        current_user.tenant_id,
-        parking_id,
-        data,
+    await _ensure_partner_feature(db, current_user, 'parking_management')
+    current = await db.scalar(select(Parking).where(
+        Parking.id == parking_id, Parking.tenant_id == current_user.tenant_id
+    ))
+    if current is None:
+        raise HTTPException(status_code=404, detail='Estacionamento não encontrado')
+    current_service_rows = (await db.scalars(select(ParkingService).where(
+        ParkingService.parking_id == parking_id
+    ))).all()
+    current_services = len(current_service_rows)
+    old_service_data = sorted(
+        (service.code, service.name, float(service.price), bool(service.is_active))
+        for service in current_service_rows
     )
+    new_service_data = sorted(
+        (service.code, service.name, float(service.price), bool(service.is_active))
+        for service in data.services
+    )
+    if old_service_data != new_service_data:
+        await _ensure_partner_feature(db, current_user, 'services_management')
+    total_services = int(await db.scalar(
+        select(func.count(ParkingService.id)).join(Parking, Parking.id == ParkingService.parking_id)
+        .where(Parking.tenant_id == current_user.tenant_id)
+    ) or 0)
+    await _ensure_service_capacity(
+        db, current_user.tenant_id, max(
+            0, total_services - current_services + sum(1 for service in data.services if service.is_active)
+        )
+    )
+    return await ParkingManagementService.update_for_tenant(
+        db, current_user.tenant_id, parking_id, data,
+    )
+
+
+async def _ensure_partner_feature(db: AsyncSession, user: User, key: str) -> dict:
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == user.tenant_id))
+    feature = feature_by_key(profile.service_type if profile else None, key)
+    if feature is None:
+        raise HTTPException(status_code=403, detail={'code': 'feature_unavailable', 'feature_key': key})
+    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == user.tenant_id,
+        PartnerFeatureEntitlement.feature_key == key,
+    ))
+    enabled = entitlement.is_enabled if entitlement else feature['default_is_enabled']
+    if not enabled:
+        raise HTTPException(status_code=403, detail={
+            'code': 'feature_locked', 'feature_key': key, 'name': feature['name'],
+            'is_paid': entitlement.is_paid if entitlement else feature['default_is_paid'],
+            'price': entitlement.price if entitlement else 0,
+            'billing_period': entitlement.billing_period if entitlement else feature['default_billing_period'],
+        })
+    return feature
+
+
+async def _ensure_any_partner_feature(db: AsyncSession, user: User, keys: tuple[str, ...]):
+    errors = []
+    for key in keys:
+        try:
+            await _ensure_partner_feature(db, user, key)
+            return
+        except HTTPException as error:
+            errors.append(error.detail)
+    raise HTTPException(status_code=403, detail={'code': 'features_locked', 'features': errors})
+
+
+async def _feature_request_price(
+    db: AsyncSession, tenant_id: str, key: str
+) -> tuple[bool, float, bool]:
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == tenant_id))
+    feature = feature_by_key(profile.service_type if profile else None, key)
+    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == tenant_id, PartnerFeatureEntitlement.feature_key == key
+    ))
+    return (
+        entitlement.is_paid,
+        float(entitlement.price),
+        entitlement.is_enabled,
+    ) if entitlement else (
+        bool(feature and feature['default_is_paid']),
+        0.0,
+        bool(feature and feature['default_is_enabled']),
+    )
+
+
+async def _ensure_service_capacity(db: AsyncSession, tenant_id: str, requested_total: int):
+    approved_capacity = int(await db.scalar(select(func.max(PartnerFeatureRequest.capacity_after)).where(
+        PartnerFeatureRequest.tenant_id == tenant_id, PartnerFeatureRequest.feature_key == 'additional_services',
+        PartnerFeatureRequest.status == 'approved',
+    )) or 1)
+    current_count = int(await db.scalar(
+        select(func.count(ParkingService.id))
+        .join(Parking, Parking.id == ParkingService.parking_id)
+        .where(Parking.tenant_id == tenant_id)
+    ) or 0)
+    paid, price, enabled = await _feature_request_price(db, tenant_id, 'additional_services')
+    capacity = (max(current_count, approved_capacity) if enabled else max(current_count, 1)) if paid else 1_000_000
+    if requested_total > capacity:
+        raise HTTPException(status_code=402, detail={
+            'code': 'feature_slots_required', 'feature_key': 'additional_services',
+            'quantity': requested_total - capacity, 'unit_price': price,
+            'message': 'O primeiro serviço está incluído. Solicite vagas adicionais para cadastrar mais serviços.',
+        })
+
+
+async def _ensure_unit_capacity(db: AsyncSession, tenant_id: str):
+    total = int(await db.scalar(select(func.count(Parking.id)).where(Parking.tenant_id == tenant_id)) or 0)
+    approved_capacity = int(await db.scalar(select(func.max(PartnerFeatureRequest.capacity_after)).where(
+        PartnerFeatureRequest.tenant_id == tenant_id, PartnerFeatureRequest.feature_key == 'additional_units',
+        PartnerFeatureRequest.status == 'approved',
+    )) or 1)
+    paid, price, enabled = await _feature_request_price(db, tenant_id, 'additional_units')
+    capacity = (max(total, approved_capacity) if enabled else max(total, 1)) if paid else 1_000_000
+    if total >= capacity:
+        raise HTTPException(status_code=402, detail={
+            'code': 'feature_slots_required', 'feature_key': 'additional_units',
+            'quantity': 1, 'unit_price': price,
+            'message': 'Solicite uma unidade adicional para cadastrar outro estacionamento.',
+        })
 
 
 def _ensure_parking_manager(user: User):
