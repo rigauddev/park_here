@@ -47,6 +47,7 @@ async def seed():
             await refresh_existing_seed(db)
             await ensure_system_admin_seed_user(db)
             await ensure_partner_seed_user(db)
+            await ensure_guide_partner_seed_user(db)
             await ensure_partner_operator_seed_user(db)
             await cleanup_example_seed_users(db)
             await ensure_descriptive_seed_users(db)
@@ -68,6 +69,16 @@ async def seed():
             status=TenantStatusEnum.TRIAL,
         )
         db.add(tenant)
+        await db.flush()
+
+        guide_tenant = Tenant(
+            name="Guia Turístico ParkHere",
+            cnpj="99900000000001",
+            email="guia@parkhere.test",
+            plan=PlanEnum.FREE,
+            status=TenantStatusEnum.TRIAL,
+        )
+        db.add(guide_tenant)
         await db.flush()
 
         system_admin = User(
@@ -115,7 +126,7 @@ async def seed():
             role=UserRoleEnum.CUSTOMER,
         )
         guide_user = User(
-            tenant_id=tenant.id,
+            tenant_id=guide_tenant.id,
             name="Guia Turistico ParkHere",
             firt_name="Guia",
             email="guia@parkhere.test",
@@ -128,6 +139,17 @@ async def seed():
         db.add_all([system_admin, partner_user, operator_user, customer, guide_user])
         await db.flush()
         await ensure_partner_profile(db, tenant.id, commit=False)
+        db.add(PartnerProfile(
+            tenant_id=guide_tenant.id,
+            service_type="tour_guide",
+            company_name="Guia Turístico ParkHere",
+            cnpj="99900000000001",
+            document_type="cnpj",
+            document_number="99900000000001",
+            registration_status="active",
+            responsible_name="Guia Turístico ParkHere",
+            approval_status="approved",
+        ))
         await ensure_descriptive_seed_users(db, commit=False)
         demo_tenants = await ensure_demo_partner_tenants(db, commit=False)
 
@@ -369,6 +391,7 @@ async def seed():
             "monthly": {"commission_type": "percentage", "commission_value": 15},
             "long_term": {"commission_type": "percentage", "commission_value": 18},
         })
+        parkings[0].accepts_guide_affiliates = True
 
         db.add(
             GuideParkingLink(
@@ -377,6 +400,12 @@ async def seed():
                 status="approved",
                 commission_type="percentage",
                 commission_value="10",
+                commission_terms=json.dumps({
+                    "daily": {"commission_type": "fixed", "commission_value": 8},
+                    "weekly": {"commission_type": "percentage", "commission_value": 12},
+                    "monthly": {"commission_type": "percentage", "commission_value": 15},
+                    "long_term": {"commission_type": "percentage", "commission_value": 18},
+                }),
             )
         )
         db.add(
@@ -718,6 +747,30 @@ async def refresh_existing_seed(db):
     await db.flush()
     await ensure_seed_parking_services(db, commit=False)
 
+    guide = await db.scalar(select(User).where(User.email == "guia@parkhere.test"))
+    central = await db.scalar(select(Parking).where(
+        Parking.name == "Estacionamento Central ParkHere"
+    ))
+    if central is not None:
+        central.accepts_guide_affiliates = True
+        if not central.guide_commission_terms:
+            central.guide_commission_terms = json.dumps({
+                "daily": {"commission_type": "fixed", "commission_value": 8},
+                "weekly": {"commission_type": "percentage", "commission_value": 12},
+                "monthly": {"commission_type": "percentage", "commission_value": 15},
+                "long_term": {"commission_type": "percentage", "commission_value": 18},
+            })
+        if guide is not None:
+            link = await db.scalar(select(GuideParkingLink).where(
+                GuideParkingLink.parking_id == central.id,
+                GuideParkingLink.guide_user_id == guide.id,
+            ))
+            if link is not None:
+                link.status = "approved"
+                link.commission_terms = central.guide_commission_terms
+    if guide is not None:
+        await ensure_guide_partner_seed_user(db, user=guide, commit=False)
+
     await db.commit()
 
 
@@ -934,6 +987,68 @@ async def ensure_partner_seed_user(db, commit=True):
         user.phone_verified = True
         user.email_verified = True
         user.is_active = True
+
+    if commit:
+        await db.commit()
+
+
+async def ensure_guide_partner_seed_user(db, user=None, commit=True):
+    """Keep the demo guide as an independent partner tenant.
+
+    Affiliations reference the guide's user ID, so moving its tenant does not
+    break existing approved parking links or earned reservation attribution.
+    """
+    if user is None:
+        user = await db.scalar(select(User).where(User.email == "guia@parkhere.test"))
+    if user is None:
+        user = User(
+            name="Guia Turístico ParkHere",
+            firt_name="Guia",
+            email="guia@parkhere.test",
+            password_hash=hash_password("123456"),
+            phone="71999992222",
+            phone_verified=True,
+            email_verified=True,
+            role=UserRoleEnum.TOUR_GUIDE,
+        )
+        db.add(user)
+        await db.flush()
+
+    guide_tenant = await db.scalar(select(Tenant).where(Tenant.cnpj == "99900000000001"))
+    if guide_tenant is None:
+        guide_tenant = Tenant(
+            name="Guia Turístico ParkHere",
+            cnpj="99900000000001",
+            email="guia@parkhere.test",
+            plan=PlanEnum.FREE,
+            status=TenantStatusEnum.TRIAL,
+        )
+        db.add(guide_tenant)
+        await db.flush()
+
+    user.tenant_id = guide_tenant.id
+    user.role = UserRoleEnum.TOUR_GUIDE
+    user.is_active = True
+
+    profile = await db.scalar(select(PartnerProfile).where(
+        PartnerProfile.tenant_id == guide_tenant.id
+    ))
+    if profile is None:
+        db.add(PartnerProfile(
+            tenant_id=guide_tenant.id,
+            service_type="tour_guide",
+            company_name="Guia Turístico ParkHere",
+            cnpj="99900000000001",
+            document_type="cnpj",
+            document_number="99900000000001",
+            registration_status="active",
+            responsible_name="Guia Turístico ParkHere",
+            approval_status="approved",
+        ))
+    else:
+        profile.service_type = "tour_guide"
+        profile.company_name = "Guia Turístico ParkHere"
+        profile.approval_status = "approved"
 
     if commit:
         await db.commit()

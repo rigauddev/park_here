@@ -277,6 +277,7 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
         wants_automatic_access=parking.wants_automatic_access,
         has_automatic_access=parking.has_automatic_access,
         is_active=parking.is_active,
+        accepts_guide_affiliates=parking.accepts_guide_affiliates,
         uncovered_pricing=ParkingAreaPricing(
             first_hour_price=parking.uncovered_first_hour_price,
             additional_hour_price=parking.uncovered_additional_hour_price,

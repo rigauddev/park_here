@@ -138,6 +138,7 @@ O backlog detalhado, regras de negócio e tarefas restantes estão em
 - Painel de guia turistico: pacotes, agenda, idiomas e capacidade.
 - Fluxo de guia/agente turistico com codigo de indicacao na reserva.
 - Registrar comissao de guia por estabelecimento/servico no modulo financeiro Pro.
+- Aplicar contrato genérico de afiliação por serviço nos novos módulos: aceite de afiliados pelo parceiro, oferta fixa/percentual por serviço e modalidade, solicitação/aprovação do guia e snapshot financeiro imutável na reserva.
 - Painel de empresa de turismo: passeios, horarios, vagas, politica de cancelamento e pacotes.
 - Painel de hotel/restaurante: banners, pagina comercial e ofertas.
 - Testar cada painel isoladamente antes de unir no fluxo completo.

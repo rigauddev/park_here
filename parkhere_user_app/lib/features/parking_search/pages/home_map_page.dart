@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/services/routes/route_service.dart';
@@ -21,6 +22,8 @@ import '../providers/search_provider.dart';
 import '../providers/selected_plan_provider.dart';
 import '../providers/selected_services_provider.dart';
 import '../widgets/filter_sheet.dart';
+
+final selectedReservationGuideProvider = StateProvider<String?>((ref) => null);
 
 class HomeMapPage extends ConsumerStatefulWidget {
   const HomeMapPage({super.key});
@@ -281,6 +284,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     // Reset plano e serviços ao abrir
     ref.read(selectedPlanProvider.notifier).state = null;
     ref.read(selectedServicesProvider.notifier).state = SelectedServices();
+    ref.read(selectedReservationGuideProvider.notifier).state = null;
+    final affiliatedGuidesFuture = ref
+        .read(apiServiceProvider)
+        .get('/parkings/${parking.id}/guides');
 
     showModalBottomSheet(
       context: context,
@@ -293,6 +300,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
           builder: (context, ref, child) {
             final plan = ref.watch(selectedPlanProvider);
             final selected = ref.watch(selectedServicesProvider);
+            final selectedGuideId = ref.watch(selectedReservationGuideProvider);
             final areaPreference = ref.watch(selectedAreaPreferenceProvider);
             final selectedArea = areaPreference == AreaPreference.any
                 ? _firstAvailableArea(parking)
@@ -574,6 +582,62 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                   if (plan == PlanType.monthly)
                     Text("📆 Mensal: R\$ ${parking.pricing.monthlyPrice}"),
 
+                  const SizedBox(height: 16),
+                  Text(
+                    'Indicação de guia (opcional) / Guide referral (optional)',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  FutureBuilder<List<dynamic>>(
+                    future: affiliatedGuidesFuture,
+                    builder: (context, snapshot) {
+                      final guides = snapshot.data ?? const <dynamic>[];
+                      return DropdownButtonFormField<String?>(
+                        initialValue: selectedGuideId,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          hintText:
+                              snapshot.connectionState ==
+                                  ConnectionState.waiting
+                              ? 'Carregando guias... / Loading guides...'
+                              : 'Selecione um guia / Select a guide',
+                          border: const OutlineInputBorder(),
+                        ),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Sem indicação / No referral'),
+                          ),
+                          for (final rawGuide in guides)
+                            DropdownMenuItem<String?>(
+                              value:
+                                  (rawGuide as Map<String, dynamic>)['id']
+                                      as String,
+                              child: Text(
+                                ((rawGuide)['name'] as String?)
+                                            ?.trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? (rawGuide)['name'] as String
+                                    : (rawGuide)['email'] as String? ??
+                                          'Guia / Guide',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) =>
+                            ref
+                                    .read(
+                                      selectedReservationGuideProvider.notifier,
+                                    )
+                                    .state =
+                                value,
+                      );
+                    },
+                  ),
+
                   const SizedBox(height: 20),
 
                   // Serviços adicionais
@@ -690,6 +754,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           dailyDays: dailyDays,
                           userLocationLat: position.latitude,
                           userLocationLng: position.longitude,
+                          guideUserId: selectedGuideId,
                         );
                       },
                       child: const Text(
@@ -1161,48 +1226,12 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required int dailyDays,
     required double userLocationLat,
     required double userLocationLng,
+    required String? guideUserId,
   }) async {
     final configuredArea = ref.read(selectedAreaPreferenceProvider);
     final areaPreference = configuredArea == AreaPreference.any
         ? _firstAvailableArea(parking)
         : configuredArea;
-    String? guideUserId;
-    if (selected.tourGuide) {
-      try {
-        final guides = await ref
-            .read(apiServiceProvider)
-            .get('/parkings/${parking.id}/guides');
-        if (!mounted) return;
-        if (guides.isNotEmpty) {
-          final selectedGuide = await showDialog<String>(
-            context: context,
-            builder: (context) => SimpleDialog(
-              title: const Text('Indicar guia / Select a guide'),
-              children: [
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, '__none__'),
-                  child: const Text('Sem indicação / No guide'),
-                ),
-                for (final rawGuide in guides)
-                  SimpleDialogOption(
-                    onPressed: () =>
-                        Navigator.pop(context, rawGuide['id'] as String),
-                    child: Text(
-                      (rawGuide['name'] as String?)?.trim().isNotEmpty == true
-                          ? rawGuide['name'] as String
-                          : rawGuide['email'] as String? ?? 'Guia',
-                    ),
-                  ),
-              ],
-            ),
-          );
-          if (selectedGuide == null) return;
-          if (selectedGuide != '__none__') guideUserId = selectedGuide;
-        }
-      } catch (_) {
-        // A indicação é opcional; a reserva pode seguir sem guia.
-      }
-    }
     await ref.read(accountProvider.notifier).syncVehicles();
     if (!mounted) return;
     final account = ref.read(accountProvider);

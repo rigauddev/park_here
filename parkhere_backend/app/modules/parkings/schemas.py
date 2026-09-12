@@ -101,6 +101,7 @@ class ParkingManagementResponse(BaseModel):
     wants_automatic_access: bool
     has_automatic_access: bool
     is_active: bool
+    accepts_guide_affiliates: bool = False
     uncovered_pricing: ParkingAreaPricing
     covered_pricing: ParkingAreaPricing
     category_pricing: dict[str, ParkingAreaPricing] = Field(default_factory=dict)

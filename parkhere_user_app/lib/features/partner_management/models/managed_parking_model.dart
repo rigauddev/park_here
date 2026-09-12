@@ -86,6 +86,7 @@ class ManagedParkingModel {
   final bool wantsAutomaticAccess;
   final bool hasAutomaticAccess;
   final bool isActive;
+  final bool acceptsGuideAffiliates;
   final ParkingAreaPricingModel uncoveredPricing;
   final ParkingAreaPricingModel coveredPricing;
   final List<ManagedParkingServiceModel> services;
@@ -114,6 +115,7 @@ class ManagedParkingModel {
     required this.wantsAutomaticAccess,
     required this.hasAutomaticAccess,
     required this.isActive,
+    this.acceptsGuideAffiliates = false,
     required this.uncoveredPricing,
     required this.coveredPricing,
     required this.services,
@@ -144,6 +146,8 @@ class ManagedParkingModel {
       wantsAutomaticAccess: json['wants_automatic_access'] as bool? ?? false,
       hasAutomaticAccess: json['has_automatic_access'] as bool? ?? false,
       isActive: json['is_active'] as bool? ?? true,
+      acceptsGuideAffiliates:
+          json['accepts_guide_affiliates'] as bool? ?? false,
       uncoveredPricing: ParkingAreaPricingModel.fromJson(
         json['uncovered_pricing'] as Map<String, dynamic>,
       ),
@@ -155,12 +159,21 @@ class ManagedParkingModel {
           ManagedParkingServiceModel.fromJson(service as Map<String, dynamic>),
       ],
       operatingHours: {
-        for (final entry in (json['operating_hours'] as Map<String, dynamic>? ?? {}).entries)
-          entry.key: entry.value == null ? null : (entry.value as Map<String, dynamic>).map((k, v) => MapEntry(k, v.toString())),
+        for (final entry
+            in (json['operating_hours'] as Map<String, dynamic>? ?? {}).entries)
+          entry.key: entry.value == null
+              ? null
+              : (entry.value as Map<String, dynamic>).map(
+                  (k, v) => MapEntry(k, v.toString()),
+                ),
       },
       categoryPricing: {
-        for (final entry in (json['category_pricing'] as Map<String, dynamic>? ?? {}).entries)
-          entry.key: ParkingAreaPricingModel.fromJson(entry.value as Map<String, dynamic>),
+        for (final entry
+            in (json['category_pricing'] as Map<String, dynamic>? ?? {})
+                .entries)
+          entry.key: ParkingAreaPricingModel.fromJson(
+            entry.value as Map<String, dynamic>,
+          ),
       },
     );
   }
@@ -191,7 +204,8 @@ class ManagedParkingModel {
       'services': services.map((service) => service.toJson()).toList(),
       'operating_hours': operatingHours,
       'category_pricing': {
-        for (final entry in categoryPricing.entries) entry.key: entry.value.toJson(),
+        for (final entry in categoryPricing.entries)
+          entry.key: entry.value.toJson(),
       },
       'is_active': isActive,
     };

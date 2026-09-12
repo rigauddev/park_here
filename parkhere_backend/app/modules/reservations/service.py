@@ -266,6 +266,12 @@ async def _get_parking_with_services(db: AsyncSession, parking_id: str) -> Parki
 async def _guide_commission(db, parking_id: str, guide_user_id: str | None, base_amount: float, pricing_plan: str) -> tuple[float, float, float]:
     if not guide_user_id:
         return 0.0, 0.0, 0.0
+    parking = await db.scalar(select(Parking).where(Parking.id == parking_id))
+    guide = await db.scalar(select(User).where(User.id == guide_user_id, User.is_active.is_(True)))
+    if parking is None or not parking.accepts_guide_affiliates:
+        raise HTTPException(status_code=422, detail='This parking is not accepting guide referrals')
+    if guide is None or guide.tenant_id == parking.tenant_id:
+        raise HTTPException(status_code=422, detail='Guide must be an active independent partner')
     link = await db.scalar(select(GuideParkingLink).where(
         GuideParkingLink.guide_user_id == guide_user_id,
         GuideParkingLink.parking_id == parking_id,

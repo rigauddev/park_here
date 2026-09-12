@@ -73,17 +73,34 @@ class _OperatingHoursEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = {'mon': 'Segunda', 'tue': 'Terça', 'wed': 'Quarta', 'thu': 'Quinta', 'fri': 'Sexta', 'sat': 'Sábado', 'sun': 'Domingo'};
+    const labels = {
+      'mon': 'Segunda',
+      'tue': 'Terça',
+      'wed': 'Quarta',
+      'thu': 'Quinta',
+      'fri': 'Sexta',
+      'sat': 'Sábado',
+      'sun': 'Domingo',
+    };
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 12),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Horário de funcionamento', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          const Text('Defina os dias e horários usados pela geração de escalas.'),
-          for (final entry in labels.entries) _dayRow(context, entry.key, entry.value),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Horário de funcionamento',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Defina os dias e horários usados pela geração de escalas.',
+            ),
+            for (final entry in labels.entries)
+              _dayRow(context, entry.key, entry.value),
+          ],
+        ),
       ),
     );
   }
@@ -95,29 +112,51 @@ class _OperatingHoursEditor extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       dense: true,
       title: Text(label),
-      subtitle: Text(closed ? 'Fechado' : '${value['open']} – ${value['close']}'),
-      trailing: Switch(value: !closed, onChanged: (enabled) {
-        final next = {...hours};
-        next[key] = enabled ? {'open': '08:00', 'close': '18:00'} : null;
-        onChanged(next);
-      }),
-      onTap: closed ? null : () async {
-        final initial = _parse(value['open'] ?? '08:00');
-        final picked = await showTimePicker(context: context, initialTime: initial);
-        if (picked == null) return;
-        if (!context.mounted) return;
-        final finish = await showTimePicker(context: context, initialTime: _parse(value['close'] ?? '18:00'));
-        if (finish == null) return;
-        if (!context.mounted) return;
-        final next = {...hours, key: {'open': picked.format(context), 'close': finish.format(context)}};
-        onChanged(next);
-      },
+      subtitle: Text(
+        closed ? 'Fechado' : '${value['open']} – ${value['close']}',
+      ),
+      trailing: Switch(
+        value: !closed,
+        onChanged: (enabled) {
+          final next = {...hours};
+          next[key] = enabled ? {'open': '08:00', 'close': '18:00'} : null;
+          onChanged(next);
+        },
+      ),
+      onTap: closed
+          ? null
+          : () async {
+              final initial = _parse(value['open'] ?? '08:00');
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: initial,
+              );
+              if (picked == null) return;
+              if (!context.mounted) return;
+              final finish = await showTimePicker(
+                context: context,
+                initialTime: _parse(value['close'] ?? '18:00'),
+              );
+              if (finish == null) return;
+              if (!context.mounted) return;
+              final next = {
+                ...hours,
+                key: {
+                  'open': picked.format(context),
+                  'close': finish.format(context),
+                },
+              };
+              onChanged(next);
+            },
     );
   }
 
   TimeOfDay _parse(String value) {
     final parts = value.split(':');
-    return TimeOfDay(hour: int.tryParse(parts.first) ?? 8, minute: int.tryParse(parts.last) ?? 0);
+    return TimeOfDay(
+      hour: int.tryParse(parts.first) ?? 8,
+      minute: int.tryParse(parts.last) ?? 0,
+    );
   }
 }
 
@@ -320,7 +359,8 @@ class _ParkingManagementFormPageState
     if (totalController.text != total.toString()) {
       totalController.text = total.toString();
     }
-    if (widget.parking == null && availableController.text != total.toString()) {
+    if (widget.parking == null &&
+        availableController.text != total.toString()) {
       availableController.text = total.toString();
     }
   }
@@ -393,7 +433,9 @@ class _ParkingManagementFormPageState
       coveredMonthlyController,
     ]);
     for (final entry in parking.categoryPricing.entries) {
-      if (specialPricing.containsKey(entry.key)) _fillPricing(entry.value, specialPricing[entry.key]!);
+      if (specialPricing.containsKey(entry.key)) {
+        _fillPricing(entry.value, specialPricing[entry.key]!);
+      }
     }
   }
 
@@ -479,7 +521,13 @@ class _ParkingManagementFormPageState
                     child: _field(totalController, 'Total', readOnly: true),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: _field(availableController, 'Disponíveis', readOnly: true)),
+                  Expanded(
+                    child: _field(
+                      availableController,
+                      'Disponíveis',
+                      readOnly: true,
+                    ),
+                  ),
                 ],
               ),
               _field(arrivalToleranceController, 'Tolerância de chegada (min)'),
@@ -490,11 +538,21 @@ class _ParkingManagementFormPageState
                   Expanded(child: _field(uncoveredController, 'Descobertas')),
                 ],
               ),
-              for (final entry in {'vip': 'VIP', 'large': 'Carro grande', 'bus': 'Ônibus', 'pickup': 'Picape'}.entries)
+              for (final entry in {
+                'vip': 'VIP',
+                'large': 'Carro grande',
+                'bus': 'Ônibus',
+                'pickup': 'Picape',
+              }.entries)
                 if (_countFor(entry.key) > 0)
-                  _PricingSection(title: 'Tarifas ${entry.value}', controllers: specialPricing[entry.key]!),
+                  _PricingSection(
+                    title: 'Tarifas ${entry.value}',
+                    controllers: specialPricing[entry.key]!,
+                  ),
               OutlinedButton.icon(
-                onPressed: () => _showMessage('Para criar um tipo especial, informe quantidade acima de zero e suas tarifas.'),
+                onPressed: () => _showMessage(
+                  'Para criar um tipo especial, informe quantidade acima de zero e suas tarifas.',
+                ),
                 icon: const Icon(Icons.add),
                 label: const Text('Adicionar tipo especial'),
               ),
@@ -527,9 +585,14 @@ class _ParkingManagementFormPageState
                 title: const Text('Portaria 24h'),
                 contentPadding: EdgeInsets.zero,
               ),
-              _OperatingHoursEditor(hours: operatingHours, onChanged: (value) => setState(() => operatingHours
-                ..clear()
-                ..addAll(value))),
+              _OperatingHoursEditor(
+                hours: operatingHours,
+                onChanged: (value) => setState(
+                  () => operatingHours
+                    ..clear()
+                    ..addAll(value),
+                ),
+              ),
               SwitchListTile(
                 value: hasSecuritySystem,
                 onChanged: (value) => setState(() => hasSecuritySystem = value),

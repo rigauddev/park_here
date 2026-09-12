@@ -421,19 +421,47 @@ No check-in do cliente, `POST /reservations/{reservation_id}/checkin` recebe
 realizou a ação. Gestores e operadores continuam autorizados para a portaria do
 próprio tenant.
 
-Quando o cliente contratar o serviço de guia, o app pode consultar
-`GET /parkings/{parking_id}/guides` e enviar o `guide_user_id` escolhido. A lista
-contém apenas guias com afiliação aprovada pelo estacionamento. Se o identificador
-não pertencer a uma afiliação aprovada, a API rejeita a reserva com `422`.
+Na etapa de escolha do plano, o cliente pode consultar
+`GET /parkings/{parking_id}/guides` e enviar opcionalmente o `guide_user_id` como
+indicação. Isso é independente do extra pago `tour_guide`: indicar o guia não
+contrata um passeio. A lista contém somente guias ativos com afiliação aprovada e
+é vazia quando a unidade não aceita afiliados. Se o identificador não pertencer a
+uma afiliação aprovada, se o guia não for um parceiro independente ou se a unidade
+desativar afiliados, a API rejeita a reserva com `422`.
 O backend calcula e congela `guide_commission_amount` na reserva, conforme a
 comissão percentual ou fixa configurada pelo parceiro. O campo é uma comissão do
 estabelecimento para o guia e não altera o total cobrado do cliente.
+
+`GET /partners/guide/parkings` inclui `accepts_affiliates`, `offer_terms` e o
+estado do vínculo. O guia pode solicitar afiliação somente quando
+`accepts_affiliates=true`; caso contrário `POST /partners/guide/parkings/{id}`
+retorna `409`. Em estacionamento, a adesão e as ofertas são configuradas por
+unidade em `PUT /partners/parking-management/{parking_id}/guide-offer`, que aceita
+`accepts_affiliates` e `terms` (`daily`, `weekly`, `monthly`, `long_term`). Para
+ativar a adesão, todas as quatro modalidades precisam ter comissão positiva.
 
 `GET /partners/guide/parkings` retorna `offer_terms` antes da solicitação de
 afiliação, com valores independentes para `daily`, `weekly`, `monthly` e
 `long_term`. O parceiro configura esses termos em
 `PUT /partners/parking-management/{parking_id}/guide-offer`. Na aprovação, os
 termos são copiados para a afiliação e ficam congelados para novas reservas.
+
+**Regra de identidade:** todo parceiro, inclusive guia turístico, tem seu próprio
+`tenant_id`, `Tenant` e `PartnerProfile`. A afiliação é uma relação entre o ID do
+usuário guia e a unidade/serviço parceiro; nunca se reutiliza o tenant do
+estacionamento para representar o guia. O cadastro padrão `/partners/signup` já
+cria essa identidade independente. O seed local separa o guia de demonstração do
+tenant do estacionamento e preserva os vínculos existentes.
+
+**Extensão para novos módulos:** cada parceiro pode aceitar afiliados; ao publicar
+um serviço afiliável, configura nele a modalidade e o valor da comissão (fixo ou
+percentual). O serviço/reserva guarda uma cópia imutável da oferta e da comissão
+aplicada. Guias solicitam vínculo com o parceiro/serviço, o parceiro aprova e a
+indicação somente é contabilizada conforme o estado terminal elegível definido
+pelo módulo (no estacionamento, reserva concluída). Hotéis, restaurantes,
+lava-jatos, agências, transporte e novos catálogos devem reutilizar esse contrato
+genérico por serviço, sem criar um `tenant_id` compartilhado nem acoplar a
+indicação à compra de um serviço adicional.
 
 A equipe ParkHere configura a taxa da plataforma em `guide_commission` por
 `PUT /admin/platform-fees/guide_commission`. Essa porcentagem incide somente
@@ -443,7 +471,9 @@ apenas nas respostas de gestão do estacionamento e do guia, nunca na resposta
 do cliente.
 
 O ranking do guia está em `GET /partners/guide/dashboard` e combina quantidade
-de indicações, média das avaliações e total líquido a receber. O cliente pode
+de indicações concluídas, média das avaliações e total líquido a receber apenas
+de reservas em status `completed`; canceladas/expiradas não geram repasse. A
+resposta também separa indicações ainda pendentes de conclusão. O cliente pode
 avaliar uma indicação concluída uma única vez em
 `POST /partners/guide/reviews/{reservation_id}` com nota de 1 a 5.
 

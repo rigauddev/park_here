@@ -13,7 +13,7 @@ from app.modules.payments.mercado_pago import MercadoPagoClient, MercadoPagoErro
 from app.modules.payments.schemas import CreatePaymentIntentRequest
 from app.modules.payments.service import PaymentService, _ensure_payable_reservation, settings
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
-from app.modules.reservations.service import _selected_services
+from app.modules.reservations.service import _selected_services, _guide_commission
 from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee, ParkingPlatformFee
 from app.modules.platform_fees.service import PlatformFeeService
 from app.modules.payments.service import _reservation_establishment_fee
@@ -56,6 +56,35 @@ class ParkingRulesTests(unittest.TestCase):
     def test_unknown_payment_method_rejected(self):
         with self.assertRaises(ValidationError):
             CreatePaymentIntentRequest(method='arbitrary')
+
+
+class GuideReferralTests(unittest.IsolatedAsyncioTestCase):
+    async def test_commission_uses_mode_snapshot_for_approved_independent_guide(self):
+        db = AsyncMock()
+        db.scalar = AsyncMock(side_effect=[
+            SimpleNamespace(accepts_guide_affiliates=True, tenant_id='parking-tenant'),
+            SimpleNamespace(tenant_id='guide-tenant'),
+            SimpleNamespace(
+                commission_terms='{"daily":{"commission_type":"fixed","commission_value":8}}',
+                commission_type='percentage',
+                commission_value='10',
+            ),
+            None,
+        ])
+        self.assertEqual(
+            await _guide_commission(db, 'parking', 'guide', 40, 'daily'),
+            (8.0, 0.0, 8.0),
+        )
+
+    async def test_same_tenant_guide_is_rejected(self):
+        db = AsyncMock()
+        db.scalar = AsyncMock(side_effect=[
+            SimpleNamespace(accepts_guide_affiliates=True, tenant_id='same-tenant'),
+            SimpleNamespace(tenant_id='same-tenant'),
+        ])
+        with self.assertRaises(HTTPException) as caught:
+            await _guide_commission(db, 'parking', 'guide', 40, 'daily')
+        self.assertEqual(caught.exception.status_code, 422)
 
 
 class MercadoPagoClientTests(unittest.IsolatedAsyncioTestCase):

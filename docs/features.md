@@ -25,6 +25,9 @@
 - Enviar documentacao do estabelecimento, alvara e documentos pessoais do responsavel.
 - Aguardar vistoria/aprovacao antes de publicar.
 - Gerenciar usuarios internos: admin, operador, guia/servico.
+- Parceiro guia turístico mantém empresa e tenant próprios, publica serviços de guia e pode solicitar afiliação a outros parceiros para indicar os serviços deles.
+- Parceiros podem aceitar ou desativar afiliados por unidade/serviço. A oferta de comissão fixa ou percentual é definida para cada modalidade do serviço, mostrada ao guia antes da solicitação e congelada na reserva indicada.
+- A indicação do guia é opcional na escolha do plano da reserva e independente da contratação de passeio/serviço de guia. A comissão do estacionamento é apurada pelo backend após a conclusão da reserva.
 - Definir permissoes do operador ao criar usuario interno.
 - Configurar precificacao.
 - Configurar servicos adicionais.

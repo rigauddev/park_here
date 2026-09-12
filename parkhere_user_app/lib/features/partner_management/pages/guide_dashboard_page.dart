@@ -16,6 +16,7 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
   int _approved = 0;
   int _pending = 0;
   int _indications = 0;
+  int _pendingIndications = 0;
   double _rating = 0;
   double _payout = 0;
 
@@ -37,7 +38,8 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
     setState(() {
       _approved = rows.where((item) => item['status'] == 'approved').length;
       _pending = rows.where((item) => item['status'] == 'pending').length;
-      _indications = dashboard['indications'] as int? ?? 0;
+      _indications = dashboard['completed_indications'] as int? ?? 0;
+      _pendingIndications = dashboard['pending_indications'] as int? ?? 0;
       _rating = (dashboard['rating'] as num?)?.toDouble() ?? 0;
       _payout = (dashboard['total_payout'] as num?)?.toDouble() ?? 0;
     });
@@ -79,7 +81,11 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
           Row(
             children: [
               Expanded(
-                child: _StatCard('Indicações', '$_indications', Icons.people),
+                child: _StatCard(
+                  'Indicações concluídas',
+                  '$_indications',
+                  Icons.people,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -92,6 +98,8 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
             ],
           ),
           const SizedBox(height: 12),
+          Text('Indicações aguardando conclusão: $_pendingIndications'),
+          const SizedBox(height: 8),
           Card(
             child: ListTile(
               leading: const Icon(Icons.payments),

@@ -32,14 +32,28 @@ Contas seed:
 - MFA local: `000000`
 
 Para testar indicação de guia, cadastre um usuário parceiro com serviço `Guia
-turístico`, solicite afiliação a um estacionamento e aprove a solicitação no
-usuário gestor definindo comissão percentual ou fixa.
+turístico`, configure as comissões da unidade, solicite afiliação e aprove o
+pedido no usuário gestor.
 
-O seed já oferece `guia@parkhere.test` afiliado ao estacionamento principal. A
+O seed cadastra `guia@parkhere.test` como parceiro independente, com tenant e
+perfil próprios, afiliado ao estacionamento principal. A
 lista do guia mostra as ofertas por diária, semanal, mensal e longa duração antes
 de solicitar novas afiliações. A taxa da plataforma padrão para a comissão do
 guia é 20%; o guia vê o valor líquido e o estacionamento vê o bruto, a taxa e o
 líquido.
+
+Fluxo de indicação atualizado:
+
+1. Na conta gestora, abra **Afiliação e comissões**, escolha a unidade e defina
+   comissões positivas para diária, semanal, mensal e longa duração; só então
+   ative **Aceitar guias afiliados**.
+2. Na conta do guia, abra **Estacionamentos**, confira a oferta e solicite
+   afiliação. Na conta gestora, aprove o pedido.
+3. Na conta cliente, escolha estacionamento e plano; selecione o guia no campo
+   opcional de indicação, sem marcar o extra pago de passeio/guia.
+4. Conclua a reserva, check-in, pagamento e checkout. A reserva mantém o guia
+   indicado e a comissão congelada; o dashboard do guia conta repasse apenas
+   após a reserva chegar a `completed`.
 
 ## Android fisico por USB
 

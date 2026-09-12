@@ -15,6 +15,7 @@ import 'guide_dashboard_page.dart';
 import 'guide_requests_page.dart';
 import 'guide_services_page.dart';
 import 'partner_cash_report_page.dart';
+import 'guide_offer_settings_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -167,6 +168,13 @@ class _PartnerManagementBody extends StatelessWidget {
             title: 'Solicitações de guias',
             description: 'Aprove afiliações e defina a comissão por indicação.',
             onTap: () => _open(context, const GuideRequestsPage()),
+          ),
+          _ManagementAction(
+            icon: Icons.percent_outlined,
+            title: 'Afiliação e comissões',
+            description:
+                'Escolha se cada unidade aceita afiliados e configure a oferta por modalidade.',
+            onTap: () => _open(context, const GuideOfferSettingsPage()),
           ),
           _ManagementAction(
             icon: Icons.lock_outline,

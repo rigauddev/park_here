@@ -47,6 +47,7 @@ class Parking(BaseModel):
     wants_automatic_access = Column(Boolean, default=False)
     has_automatic_access = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    accepts_guide_affiliates = Column(Boolean, nullable=False, default=False)
     guide_commission_terms = Column(Text, nullable=True)
     category_pricing = Column(Text, nullable=True)
     operating_hours = Column(Text, nullable=True)

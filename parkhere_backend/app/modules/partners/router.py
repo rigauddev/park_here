@@ -115,6 +115,7 @@ class GuideCommissionRequest(BaseModel):
     commission_type: str = 'percentage'
     commission_value: float = 0
     terms: dict[str, dict[str, str | float]] | None = None
+    accepts_affiliates: bool | None = None
 
 
 class GuideReviewRequest(BaseModel):
@@ -302,6 +303,7 @@ async def guide_parkings(
             'name': parking.name,
             'city': parking.city,
             'status': linked[parking.id].status if parking.id in linked else 'not_linked',
+            'accepts_affiliates': parking.accepts_guide_affiliates,
             'link_id': linked[parking.id].id if parking.id in linked else None,
             'commission_type': linked[parking.id].commission_type if parking.id in linked else None,
             'commission_value': float(linked[parking.id].commission_value) if parking.id in linked and linked[parking.id].commission_value else None,
@@ -324,6 +326,8 @@ async def request_guide_parking_link(
     parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.is_active.is_(True)))
     if parking is None:
         raise HTTPException(status_code=404, detail='Parking not found')
+    if not parking.accepts_guide_affiliates:
+        raise HTTPException(status_code=409, detail='This partner is not accepting affiliate requests')
     existing = await db.scalar(select(GuideParkingLink).where(GuideParkingLink.guide_user_id == current_user.id, GuideParkingLink.parking_id == parking_id))
     if existing is None:
         existing = GuideParkingLink(id=str(uuid4()), guide_user_id=current_user.id, parking_id=parking_id, status='pending')
@@ -343,16 +347,56 @@ async def update_guide_offer(
     parking = await db.scalar(select(Parking).where(Parking.id == parking_id, Parking.tenant_id == current_user.tenant_id))
     if parking is None:
         raise HTTPException(status_code=404, detail='Parking not found')
-    terms = data.terms or {'long_term': {'commission_type': data.commission_type, 'commission_value': data.commission_value}}
+    terms = data.terms if data.terms is not None else (
+        json.loads(parking.guide_commission_terms)
+        if parking.guide_commission_terms
+        else {'long_term': {'commission_type': data.commission_type, 'commission_value': data.commission_value}}
+    )
     for period, term in terms.items():
         if period not in {'daily', 'weekly', 'monthly', 'long_term'} or term.get('commission_type') not in {'percentage', 'fixed'}:
             raise HTTPException(status_code=422, detail='Invalid commission offer')
         value = float(term.get('commission_value', 0))
         if value < 0 or (term.get('commission_type') == 'percentage' and value > 100):
             raise HTTPException(status_code=422, detail='Invalid commission offer value')
+    accepts_affiliates = data.accepts_affiliates if data.accepts_affiliates is not None else parking.accepts_guide_affiliates
+    required_periods = {'daily', 'weekly', 'monthly', 'long_term'}
+    if accepts_affiliates and (
+        set(terms) != required_periods
+        or any(float(term.get('commission_value', 0)) <= 0 for term in terms.values())
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail='Configure a positive affiliate commission for every parking plan before accepting affiliates',
+        )
     parking.guide_commission_terms = json.dumps(terms)
+    if data.accepts_affiliates is not None:
+        parking.accepts_guide_affiliates = accepts_affiliates
     await db.commit()
-    return {'parking_id': parking.id, 'offer_terms': terms}
+    return {
+        'parking_id': parking.id,
+        'accepts_affiliates': parking.accepts_guide_affiliates,
+        'offer_terms': terms,
+    }
+
+
+@router.get('/parking-management/{parking_id}/guide-offer')
+async def get_guide_offer(
+    parking_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    parking = await db.scalar(select(Parking).where(
+        Parking.id == parking_id,
+        Parking.tenant_id == current_user.tenant_id,
+    ))
+    if parking is None:
+        raise HTTPException(status_code=404, detail='Parking not found')
+    return {
+        'parking_id': parking.id,
+        'accepts_affiliates': parking.accepts_guide_affiliates,
+        'offer_terms': json.loads(parking.guide_commission_terms) if parking.guide_commission_terms else {},
+    }
 
 
 @router.get('/guide/services')
@@ -409,6 +453,8 @@ async def approve_guide_parking_link(
     parking = await db.scalar(select(Parking).where(Parking.id == link.parking_id, Parking.tenant_id == current_user.tenant_id))
     if parking is None:
         raise HTTPException(status_code=403, detail='Parking does not belong to this partner')
+    if not parking.accepts_guide_affiliates:
+        raise HTTPException(status_code=409, detail='This partner is not accepting affiliates')
     if data.commission_type == 'percentage' and data.commission_value > 100:
         raise HTTPException(status_code=422, detail='Percentage commission cannot exceed 100')
     link.status = 'approved'
@@ -471,10 +517,28 @@ async def guide_dashboard(
     if current_user.role != UserRoleEnum.TOUR_GUIDE:
         raise HTTPException(status_code=403, detail='Guide account required')
     indications = await db.scalar(select(func.count(Reservation.id)).where(Reservation.guide_user_id == current_user.id)) or 0
+    completed_indications = await db.scalar(select(func.count(Reservation.id)).where(
+        Reservation.guide_user_id == current_user.id,
+        Reservation.status == 'completed',
+    )) or 0
+    pending_indications = await db.scalar(select(func.count(Reservation.id)).where(
+        Reservation.guide_user_id == current_user.id,
+        Reservation.status.notin_(['completed', 'cancelled', 'expired']),
+    )) or 0
     reviews = (await db.scalars(select(GuideReview).where(GuideReview.guide_user_id == current_user.id))).all()
     average = round(sum(float(review.rating) for review in reviews) / len(reviews), 2) if reviews else 0
-    payout = await db.scalar(select(func.coalesce(func.sum(Reservation.guide_payout_amount), 0)).where(Reservation.guide_user_id == current_user.id)) or 0
-    return {'indications': indications, 'rating': average, 'review_count': len(reviews), 'total_payout': round(float(payout), 2)}
+    payout = await db.scalar(select(func.coalesce(func.sum(Reservation.guide_payout_amount), 0)).where(
+        Reservation.guide_user_id == current_user.id,
+        Reservation.status == 'completed',
+    )) or 0
+    return {
+        'indications': indications,
+        'completed_indications': completed_indications,
+        'pending_indications': pending_indications,
+        'rating': average,
+        'review_count': len(reviews),
+        'total_payout': round(float(payout), 2),
+    }
 
 
 @router.post('/guide/reviews/{reservation_id}')

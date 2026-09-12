@@ -135,6 +135,7 @@ class _ParkingAffiliationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = parking['status'] as String? ?? 'not_linked';
+    final acceptsAffiliates = parking['accepts_affiliates'] == true;
     final label = switch (status) {
       'pending' => 'Solicitação pendente',
       'approved' => 'Aprovado',
@@ -159,15 +160,22 @@ class _ParkingAffiliationCard extends StatelessWidget {
         leading: const Icon(Icons.local_parking),
         title: Text(parking['name'] as String? ?? 'Estacionamento'),
         subtitle: Text(
-          '${parking['city'] as String? ?? ''}\nOferta: $offerText',
+          '${parking['city'] as String? ?? ''}\n'
+          '${acceptsAffiliates ? 'Oferta por indicação: $offerText' : 'Este parceiro não está aceitando afiliados.'}',
         ),
         isThreeLine: true,
-        trailing: status == 'not_linked'
+        trailing: status == 'not_linked' && acceptsAffiliates
             ? FilledButton(
                 onPressed: () => onRequest(parking['id'] as String),
                 child: Text(label),
               )
-            : Chip(label: Text(label)),
+            : Chip(
+                label: Text(
+                  status == 'not_linked' && !acceptsAffiliates
+                      ? 'Indisponível'
+                      : label,
+                ),
+              ),
       ),
     );
   }

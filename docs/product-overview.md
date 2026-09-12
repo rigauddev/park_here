@@ -32,6 +32,8 @@ ParkHere ajuda motoristas a encontrar estacionamentos com vagas disponiveis na c
 - Hotel.
 - Restaurante.
 - Turismo/guia.
+- O guia turístico é um parceiro independente: tem tenant, perfil e serviços próprios; pode também se afiliar a múltiplos parceiros para divulgar os serviços deles e receber a comissão ofertada pelo parceiro indicado.
+- A identidade do afiliado nunca compartilha o tenant do parceiro indicado. A indicação referencia o usuário guia e o serviço/unidade de destino.
 - Transporte.
 - Outros servicos locais aprovados pela plataforma.
 
