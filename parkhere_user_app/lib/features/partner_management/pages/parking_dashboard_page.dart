@@ -80,8 +80,8 @@ class _ParkingDashboardPageState extends State<ParkingDashboardPage> {
                   ),
                   subtitle: Text(
                     isPt
-                        ? 'Indicadores operacionais disponíveis. O Financeiro Pro complementa com repasses, taxas e análises avançadas.'
-                        : 'Operational indicators are included. Financial Pro adds settlements, fees and advanced analytics.',
+                        ? 'Os indicadores operacionais básicos estão incluídos. O Financeiro Pro adiciona relatórios de reservas, recebimentos e taxas por período.'
+                        : 'Basic operating indicators are included. Finance Pro adds period reports for reservations, receipts and fees.',
                   ),
                 ),
               ),

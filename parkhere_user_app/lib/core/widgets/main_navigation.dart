@@ -9,7 +9,7 @@ import '../../features/auth/pages/profile_page.dart';
 import '../../features/parking_search/pages/home_map_page.dart';
 import '../../features/parking_search/models/parking_model.dart';
 import '../../features/parking_search/providers/parking_provider.dart';
-import '../../features/partner_management/pages/partner_financial_locked_page.dart';
+import '../../features/partner_management/pages/partner_financial_page.dart';
 import '../../features/partner_management/pages/partner_management_home_page.dart';
 import '../../features/partner_management/pages/partner_parking_map_page.dart';
 import '../../features/partner_management/pages/partner_reservations_page.dart';
@@ -335,7 +335,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             : const PartnerParkingMapPage();
       case _MainArea.financial:
         return isPartnerOwner
-            ? const PartnerFinancialLockedPage()
+            ? const PartnerFinancialPage()
             : const PartnerParkingMapPage();
       case _MainArea.profile:
         return const ProfilePage();

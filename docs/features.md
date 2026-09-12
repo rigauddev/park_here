@@ -37,6 +37,10 @@
 - Consultar reservas ativas, expiradas, canceladas e finalizadas.
 - Ver no mapa operacional a previsao de chegada das pre-reservas recebidas.
 - Consultar reservas agendadas e aplicar politica de cancelamento configurada.
+- Usar caixa e dashboard operacional básico incluídos no serviço. O Financeiro
+  Pro é um complemento administrativo separado que mostra relatórios reais de
+  reservas, recebimentos e taxas por período; sua cobrança automática ainda
+  depende da integração de pagamentos.
 
 ## Admin Plataforma
 

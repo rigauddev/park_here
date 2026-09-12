@@ -24,6 +24,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   List<Map<String, dynamic>> _emailTemplates = [];
   List<Map<String, dynamic>> _featureRows = [];
   String? _featureTenantId;
+  bool _featureLoading = false;
   String? _loadError;
   bool _loading = true;
   int _section = 0;
@@ -626,6 +627,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                           setState(() {
                             _featureTenantId = tenantId;
                             _section = 3;
+                            _featureLoading = true;
                           });
                           _loadPartnerFeatures(tenantId);
                         },
@@ -770,6 +772,12 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   String _tr(String portuguese, String english) =>
       context.strings.isEnglish ? english : portuguese;
 
+  String _billingPeriodLabel(String? value) => switch (value) {
+    'annual' => _tr('ano', 'year'),
+    'one_time' => _tr('pagamento único', 'one time'),
+    _ => _tr('mês', 'month'),
+  };
+
   List<Widget> _partnerFeatureManager() {
     Map<String, dynamic>? selected;
     for (final partner in _partners) {
@@ -807,6 +815,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           setState(() {
             _featureTenantId = tenantId;
             _featureRows = [];
+            _featureLoading = true;
           });
           _loadPartnerFeatures(tenantId);
         },
@@ -825,7 +834,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
             ),
           ),
         )
-      else if (_featureRows.isEmpty)
+      else if (_featureLoading)
         Card(
           child: ListTile(
             leading: const SizedBox.square(
@@ -834,6 +843,24 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
             ),
             title: Text(
               _tr('Carregando funcionalidades…', 'Loading features…'),
+            ),
+          ),
+        )
+      else if (_featureRows.isEmpty)
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: Text(
+              _tr(
+                'Este tipo de parceiro ainda não possui complementos pagos ativos no app.',
+                'This partner type has no paid add-ons currently available in the app.',
+              ),
+            ),
+            subtitle: Text(
+              _tr(
+                'Cotas de unidades e operadores são geridas nos controles próprios. O caixa e o dashboard operacional básico já estão incluídos.',
+                'Unit and operator quotas are managed in their own controls. Basic cash and the operating dashboard are included.',
+              ),
             ),
           ),
         )
@@ -847,12 +874,16 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                     : Icons.toggle_off_outlined,
               ),
               title: Text(
-                feature['name'] as String? ?? feature['key'] as String,
+                (context.strings.isEnglish
+                            ? feature['name_en']
+                            : feature['name'])
+                        as String? ??
+                    feature['key'] as String,
               ),
               subtitle: Text(
-                '${feature['description'] ?? ''}\n'
-                '${feature['is_paid'] == true ? _tr('Paga', 'Paid') : _tr('Incluída/gratuita', 'Included/free')} · '
-                '${feature['price'] ?? 0} / ${feature['billing_period'] ?? 'monthly'}',
+                '${context.strings.isEnglish ? feature['description_en'] ?? feature['description'] : feature['description'] ?? ''}\n'
+                '${feature['is_paid'] == true ? _tr('Paga', 'Paid') : _tr('Sem cobrança adicional', 'No additional charge')} · '
+                '${feature['is_paid'] == true ? 'R\$ ${(feature['price'] as num? ?? 0).toStringAsFixed(2)} / ${_billingPeriodLabel(feature['billing_period'] as String?)}' : _tr('Acesso incluído', 'Included access')}',
               ),
               isThreeLine: true,
               trailing: Wrap(
@@ -875,8 +906,8 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       const SizedBox(height: 8),
       Text(
         _tr(
-          'A liberação do módulo fica registrada por empresa. Recursos ainda sem tela ou endpoint aparecem desativados e não ficam acessíveis até serem conectados.',
-          'Feature access is recorded per company. Features without a working screen or API remain disabled until connected.',
+          'Este catálogo lista somente complementos ligados a uma tela e a dados reais. A ativação administrativa libera o módulo; a cobrança automática ainda não está integrada.',
+          'This catalog lists only add-ons connected to a screen and real data. Admin activation enables the module; automatic billing is not integrated yet.',
         ),
       ),
     ];
@@ -1338,16 +1369,21 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   Future<void> _loadPartnerFeatures(String tenantId) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
+    if (mounted) setState(() => _featureLoading = true);
     try {
       final rows = (await _api.getAuthorized(
         '/admin/platform-fees/partners/$tenantId/features',
         token,
       )).cast<Map<String, dynamic>>();
       if (mounted && tenantId == _featureTenantId) {
-        setState(() => _featureRows = rows);
+        setState(() {
+          _featureRows = rows;
+          _featureLoading = false;
+        });
       }
     } catch (error) {
       if (mounted) {
+        setState(() => _featureLoading = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Funcionalidades: $error')));

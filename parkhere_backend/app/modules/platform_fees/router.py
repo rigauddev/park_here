@@ -14,6 +14,7 @@ from app.modules.platform_fees.models import (
     EmailTemplate,
     AdminAuditLog,
 )
+from app.modules.platform_fees.feature_catalog import features_for_service_type
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.tenants.models.tenant_model_status_enum import TenantStatusEnum
@@ -88,15 +89,6 @@ def _audit(db: AsyncSession, actor: User, action: str, target_type: str,
     ))
 
 
-OPERATOR_FEATURES = (
-    {'key': 'financial_management', 'name': 'Gestão financeira', 'description': 'Relatórios financeiros e caixa avançado'},
-    {'key': 'advanced_dashboard', 'name': 'Dashboard avançado', 'description': 'Indicadores e relatórios ampliados'},
-    {'key': 'additional_units', 'name': 'Unidades adicionais', 'description': 'Criação de novas unidades da empresa'},
-    {'key': 'additional_services', 'name': 'Serviços adicionais', 'description': 'Mais serviços cadastrados no parceiro'},
-    {'key': 'additional_operators', 'name': 'Operadores adicionais', 'description': 'Vagas de usuário acima do limite incluído'},
-)
-
-
 @router.get('')
 async def list_platform_fees(
     db: AsyncSession = Depends(get_db),
@@ -132,11 +124,6 @@ async def admin_overview(
         'partners': len(profiles),
         'partner_categories': {category: sum(1 for profile in profiles if profile.service_type == category) for category in ('parking', 'tour_guide', 'car_wash', 'hotel', 'restaurant', 'tourism_company', 'transport')},
         'cities': list(city_rows.values()),
-        'plans': ['free', 'pro'],
-        'plan_rules': {
-            'free': {'parkings': 1, 'operators': 2, 'financial_reports': False},
-            'pro': {'parkings': 'custom', 'operators': 'custom', 'financial_reports': True},
-        },
     }
 
 
@@ -417,19 +404,22 @@ async def get_partner_features(tenant_id: str, db: AsyncSession = Depends(get_db
     _ensure_admin(current_user)
     if await db.get(Tenant, tenant_id) is None:
         raise HTTPException(status_code=404, detail='Parceiro não encontrado')
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == tenant_id))
+    catalog = features_for_service_type(profile.service_type if profile else None)
     rows = (await db.scalars(select(PartnerFeatureEntitlement).where(
         PartnerFeatureEntitlement.tenant_id == tenant_id
     ))).all()
     by_key = {row.feature_key: row for row in rows}
     return [{
         **feature,
+        'service_types': list(feature['service_types']),
         'tenant_id': tenant_id,
         'is_enabled': by_key[feature['key']].is_enabled if feature['key'] in by_key else False,
         'is_paid': by_key[feature['key']].is_paid if feature['key'] in by_key else False,
         'price': by_key[feature['key']].price if feature['key'] in by_key else 0,
         'billing_period': by_key[feature['key']].billing_period if feature['key'] in by_key else 'monthly',
         'notes': by_key[feature['key']].notes if feature['key'] in by_key else None,
-    } for feature in OPERATOR_FEATURES]
+    } for feature in catalog]
 
 
 @router.put('/partners/{tenant_id}/features/{feature_key}')
@@ -437,7 +427,9 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
     _ensure_admin(current_user)
     if await db.get(Tenant, tenant_id) is None:
         raise HTTPException(status_code=404, detail='Parceiro não encontrado')
-    if feature_key not in {feature['key'] for feature in OPERATOR_FEATURES}:
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == tenant_id))
+    catalog = features_for_service_type(profile.service_type if profile else None)
+    if feature_key not in {feature['key'] for feature in catalog}:
         raise HTTPException(status_code=404, detail='Funcionalidade não cadastrada')
     if data.is_paid and data.price <= 0:
         raise HTTPException(status_code=422, detail='Informe um preço maior que zero para uma funcionalidade paga')

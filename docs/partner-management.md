@@ -3,9 +3,12 @@
 ## Status Atual
 
 O plano base inclui a visão operacional, o caixa e o relatório básico de entradas,
-saídas, recebimentos e fechamento do turno. O módulo Financeiro Pro é um
-recurso contratado separadamente e fica reservado para análises avançadas,
-repasses, taxas, comissões, conciliação e exportações financeiras.
+saídas, recebimentos e fechamento do turno. Financeiro Pro é um complemento que
+a equipe ParkHere configura por parceiro. Quando liberado, apresenta reservas,
+recebimentos e taxas administrativas por período usando dados reais da API.
+Preço pode ser cadastrado no painel, mas cobrança automática ainda não está
+integrada. Conciliação bancária, repasses, exportações e cobrança recorrente
+continuam pendentes; não devem ser anunciados como entregues.
 
 Hoje a gestao existe em dois blocos diferentes:
 

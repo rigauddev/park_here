@@ -117,13 +117,26 @@ Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
 - `PUT /admin/platform-fees/partners/{tenant_id}/units/{parking_id}/fees/{service_type}`
   grava uma taxa específica da unidade. O cálculo de cobrança da reserva usa a
   mesma precedência para a taxa do estabelecimento.
-- `GET /admin/platform-fees/partners/{tenant_id}/features` lista os módulos
-  disponíveis e seu estado/preço por parceiro. `PUT
-  /admin/platform-fees/partners/{tenant_id}/features/{feature_key}` grava
-  ativação, classificação como paga, preço e periodicidade (`monthly`,
-  `annual`, `one_time`). Isso administra entitlement e preço; cobrança,
-  vigência e bloqueio de cada módulo ainda dependem da implementação do módulo
-  e do fluxo de pagamento.
+- `GET /admin/platform-fees/partners/{tenant_id}/features` lista somente
+  complementos compatíveis com o módulo ativo do parceiro e seu estado/preço.
+  No módulo atual, `financial_management` (Financeiro Pro) é liberável para
+  estacionamentos. Cotas de unidades e operadores têm fluxos próprios e não
+  aparecem duplicadas neste catálogo. Dashboard e caixa básicos são incluídos.
+- `PUT /admin/platform-fees/partners/{tenant_id}/features/{feature_key}` grava
+  ativação administrativa, classificação como paga, preço, periodicidade
+  (`monthly`, `annual`, `one_time`) e observações. O endpoint valida se a
+  funcionalidade pertence ao catálogo disponível para o tipo de parceiro.
+  A cobrança automática e a vigência comercial ainda não estão conectadas.
+- `GET /partners/me` retorna `features` como mapa por chave para todo módulo
+  disponível ao tipo do parceiro, mesmo desativado. Cada item inclui `name`,
+  `name_en`, `description`, `description_en`, `is_enabled`, `is_paid`, `price`,
+  `billing_period` e `notes`.
+  Assim o app distingue complemento desativado, preço configurado e acesso
+  liberado. Parceiros sem módulo financeiro implementado recebem mapa vazio.
+- `GET /partners/financial-report` retorna o conjunto de reservas operacionais
+  usado pelo relatório Pro, mas exige papel de gestor/admin do estacionamento
+  e entitlement `financial_management` habilitado. Operadores e parceiros sem
+  liberação recebem `403`; a tela não é a única barreira de acesso.
 - `GET /admin/platform-fees/email-templates` lista modelos em `pt_BR` e `en`.
   `PUT /admin/platform-fees/email-templates/{template_key}/{locale}` atualiza
   nome, assunto e fragmentos HTML. Tipos iniciais: `welcome`, `mfa_code`,

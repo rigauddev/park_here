@@ -56,6 +56,14 @@ itens pendentes como funcionalidades disponíveis para cobrança.
   limites por unidade, ajustes manuais e pacotes adicionais aprovados.
 - [x] Administração pode ativar/desativar funcionalidades por parceiro e
   cadastrar preço e periodicidade; mudanças são auditadas.
+- [x] Catálogo de funcionalidades ligado às telas disponíveis: Financeiro Pro
+  para estacionamento. Dashboard e caixa operacionais básicos permanecem
+  incluídos; cotas de unidades e operadores são controladas em suas próprias
+  rotas, sem duplicação na aba de funcionalidades.
+- [x] Perfil `/partners/me` informa também os complementos desligados e seus
+  preços, permitindo que Minha empresa mostre o estado real do acesso.
+- [x] Financeiro Pro exibe dados reais de reservas e pagamentos quando liberado
+  pela administração; gestores veem o estado/preço enquanto aguarda liberação.
 - [x] Clientes e empresas podem ser suspensos com motivo; o motivo é enviado
   pelos templates de e-mail e a suspensão é auditada.
 - [x] Editor de templates HTML em português e inglês para boas-vindas, MFA,
@@ -106,7 +114,13 @@ itens pendentes como funcionalidades disponíveis para cobrança.
   preço e periodicidade editáveis.
 - [ ] Registrar origem da liberação (plano, pagamento, teste ou concessão),
   período de vigência e histórico de revogação.
-- [ ] Ligar preços das funcionalidades à solicitação e conciliação financeira.
+- [ ] Ligar preços das funcionalidades à solicitação, cobrança e conciliação
+  financeira; o painel hoje registra preço e liberação administrativa, mas não
+  cobra automaticamente.
+- [ ] Implementar a camada de gráficos/indicadores avançados do dashboard e sua
+  API antes de adicionar `advanced_dashboard` ao catálogo de complementos.
+- [ ] Definir e validar cotas de serviços adicionais antes de oferecer esse
+  recurso como item pago; hoje não existe bloqueio de capacidade associado.
 - [ ] Criar vínculo genérico de afiliado entre guia, parceiro e serviço. O fluxo
   entregue hoje usa `GuideParkingLink`; não modelar hotéis, lava-jatos ou outros
   serviços como estacionamentos para contornar essa limitação.

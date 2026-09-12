@@ -5,7 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../models/partner_profile_model.dart';
 import '../providers/partner_profile_provider.dart';
-import 'partner_financial_locked_page.dart';
+import 'partner_financial_page.dart';
 import 'partner_parking_map_page.dart';
 import 'partner_reservations_page.dart';
 import 'partner_users_page.dart';
@@ -109,13 +109,6 @@ class _PartnerManagementBody extends StatelessWidget {
               description: 'Entradas, saídas e fechamento operacional.',
               onTap: () => _open(context, const PartnerCashReportPage()),
             ),
-            _ManagementAction(
-              icon: Icons.lock_outline,
-              title: 'Financeiro Pro',
-              description:
-                  'Complemento opcional com análises financeiras avançadas.',
-              onTap: () => _open(context, const PartnerFinancialLockedPage()),
-            ),
           ];
         }
 
@@ -181,11 +174,12 @@ class _PartnerManagementBody extends StatelessWidget {
             onTap: () => _open(context, const GuideOfferSettingsPage()),
           ),
           _ManagementAction(
-            icon: Icons.lock_outline,
+            icon: partner.hasFeature('financial_management')
+                ? Icons.account_balance_outlined
+                : Icons.lock_outline,
             title: 'Financeiro Pro',
-            description:
-                'Complemento opcional: repasses, taxas, comissões e conciliação.',
-            onTap: () => _open(context, const PartnerFinancialLockedPage()),
+            description: _financialDescription(context, partner),
+            onTap: () => _open(context, const PartnerFinancialPage()),
           ),
         ];
       case 'car_wash':
@@ -277,6 +271,32 @@ class _PartnerManagementBody extends StatelessWidget {
     final account = partner.paymentAccount;
     if (account == null) return 'Cadastre a conta Mercado Pago do parceiro.';
     return '${account.provider}: ${account.status}';
+  }
+
+  String _financialDescription(
+    BuildContext context,
+    PartnerProfileModel partner,
+  ) {
+    final feature = partner.featureDetails('financial_management');
+    if (partner.hasFeature('financial_management')) {
+      return context.strings.isEnglish
+          ? 'Pro access enabled: period reports, receipts and platform fees.'
+          : 'Acesso Pro liberado: relatórios por período, recebimentos e taxas administrativas.';
+    }
+    if (feature?['is_paid'] == true) {
+      final price = (feature?['price'] as num? ?? 0).toDouble();
+      final period = feature?['billing_period'] == 'annual'
+          ? (context.strings.isEnglish ? 'year' : 'ano')
+          : feature?['billing_period'] == 'one_time'
+          ? (context.strings.isEnglish ? 'once' : 'única')
+          : (context.strings.isEnglish ? 'month' : 'mês');
+      return context.strings.isEnglish
+          ? 'Optional add-on: R\$ ${price.toStringAsFixed(2)} / $period. Contact ParkHere to enable.'
+          : 'Complemento opcional: R\$ ${price.toStringAsFixed(2)} / $period. Solicite a ativação à ParkHere.';
+    }
+    return context.strings.isEnglish
+        ? 'Basic cash and operating dashboard are included. Pro reports require activation.'
+        : 'Caixa e dashboard operacional básico incluídos. Relatórios Pro dependem de ativação.';
   }
 
   void _open(BuildContext context, Widget page) {

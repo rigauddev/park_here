@@ -30,6 +30,7 @@ from app.modules.partners.operator_assignment_models import OperatorParkingAssig
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.platform_fees.models import PartnerFeatureEntitlement
+from app.modules.platform_fees.feature_catalog import features_for_service_type
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
@@ -197,8 +198,22 @@ async def get_my_partner_profile(
     )
     entitlements = (await db.scalars(select(PartnerFeatureEntitlement).where(
         PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
-        PartnerFeatureEntitlement.is_enabled.is_(True),
     ))).all()
+    entitlements_by_key = {item.feature_key: item for item in entitlements}
+    partner_features = {}
+    for feature in features_for_service_type(profile.service_type if profile else None):
+        item = entitlements_by_key.get(feature['key'])
+        partner_features[feature['key']] = {
+            'name': feature['name'],
+            'name_en': feature['name_en'],
+            'description': feature['description'],
+            'description_en': feature['description_en'],
+            'is_enabled': item.is_enabled if item else False,
+            'is_paid': item.is_paid if item else False,
+            'price': item.price if item else 0,
+            'billing_period': item.billing_period if item else 'monthly',
+            'notes': item.notes if item else None,
+        }
 
     return {
         "tenant_id": current_user.tenant_id,
@@ -214,15 +229,7 @@ async def get_my_partner_profile(
         if profile
         else "missing_profile",
         "operator_limit": int(base_operator_limit) + int(approved_extra),
-        "features": {
-            item.feature_key: {
-                "is_enabled": item.is_enabled,
-                "is_paid": item.is_paid,
-                "price": item.price,
-                "billing_period": item.billing_period,
-            }
-            for item in entitlements
-        },
+        "features": partner_features,
         "payment_account": {
             "provider": payment_account.provider,
             "status": payment_account.status,
@@ -692,6 +699,23 @@ async def list_partner_reservations(
         }
         for reservation, parking, customer, vehicle in result.all()
     ]
+
+
+@router.get('/financial-report')
+async def get_partner_financial_report(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Finance Pro report: manager-only and protected by admin entitlement."""
+    await _ensure_parking_partner(db, current_user)
+    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
+        PartnerFeatureEntitlement.feature_key == 'financial_management',
+        PartnerFeatureEntitlement.is_enabled.is_(True),
+    ))
+    if entitlement is None:
+        raise HTTPException(status_code=403, detail='Finance Pro is not enabled for this partner')
+    return await list_partner_reservations(db, current_user)
 
 
 @router.get("/operators", response_model=list[PartnerOperatorResponse])

@@ -139,3 +139,24 @@ Fluxo completo HTTP/MySQL:
 ```bash
 docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s tests -p test_pilot_http.py -v
 ```
+
+## Entitlements administrativos e Financeiro Pro
+
+1. Entre como administrador do sistema e abra **Parceiros → Funcionalidades**.
+2. Selecione um estacionamento. Confirme que há somente `Financeiro Pro` no
+   catálogo atual; unidades e operadores continuam nos controles de capacidade.
+3. Configure o módulo como pago, informe valor e periodicidade, mas mantenha-o
+   desativado. Salve e confira que a ação aparece na auditoria administrativa.
+4. Entre como gestor desse estacionamento, abra **Minha empresa** e toque em
+   **Financeiro Pro**. O app deve mostrar preço e estado bloqueado; o caixa
+   básico e dashboard continuam disponíveis.
+5. Volte ao admin e habilite o complemento. Atualize o perfil do parceiro e
+   abra Financeiro Pro. Deve carregar o relatório real de reservas, recebidos,
+   taxas administrativas e filtros de período.
+6. Repita com operador: o menu Financeiro Pro não aparece e uma chamada direta
+   autenticada a `GET /partners/financial-report` deve retornar `403`.
+7. Repita com guia ou outra categoria sem módulo financeiro conectado: a aba
+   administrativa deve informar que ainda não há complemento liberável.
+8. Confirme que não houve cobrança automática: preço e entitlement já são
+   administráveis, mas solicitação, pagamento e vigência ainda aguardam a
+   integração financeira.

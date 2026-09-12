@@ -35,6 +35,21 @@ final partnerReservationsProvider =
       ];
     });
 
+final partnerFinancialReportProvider =
+    FutureProvider<List<PartnerReservationSummary>>((ref) async {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) throw Exception('Sessao expirada. Entre novamente.');
+
+      final data = await ApiService().getAuthorized(
+        '/partners/financial-report',
+        token,
+      );
+      return [
+        for (final item in data)
+          PartnerReservationSummary.fromJson(item as Map<String, dynamic>),
+      ];
+    });
+
 Future<Map<String, dynamic>> createOperationalReservation({
   required String token,
   required String parkingId,

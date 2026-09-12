@@ -71,6 +71,9 @@ class PartnerProfileModel {
   bool hasFeature(String key) =>
       (features[key] as Map<String, dynamic>?)?['is_enabled'] == true;
 
+  Map<String, dynamic>? featureDetails(String key) =>
+      features[key] as Map<String, dynamic>?;
+
   String get serviceTypeLabel {
     switch (serviceType) {
       case 'parking':
