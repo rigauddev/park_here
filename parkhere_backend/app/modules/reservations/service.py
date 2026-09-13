@@ -24,6 +24,10 @@ from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.platform_fees.models import PlatformFee
+from app.modules.reservations.terms_catalog import (
+    TERMS_VERSION,
+    build_terms_snapshot,
+)
 
 
 @dataclass
@@ -48,6 +52,26 @@ class ReservationService:
         data: PreCheckinReservationRequest,
         current_user: User,
     ) -> ReservationResponse:
+        if not data.terms_accepted:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "You must accept the booking and selected service terms."
+                    if data.terms_locale == "en"
+                    else "É necessário aceitar os termos da reserva e dos serviços selecionados."
+                ),
+            )
+        if data.terms_version != TERMS_VERSION:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The terms were updated. Review and accept the current version before booking."
+                    if data.terms_locale == "en"
+                    else "Os termos foram atualizados. Revise e aceite a versão atual antes de reservar."
+                ),
+            )
+        if data.terms_locale not in {"pt_BR", "en"}:
+            raise HTTPException(status_code=422, detail="Idioma dos termos inválido.")
         parking = await _get_parking_with_services(db, data.parking_id)
         await _ensure_reservation_permission(db, data, current_user, parking)
 
@@ -91,6 +115,13 @@ class ReservationService:
                 [service.model_dump() for service in pricing.services_snapshot]
             ),
             platform_fee_snapshot=json.dumps(pricing.platform_fee_snapshot),
+            terms_accepted_at=datetime.utcnow(),
+            terms_version=TERMS_VERSION,
+            terms_locale=data.terms_locale,
+            accepted_terms_snapshot=json.dumps(
+                build_terms_snapshot(data.service_codes, data.terms_locale),
+                ensure_ascii=False,
+            ),
         )
 
         db.add(reservation)
@@ -154,10 +185,19 @@ class ReservationService:
 
         if current_user.role == UserRoleEnum.CUSTOMER:
             if latitude is None or longitude is None:
-                raise HTTPException(status_code=422, detail="Location is required for customer check-in")
+                raise HTTPException(
+                    status_code=422,
+                    detail="Ative a localização para fazer check-in. É necessário informar sua posição.",
+                )
             distance = _distance_meters(latitude, longitude, parking.lat, parking.lng)
             if distance > 150:
-                raise HTTPException(status_code=403, detail="You must be inside the parking to check in")
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Você precisa estar dentro do estacionamento para fazer check-in. "
+                        "Ative a localização e tente novamente."
+                    ),
+                )
 
         if reservation.status == "pre_reserved" and reservation.hold_expires_at <= datetime.utcnow():
             raise HTTPException(status_code=409, detail="Pre-reservation expired")
@@ -257,6 +297,12 @@ async def _get_parking_with_services(db: AsyncSession, parking_id: str) -> Parki
 async def _guide_commission(db, parking_id: str, guide_user_id: str | None, base_amount: float, pricing_plan: str) -> tuple[float, float, float]:
     if not guide_user_id:
         return 0.0, 0.0, 0.0
+    parking = await db.scalar(select(Parking).where(Parking.id == parking_id))
+    guide = await db.scalar(select(User).where(User.id == guide_user_id, User.is_active.is_(True)))
+    if parking is None or not parking.accepts_guide_affiliates:
+        raise HTTPException(status_code=422, detail='This parking is not accepting guide referrals')
+    if guide is None or guide.tenant_id == parking.tenant_id:
+        raise HTTPException(status_code=422, detail='Guide must be an active independent partner')
     link = await db.scalar(select(GuideParkingLink).where(
         GuideParkingLink.guide_user_id == guide_user_id,
         GuideParkingLink.parking_id == parking_id,
@@ -405,9 +451,12 @@ async def _calculate_cancellation_fee(
     if elapsed_minutes <= ReservationService.FREE_CANCELLATION_MINUTES:
         return 0
 
+    parking = await db.scalar(select(Parking).where(Parking.id == reservation.parking_id))
     lines = await PlatformFeeService.calculate_lines(
         db,
         {"cancellation": reservation.final_total or reservation.estimated_total or 0},
+        parking.tenant_id if parking else None,
+        parking.id if parking else None,
     )
     return sum(line.fee_amount for line in lines)
 
@@ -456,6 +505,7 @@ async def expire_parking_reservations(db, parking):
 
 
 async def allocate_spot(db, parking, requested, kind):
+    blocked = set(json.loads(getattr(parking, "blocked_spots", None) or "[]"))
     occupied = (await db.scalars(select(Reservation.spot_code).where(
         Reservation.parking_id == parking.id,
         Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
@@ -476,9 +526,11 @@ async def allocate_spot(db, parking, requested, kind):
             raise HTTPException(status_code=422, detail="Spot code/type does not match parking configuration")
         if requested in used:
             raise HTTPException(status_code=409, detail="Spot already reserved")
+        if requested in blocked:
+            raise HTTPException(status_code=409, detail="Esta vaga está bloqueada para manutenção")
         return requested
     for code, actual_kind in valid.items():
-        if actual_kind == kind and code not in used:
+        if actual_kind == kind and code not in used and code not in blocked:
             return code
     raise HTTPException(status_code=409, detail="No available spots of requested type")
 
@@ -497,7 +549,9 @@ async def _calculate_pricing(
     for service in selected_services:
         service_amounts[service.code] = service_amounts.get(service.code, 0) + service.price
 
-    platform_fee_lines = await PlatformFeeService.calculate_lines(db, service_amounts)
+    platform_fee_lines = await PlatformFeeService.calculate_lines(
+        db, service_amounts, parking.tenant_id, parking.id
+    )
     platform_fee_amount = sum(line.fee_amount for line in platform_fee_lines)
     final_total = base_amount + services_amount + platform_fee_amount
 
@@ -534,8 +588,17 @@ def _validate_request(data: PreCheckinReservationRequest, parking: Parking) -> N
     if data.spot_code is not None and not data.spot_code.strip():
         raise HTTPException(status_code=422, detail="Invalid spot code")
 
-    if data.spot_type == "covered" and parking.covered_spots <= 0:
-        raise HTTPException(status_code=422, detail="Covered area is not available")
+    counts = {
+        "covered": parking.covered_spots,
+        "uncovered": parking.uncovered_spots,
+        "vip": parking.vip_spots,
+        "large": parking.large_spots,
+        "pickup": parking.pickup_spots,
+        "bus": parking.bus_spots,
+        "motorhome": getattr(parking, "moto_home_spots", 0),
+    }
+    if counts.get(data.spot_type, 0) <= 0:
+        raise HTTPException(status_code=422, detail="Este tipo de vaga não está disponível neste estacionamento")
 
 
 async def _ensure_spot_available(
@@ -560,7 +623,14 @@ def _base_amount(
     pricing_plan: str,
     duration_hours: int,
 ) -> float:
-    if spot_type in {"covered", "vip"}:
+    configured = json.loads(getattr(parking, "category_pricing", None) or "{}").get(spot_type)
+    if configured:
+        first_hour = configured.get("first_hour_price", 0)
+        additional_hour = configured.get("additional_hour_price", 0)
+        daily = configured.get("daily_price", 0)
+        weekly = configured.get("weekly_price", 0)
+        monthly = configured.get("monthly_price", 0)
+    elif spot_type in {"covered", "vip"}:
         first_hour = parking.covered_first_hour_price
         additional_hour = parking.covered_additional_hour_price
         daily = parking.covered_daily_price
@@ -611,6 +681,9 @@ def calculate_checkout_excess(
 
 
 def _additional_hour_price(parking: Parking, spot_type: str) -> float:
+    configured = json.loads(getattr(parking, "category_pricing", None) or "{}").get(spot_type)
+    if configured:
+        return configured.get("additional_hour_price", 0) or configured.get("first_hour_price", 0)
     if spot_type in {"covered", "vip"}:
         return parking.covered_additional_hour_price or parking.additional_hour_price
     return parking.uncovered_additional_hour_price or parking.additional_hour_price
@@ -657,6 +730,9 @@ def to_response(reservation: Reservation) -> ReservationResponse:
             ReservationPlatformFeeSnapshot(**fee)
             for fee in json.loads(reservation.platform_fee_snapshot)
         ]
+    accepted_terms = []
+    if reservation.accepted_terms_snapshot:
+        accepted_terms = json.loads(reservation.accepted_terms_snapshot)
 
     return ReservationResponse(
         id=reservation.id,
@@ -696,6 +772,15 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         selected_services=selected_services,
         platform_fees=platform_fees,
         payment_status=reservation.payment_status,
+        payment_method=getattr(reservation, "payment_method", None),
+        terms_accepted_at=(
+            reservation.terms_accepted_at.isoformat() + "Z"
+            if reservation.terms_accepted_at
+            else None
+        ),
+        terms_version=reservation.terms_version,
+        terms_locale=reservation.terms_locale,
+        accepted_terms=accepted_terms,
         notification_status=reservation.notification_status,
         cancelled_at=reservation.cancelled_at.isoformat() + "Z"
         if reservation.cancelled_at

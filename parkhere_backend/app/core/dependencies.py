@@ -8,6 +8,7 @@ from datetime import datetime
 from app.core.config import settings
 from app.core.database import get_db
 from app.modules.users.models.user_model import User
+from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.tenants.models.tenant_models import Tenant, TenantStatusEnum
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -37,10 +38,21 @@ async def get_current_user(
 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is inactive")
 
+    # Role/tenant claims are part of the authorization boundary. In particular,
+    # the platform administrator is intentionally global and has no tenant.
+    if role != user.role.value:
+        raise HTTPException(status_code=401, detail="Invalid token")
     if not tenant_id:
-        if role == "customer":
+        if user.role == UserRoleEnum.SUPER_ADMIN and role == "super_admin":
             return user
+        if user.role == UserRoleEnum.CUSTOMER and role == "customer":
+            return user
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if user.tenant_id != tenant_id:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))

@@ -12,6 +12,7 @@ ParkHere e um SaaS/app de gestao e reserva de estacionamentos. O MVP tem backend
 - `agents/skills/parkhere-backend-api`: evoluir API FastAPI, modelos, migrations e contratos.
 - `agents/skills/parkhere-flutter-app`: evoluir telas, providers, modelos e UX Flutter.
 - `agents/skills/parkhere-qa-reviewer`: revisar riscos, testes e cenarios de validacao.
+- `agents/skills/parkhere-legal-review`: revisar termos, contratos, privacidade e registros de aceite; resultados sao triagem e exigem validacao de advogado brasileiro.
 
 ## Regras De Trabalho
 

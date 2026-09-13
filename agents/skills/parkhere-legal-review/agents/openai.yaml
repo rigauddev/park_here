@@ -1,0 +1,4 @@
+interface:
+  display_name: "ParkHere Legal Review"
+  short_description: "Revisa termos, contratos e privacidade do ParkHere"
+  default_prompt: "Use $parkhere-legal-review para identificar riscos e pendências em termos, contratos e fluxos de dados do ParkHere."

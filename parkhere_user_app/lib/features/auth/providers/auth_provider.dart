@@ -31,6 +31,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         ? AuthAccountType.partner
         : AuthAccountType.customer;
 
+    // A login/MFA flow may finish while this asynchronous startup check is
+    // reading storage. Never overwrite the freshly authenticated session
+    // (this was causing admin login to return with the previous customer role).
+    if (state.status == AuthStatus.authenticated) return;
+
     if (tokens["access"] != null && _isExpired(tokenClaims["exp"])) {
       await logout();
       return;
@@ -201,6 +206,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
           ? null
           : socialLinks?.trim(),
     });
+  }
+
+  Future<void> registerCustomer({
+    required String name,
+    required String cpf,
+    required String email,
+    required String password,
+    required String phone,
+  }) async {
+    final response = await _api.post('/auth/customer-signup', {
+      'name': name.trim(),
+      'firt_name': name.trim().split(' ').first,
+      'cpf': cpf,
+      'email': email.trim().toLowerCase(),
+      'password': password,
+      'phone': phone,
+    });
+    final accessToken = response['access_token'] as String;
+    final refreshToken = response['refresh_token'] as String;
+    final claims = _decodeAccessClaims(accessToken);
+    await _storage.saveTokens(accessToken, refreshToken,
+        accountType: 'customer', userEmail: email.trim().toLowerCase(),
+        role: claims['role'], tenantId: claims['tenant_id']);
+    state = state.copyWith(status: AuthStatus.authenticated,
+        accessToken: accessToken, refreshToken: refreshToken,
+        accountType: AuthAccountType.customer, role: claims['role'],
+        tenantId: claims['tenant_id'], userEmail: email.trim().toLowerCase());
   }
 
   Future<String> requestPasswordReset(String email) async {

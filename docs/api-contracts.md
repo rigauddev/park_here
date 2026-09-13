@@ -41,12 +41,153 @@ taxas são configuradas pelo administrador do sistema em
 `/admin/platform-fees`; o usuário vê o detalhamento antes de confirmar o
 pagamento.
 
+### Carteira no MVP
+
+Os cartões cadastrados pelo cliente e a chave Pix de repasse do parceiro são
+persistidos atualmente no dispositivo Flutter em `SharedPreferences`, no campo
+`account_wallet_methods`. Eles são recuperados ao abrir a carteira e removidos
+no logout. Nenhum número completo de cartão é enviado para a API neste MVP;
+antes da produção, a carteira deve ser migrada para tokenização do provedor de
+pagamentos e armazenamento seguro no backend.
+
 O administrador do sistema gerencia essas regras com `GET /admin/platform-fees`
 e `PUT /admin/platform-fees/{service_type}`. Esses endpoints exigem o papel
 `SUPER_ADMIN`; gestores de estacionamento e guias não alteram taxas globais.
+`GET /admin/platform-fees/overview` apresenta indicadores das empresas,
+unidades ativas, usuários e regras dos planos Free/Pro para o painel do admin.
+
+### Gestão administrativa de parceiros, taxas individuais e clientes
+
+Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
+
+- `GET /admin/platform-fees/partners` lista empresas (`tenants`), mesmo quando
+  ainda não existe `PartnerProfile`, com `tenant_id`, nome/status, categoria e
+  aprovação quando disponíveis, usuários associados, unidades, serviços
+  ativos, quantidade de operadores e limite permitido. O limite incluído é de
+  dois operadores por unidade ativa, acrescido de solicitações de pacotes
+  aprovadas.
+- O item de parceiro inclui `services`, com serviço/código/preço/status e,
+  quando aplicável, a unidade à qual pertence.
+- `PATCH /admin/platform-fees/partners/{tenant_id}/services/{service_type}/{service_id}/status`
+  recebe `{"is_active": false}` para ativar/desativar serviços existentes dos
+  tipos `parking` ou `tour_guide`. A API valida que o serviço pertence à
+  empresa do caminho.
+- `GET /admin/platform-fees/partners/{tenant_id}/fees` lista taxas globais e
+  substituições individuais. Cada item contém `service_type`, modo, valor fixo,
+  percentual, mínimo, máximo, `is_active` e `source` (`global` ou `partner`).
+  Sem substituição individual, aplica-se a taxa global.
+- `PUT /admin/platform-fees/partners/{tenant_id}/fees/{service_type}` grava a
+  taxa específica do parceiro usando o payload padrão de taxa:
+
+```json
+{
+  "service_type": "parking",
+  "fee_mode": "hybrid",
+  "fixed_amount": 0,
+  "percentage": 5,
+  "min_fee": 0,
+  "max_fee": null,
+  "is_active": true
+}
+```
+
+- `GET /admin/platform-fees/customers?query=...` lista até 500 clientes do app;
+  a busca opcional corresponde a nome, e-mail ou telefone.
+- `PATCH /admin/platform-fees/users/{user_id}/status` recebe
+  `{"is_active": false, "reason": "..."}` para suspender uma conta; o motivo
+  (mínimo 5 caracteres) é obrigatório e é enviado ao usuário por e-mail. Para
+  reativar, envie `{"is_active": true}`. Não permite alterar o
+  superadministrador. Contas suspensas não podem iniciar login nem usar tokens
+  previamente emitidos.
+- `PATCH /admin/platform-fees/partners/{tenant_id}/status` suspende/reativa a
+  empresa. A suspensão exige `reason`, grava auditoria e envia e-mail aos
+  usuários ativos do parceiro. A reativação não reativa usuários suspensos
+  individualmente.
+- `PUT /admin/platform-fees/partners/{tenant_id}/operator-capacity` recebe
+  `{"operator_limit": 6}` para definir a cota base manual. Pacotes aprovados
+  continuam somados. A listagem separa `base_operator_limit`,
+  `approved_extra_operators`, `operator_limit_override` e total efetivo para
+  evitar contagem duplicada.
+- `GET /admin/platform-fees/partners/{tenant_id}/units/{parking_id}` e `PATCH`
+  exibem/alteram nome, endereço, cidade e coordenadas da unidade. A API valida
+  que a unidade pertence ao parceiro informado.
+- `GET /admin/platform-fees/partners/{tenant_id}/units/{parking_id}/fees`
+  retorna a taxa efetiva por tipo de serviço e sua origem (`global`, `partner`
+  ou `unit`). A precedência é unidade > parceiro > padrão global.
+- `PUT /admin/platform-fees/partners/{tenant_id}/units/{parking_id}/fees/{service_type}`
+  grava uma taxa específica da unidade. O cálculo de cobrança da reserva usa a
+  mesma precedência para a taxa do estabelecimento.
+- `GET /admin/platform-fees/partners/{tenant_id}/features` lista o catálogo
+  compatível com o tipo de parceiro: dashboard, gestão de estacionamento,
+  mapa/reservas, serviços, equipe, afiliações e caixa básico/Pro. Guias recebem
+  dashboard, serviços, afiliações e vagas para serviços adicionais. Cada item
+  contém nomes e descrições em português/inglês, acesso, classificação paga ou
+  gratuita, preço, periodicidade e dados de solicitação por quantidade.
+- `PUT /admin/platform-fees/partners/{tenant_id}/features/{feature_key}` grava
+  ativação, classificação como paga, preço, periodicidade (`monthly`,
+  `annual`, `one_time`) e observações. O preço é configurável por parceiro.
+  A cobrança automática e a vigência comercial ainda não estão conectadas.
+- `POST /partners/feature-requests` recebe
+  `{"feature_key":"financial_management","quantity":1,"notes":"..."}`.
+  Valida catálogo, preço e quantidade e grava snapshot de preço em uma
+  solicitação `pending_review`; não cobra automaticamente. `GET
+  /partners/feature-requests` retorna os pedidos da própria empresa.
+- `GET /admin/platform-fees/feature-requests` lista pedidos; o superadmin usa
+  `PUT /admin/platform-fees/feature-requests/{request_id}/approve` ou
+  `/reject` para analisar. A aprovação libera o módulo ou capacidade e grava
+  auditoria. Pagamento automático ainda depende da integração Mercado Pago.
+- Um serviço e uma unidade são incluídos por parceiro. Vagas adicionais de
+  serviço/unidade são solicitadas em quantidade e aprovadas pela gestão. O
+  backend impede exceder a capacidade em estacionamento e nos serviços do
+  guia; serviços inativos continuam ocupando vaga. Uma unidade extra mantém a
+  regra existente de dois usuários operadores adicionais.
+- `GET /partners/me` retorna `features` como mapa por chave, inclusive os
+  módulos bloqueados, com `name`, `name_en`, descrições, `is_enabled`,
+  `is_paid`, `price`, `billing_period`, `requestable` e `quantity_based`. Inclui
+  também `unit_count`, `unit_limit`, `service_count` e `service_limit`.
+- Rotas de estacionamento, serviços, equipe, afiliações, mapa, reservas e
+  Financeiro Pro verificam entitlements no backend. Reservas também atendem o
+  caixa básico, que permanece incluído.
+- `GET /partners/financial-report` retorna os dados do relatório Pro e exige
+  gestor/admin do parceiro e entitlement `financial_management` habilitado.
+  Parceiros sem liberação recebem `403`; a tela não é a única barreira.
+- `GET /admin/platform-fees/email-templates` lista modelos em `pt_BR` e `en`.
+  `PUT /admin/platform-fees/email-templates/{template_key}/{locale}` atualiza
+  nome, assunto e fragmentos HTML. Tipos iniciais: `welcome`, `mfa_code`,
+  `user_deactivation`, `partner_deactivation`. Variáveis: `{{name}}`,
+  `{{code}}`, `{{reason}}`, `{{company}}`, `{{slogan}}` e
+  `{{company_footer}}`. A logo é anexada inline com Content-ID
+  `parkhere-logo`; falhas de SMTP não desfazem alterações de conta.
+- `GET /admin/platform-fees/audit-logs?limit=100` lista eventos administrativos
+  (máximo 500) com autor, alvo, horário e detalhes.
+
+Unidades administrativas atualmente são registros reais da tabela `parkings`;
+parceiros de guia e demais categorias permanecem empresas/serviços próprios e
+não recebem unidades de estacionamento artificiais. O relacionamento de
+afiliação de guias continua limitado ao módulo atual de estacionamento. Antes
+de lançar afiliação para hotéis, lava-jatos ou outros serviços, criar um vínculo
+genérico entre guia, parceiro e serviço, com comissão por indicação e
+aprovação do parceiro.
+
+### Precedência e limites comerciais
+
+Taxas globais são os padrões da plataforma. Uma taxa individual ativa substitui
+o padrão para aquele parceiro e tipo de serviço; uma taxa de unidade substitui
+as duas anteriores. Os registros ficam em `partner_platform_fees` e
+`parking_platform_fees`. A regra comercial planejada para unidades e serviços é
+um serviço incluído por parceiro e cobrança para unidades/serviços adicionais;
+ela ainda precisa de catálogo de preços, contratação, confirmação de pagamento,
+entitlements e auditoria antes de ser aplicada em produção. O limite atual
+calculado para operadores é duas vagas por unidade ativa mais quantidades de
+pacotes aprovados manualmente.
 
 Guias parceiros usam `GET/POST /partners/guide/services` para cadastrar seus
 próprios serviços turísticos, separados das afiliações a estacionamentos.
+
+`POST /partners/parking-map/{parking_id}/slots/{slot_code}/block` alterna o
+status operacional da vaga entre bloqueada e disponível. A vaga bloqueada não
+é oferecida para novas reservas; o estacionamento permanece ativo e seus
+dados históricos são preservados.
 
 ## Busca De Estacionamentos
 
@@ -102,6 +243,24 @@ Observacoes:
 `POST /partners/parking-management`
 
 `PUT /partners/parking-management/{parking_id}`
+
+Operadores do mesmo tenant podem ser associados a uma ou mais unidades:
+`GET/PUT /partners/operators/{operator_id}/parkings` recebe
+`{"parking_ids": ["..."]}` e a resposta confirma os IDs persistidos. A tela
+carrega os vínculos existentes antes de permitir edição. `GET /partners/operators`
+também retorna o CPF cadastrado para consulta; e-mail e CPF aparecem como campos
+somente leitura nos detalhes do operador. O gestor cria escalas com
+`GET /partners/shifts` e `POST /partners/shifts`, informando `operator_id`,
+`parking_id`, `starts_at` e `ends_at`. A API valida que operador e unidade
+pertencem à mesma empresa, que o operador está associado à unidade e que ele não
+tenha outro turno sobreposto em qualquer unidade (resposta `409`). Datas sem fuso
+representam o horário local de Brasília; datas com fuso são convertidas para esse
+fuso antes de persistir.
+
+O mapa operacional (`GET /partners/parking-map`) devolve `category_pricing` e
+as tarifas de cada categoria (`uncovered_pricing`, `covered_pricing`). Ao criar
+uma reserva operacional, o app apenas envia `spot_type` e `pricing_plan`; o
+backend calcula o preço usando a tarifa cadastrada para aquela categoria.
 
 Request:
 
@@ -253,7 +412,10 @@ Request:
   "duration_hours": 2,
   "route_minutes": 14,
   "guide_user_id": null,
-  "service_codes": ["car_wash"]
+  "service_codes": ["car_wash"],
+  "terms_accepted": true,
+  "terms_version": "reservation-terms-2026-09-v1",
+  "terms_locale": "pt_BR"
 }
 ```
 
@@ -274,13 +436,24 @@ Response:
   "base_amount": 12.0,
   "services_amount": 35.0,
   "platform_fee_amount": 3.0,
-  "final_total": 50.0
+  "final_total": 50.0,
+  "terms_accepted_at": "2026-08-17T10:22:00Z",
+  "terms_version": "reservation-terms-2026-09-v1",
+  "terms_locale": "pt_BR",
+  "accepted_terms": [
+    {"service_type": "platform", "version": "reservation-terms-2026-09-v1", "text": "..."},
+    {"service_type": "parking", "version": "reservation-terms-2026-09-v1", "text": "..."},
+    {"service_type": "car_wash", "version": "reservation-terms-2026-09-v1", "text": "..."}
+  ]
 }
 ```
 
 Regras:
 
 - Backend recalcula valores e nao confia em total enviado pelo app.
+- `terms_accepted=true`, `terms_version` atual e `terms_locale` (`pt_BR` ou `en`) sao obrigatorios. Sem aceite a API retorna `422`; se a versão estiver desatualizada retorna `409` para o app exibir novamente os termos.
+- O backend persiste timestamp UTC, versão, idioma e snapshot do texto de intermediação, estacionamento e cada serviço selecionado; a resposta inclui `accepted_terms` para auditoria e consulta posterior.
+- A versão atual é `reservation-terms-2026-09-v1`. Atualizar versão quando o texto mudar materialmente e atualizar o cliente antes de exigir a nova versão.
 - Cliente deve informar `vehicle_id`; parceiro/operador deve informar `walk_in_plate` e `walk_in_phone`.
 - Para reserva criada por operador/parceiro, `arrival_now=true` grava o horario atual no servidor; se for agendada, `arrival_estimate_at` deve vir com timezone ou sera tratado como horario local de `America/Bahia`.
 - Expiracao da pre-reserva usa `arrival_estimate_at + arrival_tolerance_minutes`.
@@ -295,19 +468,47 @@ No check-in do cliente, `POST /reservations/{reservation_id}/checkin` recebe
 realizou a ação. Gestores e operadores continuam autorizados para a portaria do
 próprio tenant.
 
-Quando o cliente contratar o serviço de guia, o app pode consultar
-`GET /parkings/{parking_id}/guides` e enviar o `guide_user_id` escolhido. A lista
-contém apenas guias com afiliação aprovada pelo estacionamento. Se o identificador
-não pertencer a uma afiliação aprovada, a API rejeita a reserva com `422`.
+Na etapa de escolha do plano, o cliente pode consultar
+`GET /parkings/{parking_id}/guides` e enviar opcionalmente o `guide_user_id` como
+indicação. Isso é independente do extra pago `tour_guide`: indicar o guia não
+contrata um passeio. A lista contém somente guias ativos com afiliação aprovada e
+é vazia quando a unidade não aceita afiliados. Se o identificador não pertencer a
+uma afiliação aprovada, se o guia não for um parceiro independente ou se a unidade
+desativar afiliados, a API rejeita a reserva com `422`.
 O backend calcula e congela `guide_commission_amount` na reserva, conforme a
 comissão percentual ou fixa configurada pelo parceiro. O campo é uma comissão do
 estabelecimento para o guia e não altera o total cobrado do cliente.
+
+`GET /partners/guide/parkings` inclui `accepts_affiliates`, `offer_terms` e o
+estado do vínculo. O guia pode solicitar afiliação somente quando
+`accepts_affiliates=true`; caso contrário `POST /partners/guide/parkings/{id}`
+retorna `409`. Em estacionamento, a adesão e as ofertas são configuradas por
+unidade em `PUT /partners/parking-management/{parking_id}/guide-offer`, que aceita
+`accepts_affiliates` e `terms` (`daily`, `weekly`, `monthly`, `long_term`). Para
+ativar a adesão, todas as quatro modalidades precisam ter comissão positiva.
 
 `GET /partners/guide/parkings` retorna `offer_terms` antes da solicitação de
 afiliação, com valores independentes para `daily`, `weekly`, `monthly` e
 `long_term`. O parceiro configura esses termos em
 `PUT /partners/parking-management/{parking_id}/guide-offer`. Na aprovação, os
 termos são copiados para a afiliação e ficam congelados para novas reservas.
+
+**Regra de identidade:** todo parceiro, inclusive guia turístico, tem seu próprio
+`tenant_id`, `Tenant` e `PartnerProfile`. A afiliação é uma relação entre o ID do
+usuário guia e a unidade/serviço parceiro; nunca se reutiliza o tenant do
+estacionamento para representar o guia. O cadastro padrão `/partners/signup` já
+cria essa identidade independente. O seed local separa o guia de demonstração do
+tenant do estacionamento e preserva os vínculos existentes.
+
+**Extensão para novos módulos:** cada parceiro pode aceitar afiliados; ao publicar
+um serviço afiliável, configura nele a modalidade e o valor da comissão (fixo ou
+percentual). O serviço/reserva guarda uma cópia imutável da oferta e da comissão
+aplicada. Guias solicitam vínculo com o parceiro/serviço, o parceiro aprova e a
+indicação somente é contabilizada conforme o estado terminal elegível definido
+pelo módulo (no estacionamento, reserva concluída). Hotéis, restaurantes,
+lava-jatos, agências, transporte e novos catálogos devem reutilizar esse contrato
+genérico por serviço, sem criar um `tenant_id` compartilhado nem acoplar a
+indicação à compra de um serviço adicional.
 
 A equipe ParkHere configura a taxa da plataforma em `guide_commission` por
 `PUT /admin/platform-fees/guide_commission`. Essa porcentagem incide somente
@@ -317,7 +518,9 @@ apenas nas respostas de gestão do estacionamento e do guia, nunca na resposta
 do cliente.
 
 O ranking do guia está em `GET /partners/guide/dashboard` e combina quantidade
-de indicações, média das avaliações e total líquido a receber. O cliente pode
+de indicações concluídas, média das avaliações e total líquido a receber apenas
+de reservas em status `completed`; canceladas/expiradas não geram repasse. A
+resposta também separa indicações ainda pendentes de conclusão. O cliente pode
 avaliar uma indicação concluída uma única vez em
 `POST /partners/guide/reviews/{reservation_id}` com nota de 1 a 5.
 
@@ -513,3 +716,34 @@ check-in e checkout. O envio do checkout usa os mesmos tipos (`front`, `rear`,
 `left`, `right`) e substitui o arquivo anterior da reserva. Os arquivos ficam
 em armazenamento local temporário por sete dias e são removidos na próxima
 limpeza do endpoint.
+
+## Jornada e escalas — 10/09/2026
+
+- `GET /partners/work-profiles` lista a jornada cadastrada por operador e unidade.
+- `PUT /partners/work-profiles` recebe `operator_id`, `parking_id`, `daily_hours`,
+  `lunch_minutes` e `days_off` (dias da semana, 0=domingo).
+- `GET /partners/schedule-history` retorna alterações de jornada para auditoria.
+  A escala deve ser gerada somente para operadores associados à unidade.
+- `POST /partners/shifts/suggest` recebe `parking_id`, `operator_ids`, `starts_on`,
+  `ends_on` e `daily_hours`; `opening_time` e `closing_time` opcionais são usados
+  quando a unidade ainda não possui grade semanal configurada. Retorna turnos rotativos, folgas sugeridas,
+  `required_people` e `coverage_warning`. A sugestão é editável antes de gravar.
+  `operator_id` pode ser nulo: nesse caso o turno fica como vaga aberta para
+  atribuição posterior, sem bloquear a criação da escala.
+  Operadores que já tenham escala no período em outra unidade não entram na
+  sugestão e aparecem em `conflicting_operator_ids`; a gravação também bloqueia
+  sobreposição para proteger a regra mesmo se a escala for alterada em paralelo.
+  O gerador consulta `operating_hours` da unidade por dia da semana, ignora dias
+  fechados e limita o turno ao fechamento configurado.
+- `DELETE /partners/shifts/{shift_id}` cancela um turno e grava a alteração no
+  histórico de auditoria.
+
+## Operadores adicionais (parceiro e administrador)
+
+- `POST /partners/operator-packages/requests`: cria solicitação de operadores adicionais (`quantity`, `package_type`=`individual|package`, `amount`). Inicia em `pending_payment`.
+- `POST /partners/operator-packages/requests/{id}/receipt`: multipart com comprovante PDF/JPG/PNG (até 30 MB). Atualiza para `pending_review` e grava o arquivo no armazenamento local da VPS.
+- `GET /partners/operator-packages/requests`: lista solicitações da empresa.
+- `GET /admin/platform-fees/operator-packages/requests`: administrador lista solicitações de todas as empresas.
+- `POST /admin/platform-fees/operator-packages/requests/{id}/approve` ou `/reject`: administrador revisa a solicitação. Solicitações aprovadas ampliam o limite de operadores da empresa.
+
+Operadores só recebem dados dos estacionamentos em que possuem `operator_parking_assignments`; o mapa e as reservas operacionais aplicam esse filtro no backend.

@@ -3,6 +3,7 @@ class PartnerOperatorModel {
   final String name;
   final String email;
   final String? phone;
+  final String? cpf;
   final String role;
   final List<String> permissions;
   final bool isActive;
@@ -13,6 +14,7 @@ class PartnerOperatorModel {
     required this.name,
     required this.email,
     required this.phone,
+    required this.cpf,
     required this.role,
     required this.permissions,
     required this.isActive,
@@ -25,6 +27,7 @@ class PartnerOperatorModel {
       name: json['name'] as String,
       email: json['email'] as String,
       phone: json['phone'] as String?,
+      cpf: json['cpf'] as String?,
       role: json['role'] as String,
       permissions: [
         for (final item in (json['permissions'] as List<dynamic>? ?? []))

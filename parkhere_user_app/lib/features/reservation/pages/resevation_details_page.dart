@@ -59,6 +59,9 @@ class _ReservationDetailsPageState
             title: "Resumo",
             children: [
               _DetailRow("Status", _statusLabel(reservation.status)),
+              _DetailRow("Pagamento", _paymentLabel(reservation.paymentStatus)),
+              if (reservation.paymentMethod != null)
+                _DetailRow("Método", _methodLabel(reservation.paymentMethod!)),
               _DetailRow("Plano", reservation.plan.name.toUpperCase()),
               _DetailRow("Check-in", _formatDate(reservation.checkinAt)),
               if (reservation.checkoutAt != null)
@@ -94,6 +97,7 @@ class _ReservationDetailsPageState
             ],
           ),
           if (reservation.status == ReservationStatus.open &&
+              reservation.paymentStatus != 'paid' &&
               reservation.id.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 14),
@@ -112,7 +116,9 @@ class _ReservationDetailsPageState
                           amount: reservation.estimatedValue,
                           reservationId: reservation.id,
                           payNow: true,
-                          onPaymentSuccess: () {},
+                          onPaymentSuccess: () async {
+                            ref.invalidate(reservationsProvider);
+                          },
                         ),
                       ),
                     ),
@@ -234,6 +240,23 @@ class _ReservationDetailsPageState
         return "Cancelada";
     }
   }
+
+  String _paymentLabel(String status) => switch (status) {
+    'paid' => 'Pago',
+    'payment_pending' => 'Pagamento pendente',
+    'checkout_payment_pending' => 'Pagamento do checkout pendente',
+    'expired' => 'Expirado',
+    'cancelled' => 'Cancelado',
+    _ => 'Aguardando pagamento',
+  };
+
+  String _methodLabel(String method) => switch (method) {
+    'credit_card' => 'Cartão de crédito',
+    'debit_card' => 'Cartão de débito',
+    'pix' => 'Pix',
+    'cash' => 'Dinheiro',
+    _ => method,
+  };
 
   String _formatDate(DateTime date) {
     final day = date.day.toString().padLeft(2, '0');

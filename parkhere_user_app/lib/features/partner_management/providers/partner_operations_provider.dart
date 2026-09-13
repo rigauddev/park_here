@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/api_service.dart';
+import '../../../core/constants/terms_constants.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 
@@ -35,6 +36,21 @@ final partnerReservationsProvider =
       ];
     });
 
+final partnerFinancialReportProvider =
+    FutureProvider<List<PartnerReservationSummary>>((ref) async {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) throw Exception('Sessao expirada. Entre novamente.');
+
+      final data = await ApiService().getAuthorized(
+        '/partners/financial-report',
+        token,
+      );
+      return [
+        for (final item in data)
+          PartnerReservationSummary.fromJson(item as Map<String, dynamic>),
+      ];
+    });
+
 Future<Map<String, dynamic>> createOperationalReservation({
   required String token,
   required String parkingId,
@@ -46,9 +62,14 @@ Future<Map<String, dynamic>> createOperationalReservation({
   required bool arrivalNow,
   required String plate,
   required String ownerPhone,
+  required bool termsAccepted,
+  required String termsLocale,
 }) async {
   return ApiService().postAuthorized('/reservations/pre-checkin', {
     'parking_id': parkingId,
+    'terms_accepted': termsAccepted,
+    'terms_version': reservationTermsVersion,
+    'terms_locale': termsLocale,
     'route_minutes': 1,
     'spot_code': spotCode,
     'spot_type': spotType,
@@ -71,6 +92,18 @@ Future<void> cancelOperationalReservation({
   await ApiService().postAuthorized('/reservations/$reservationId/cancel', {
     'reason': reason,
   }, token);
+}
+
+Future<void> toggleParkingSlotBlock({
+  required String token,
+  required String parkingId,
+  required String slotCode,
+}) async {
+  await ApiService().postAuthorized(
+    '/partners/parking-map/$parkingId/slots/$slotCode/block',
+    {},
+    token,
+  );
 }
 
 Future<Map<String, dynamic>> createOperationalPaymentIntent({

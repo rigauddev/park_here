@@ -24,6 +24,7 @@ class Parking(BaseModel):
     bus_spots = Column(Integer, nullable=False, default=0)
     pickup_spots = Column(Integer, nullable=False, default=0)
     moto_home_spots = Column(Integer, nullable=False, default=0)
+    blocked_spots = Column(Text, nullable=True)
     first_hour_price = Column(Float, nullable=False, default=0)
     additional_hour_price = Column(Float, nullable=False, default=0)
     daily_price = Column(Float, nullable=False, default=0)
@@ -46,8 +47,10 @@ class Parking(BaseModel):
     wants_automatic_access = Column(Boolean, default=False)
     has_automatic_access = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    accepts_guide_affiliates = Column(Boolean, nullable=False, default=False)
     guide_commission_terms = Column(Text, nullable=True)
     category_pricing = Column(Text, nullable=True)
+    operating_hours = Column(Text, nullable=True)
 
     services = relationship("ParkingService", back_populates="parking")
 

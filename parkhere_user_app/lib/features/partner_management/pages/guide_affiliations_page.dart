@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -135,15 +136,19 @@ class _ParkingAffiliationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = parking['status'] as String? ?? 'not_linked';
+    final acceptsAffiliates = parking['accepts_affiliates'] == true;
+    final isEnglish = context.strings.isEnglish;
     final label = switch (status) {
-      'pending' => 'Solicitação pendente',
-      'approved' => 'Aprovado',
-      _ => 'Solicitar afiliação',
+      'pending' => isEnglish ? 'Request pending' : 'Solicitação pendente',
+      'approved' => isEnglish ? 'Approved' : 'Aprovado',
+      _ => isEnglish ? 'Request affiliation' : 'Solicitar afiliação',
     };
     final offers =
         (parking['offer_terms'] as Map?)?.cast<String, dynamic>() ?? {};
     final offerText = offers.isEmpty
-        ? 'Taxa a definir pelo estabelecimento'
+        ? (isEnglish
+              ? 'Commission to be set by the partner'
+              : 'Comissão a definir pelo estabelecimento')
         : offers.entries
               .map((entry) {
                 final term = (entry.value as Map).cast<String, dynamic>();
@@ -159,15 +164,22 @@ class _ParkingAffiliationCard extends StatelessWidget {
         leading: const Icon(Icons.local_parking),
         title: Text(parking['name'] as String? ?? 'Estacionamento'),
         subtitle: Text(
-          '${parking['city'] as String? ?? ''}\nOferta: $offerText',
+          '${parking['city'] as String? ?? ''}\n'
+          '${acceptsAffiliates ? (isEnglish ? 'Referral offer: $offerText' : 'Oferta por indicação: $offerText') : (isEnglish ? 'This partner is not accepting affiliates.' : 'Este parceiro não está aceitando afiliados.')}',
         ),
         isThreeLine: true,
-        trailing: status == 'not_linked'
+        trailing: status == 'not_linked' && acceptsAffiliates
             ? FilledButton(
                 onPressed: () => onRequest(parking['id'] as String),
                 child: Text(label),
               )
-            : Chip(label: Text(label)),
+            : Chip(
+                label: Text(
+                  status == 'not_linked' && !acceptsAffiliates
+                      ? (isEnglish ? 'Unavailable' : 'Indisponível')
+                      : label,
+                ),
+              ),
       ),
     );
   }

@@ -53,6 +53,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.4
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -75,6 +76,12 @@ flutter:
   assets:
     - assets/branding/logo_rigaud_tech.png
     - assets/branding/logo_rigaud_tech_clean.png
+    - assets/branding/logo_park_here_transparent.png
+    - assets/branding/icon_padrao_transparent.png
+    - assets/branding/logo_park_here_ingles.png
+    - assets/branding/logo_park_here_portugues.png
+    - assets/branding/logo_park_here.svg
+    - assets/branding/icon_padrao.svg
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -92,7 +99,7 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
-  # fonts:
+# fonts:
   #   - family: Schyler
   #     fonts:
   #       - asset: fonts/Schyler-Regular.ttf
@@ -106,3 +113,15 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  web:
+    generate: true
+    image_path: assets/branding/icon_padrao_transparent.png
+    background_color: "#FFFFFF"
+  image_path: assets/branding/icon_padrao_transparent.png
+  remove_alpha_ios: true
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/branding/icon_padrao_transparent.png

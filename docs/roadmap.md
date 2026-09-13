@@ -35,6 +35,33 @@ Nao habilitar `PAYMENT_PROVIDER=mercado_pago` para cobrancas ainda: o endpoint r
 Gestao ainda tem itens de roadmap abertos: fotos em storage seguro, politicas por parceiro,
 incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao concluidos.
 
+## Catálogo de funcionalidades do parceiro — 12/09/2026
+
+`Minha empresa` agora recebe um catálogo por categoria de parceiro para
+dashboard, unidades, mapa/reservas, serviços, equipe, afiliações, caixa básico
+e Financeiro Pro. O administrador define preço, periodicidade, gratuidade e
+acesso por parceiro; cards bloqueados mostram preço e enviam solicitações para
+aprovação manual. O backend persiste a solicitação e o snapshot do preço,
+protege os módulos por entitlement e aplica as cotas do primeiro serviço e da
+primeira unidade incluídos. Extras de serviço/unidade aprovados aumentam a
+capacidade; unidade extra segue acrescentando dois operadores, sem alterar o
+fluxo de pacotes de usuários.
+
+Pagamento automático, conciliação e ativação por webhook continuam no caminho
+crítico antes de produção; no MVP de homologação, a equipe admin aprova a
+solicitação manualmente. Os testes de aceitação estão em
+[`manual-tests.md`](manual-tests.md#funcionalidades-cotas-e-aprovações-administrativas).
+
+## Gestão administrativa do sistema — 12/09/2026
+
+Correção do painel administrativo em andamento: acesso do `SUPER_ADMIN` global,
+menu mobile próprio, listagem de empresas, usuários e clientes reais, taxas
+globais com substituição por parceiro e suspensão de contas. A regra comercial
+de capacidade segue dois operadores por unidade ativa e soma pacotes aprovados.
+Solicitação, cotas e aprovação manual de unidades/serviços extras estão implementadas; pagamento e conciliação automáticos ainda não.
+O backlog detalhado, regras de negócio e tarefas restantes estão em
+[`admin-panel-backlog.md`](admin-panel-backlog.md).
+
 ## Fase 0: Organizacao
 
 - Inicializar Git.
@@ -128,6 +155,7 @@ incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao 
 - Painel de guia turistico: pacotes, agenda, idiomas e capacidade.
 - Fluxo de guia/agente turistico com codigo de indicacao na reserva.
 - Registrar comissao de guia por estabelecimento/servico no modulo financeiro Pro.
+- Aplicar contrato genérico de afiliação por serviço nos novos módulos: aceite de afiliados pelo parceiro, oferta fixa/percentual por serviço e modalidade, solicitação/aprovação do guia e snapshot financeiro imutável na reserva.
 - Painel de empresa de turismo: passeios, horarios, vagas, politica de cancelamento e pacotes.
 - Painel de hotel/restaurante: banners, pagina comercial e ofertas.
 - Testar cada painel isoladamente antes de unir no fluxo completo.
@@ -216,3 +244,29 @@ incidentes e relatorios; os paineis de outros tipos de servico tambem nao estao 
 - Marketplace de servicos.
 - Campanhas pagas de divulgacao para estabelecimentos.
 - Observabilidade, SLAs e antifraude.
+
+## Gestão administrativa — revisão 12/09/2026
+
+Implementado neste bloco: detalhes reais de parceiro e unidade de
+estacionamento; edição de endereço/coordenadas; taxa por unidade com precedência
+unidade > parceiro > global; cota-base de operadores sem dupla contagem de
+pacotes aprovados; entitlements por parceiro; suspensão auditada com motivo e
+templates de e-mail PT/EN com marca ParkHere. O snapshot da taxa é preservado
+na reserva para que uma alteração administrativa futura não modifique uma
+cobrança já apresentada.
+
+Ainda pendente: cobrança/renovação dos módulos pagos e bloqueio backend dos
+módulos quando o entitlement expirar; tela de auditoria no app; busca/paginação
+de parceiros/clientes; afiliação genérica de guias a serviços que não sejam
+estacionamentos; idioma preferido de e-mail por usuário; módulos operacionais
+de hotel, lava-jato, restaurante, turismo e transporte.
+# Marketing, termos e privacidade — bloco atual
+
+- [x] Preparar copy bilíngue e esqueleto responsivo para a subpágina ParkHere na Wix; distinguir módulos ativos de roadmap.
+- [x] Criar arte hero de campanha piloto para Valença-BA.
+- [x] Adicionar aceite obrigatório e snapshot versionado/localizado por reserva no fluxo cliente e no fluxo operacional.
+- [x] Adicionar prévia de template de e-mail no painel administrativo.
+- [x] Criar skill interna de triagem jurídico-documental.
+- [ ] Revisão de advogado brasileiro das minutas por categoria, contratos de intermediação e política de privacidade.
+- [ ] Definir controladores/operadores, retenção e base legal para cada integração de anúncios; implementar tela separada de preferências e revogação antes de publicidade personalizada.
+- [ ] Ligar botões, políticas, suporte, URLs de download e logos finais na Wix após publicação/aprovação editorial.

@@ -7,6 +7,7 @@ import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
 import 'login_page.dart';
 import '../../../core/widgets/app_loading.dart';
+import 'admin_login_page.dart';
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -14,6 +15,12 @@ class AuthGate extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authProvider);
+
+    // Acesso administrativo somente pela rota interna /admin. O link não é
+    // exposto na tela pública do cliente.
+    if (Uri.base.path == '/admin' && auth.status != AuthStatus.authenticated) {
+      return const AdminLoginPage();
+    }
 
     if (auth.status == AuthStatus.initial ||
         auth.status == AuthStatus.loading) {

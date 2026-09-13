@@ -7,12 +7,20 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
 import '../../../core/i18n/app_language.dart';
+import '../../../core/i18n/app_localizations.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
+import 'admin_login_page.dart';
 
 enum LoginLanguage { ptBr, en }
 
 enum LoginMode { customer, partner }
+
+/// Entrada administrativa exposta apenas em builds internos/homologação.
+const _showAdminEntry = bool.fromEnvironment(
+  'PARKHERE_ADMIN_ENTRY',
+  defaultValue: false,
+);
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -21,7 +29,8 @@ class LoginPage extends ConsumerStatefulWidget {
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends ConsumerState<LoginPage> {
+class _LoginPageState extends ConsumerState<LoginPage>
+    with SingleTickerProviderStateMixin {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final mfaController = TextEditingController();
@@ -31,6 +40,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   LoginLanguage language = LoginLanguage.ptBr;
   LoginMode loginMode = LoginMode.customer;
   String? loginError;
+  late final AnimationController _backgroundAnimation = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 8),
+  )..repeat();
 
   bool get isPortuguese => language == LoginLanguage.ptBr;
 
@@ -39,6 +52,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     emailController.dispose();
     passwordController.dispose();
     mfaController.dispose();
+    _backgroundAnimation.dispose();
     super.dispose();
   }
 
@@ -83,30 +97,59 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             Positioned.fill(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 450),
-                child: CustomPaint(
-                  key: ValueKey(loginMode),
-                  painter: _LoginBackgroundPainter(loginMode),
+                child: AnimatedBuilder(
+                  animation: _backgroundAnimation,
+                  builder: (context, _) => CustomPaint(
+                    key: ValueKey(loginMode),
+                    painter: _LoginBackgroundPainter(
+                      loginMode,
+                      progress: _backgroundAnimation.value,
+                    ),
+                  ),
                 ),
               ),
             ),
             SafeArea(
-              child: Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: _LanguageFlagButton(
-                    language: language,
-                    onChanged: (value) {
-                      setState(() => language = value);
-                      ref
-                          .read(appLanguageProvider.notifier)
-                          .setLanguage(
-                            value == LoginLanguage.en
-                                ? const Locale('en')
-                                : const Locale('pt', 'BR'),
-                          );
-                    },
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 18, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_showAdminEntry)
+                      TextButton.icon(
+                        onPressed: isMfaStep
+                            ? null
+                            : () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AdminLoginPage(),
+                                ),
+                              ),
+                        icon: const Icon(Icons.settings_outlined, size: 15),
+                        label: Text(isPortuguese ? 'Gestão' : 'Admin'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white.withValues(alpha: 0.72),
+                          textStyle: const TextStyle(fontSize: 11),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        ),
+                      )
+                    else
+                      const SizedBox(width: 8),
+                    _LanguageFlagButton(
+                      language: language,
+                      onChanged: (value) {
+                        setState(() => language = value);
+                        ref
+                            .read(appLanguageProvider.notifier)
+                            .setLanguage(
+                              value == LoginLanguage.en
+                                  ? const Locale('en')
+                                  : const Locale('pt', 'BR'),
+                            );
+                      },
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -114,7 +157,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 390),
+                  constraints: const BoxConstraints(maxWidth: 360),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.95),
@@ -128,32 +171,37 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const _ParkingLogoMark(),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "ParkHere",
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF102657),
-                            ),
+                          Image.asset(
+                            isPortuguese
+                                ? 'assets/branding/logo_park_here_portugues.png'
+                                : 'assets/branding/logo_park_here_ingles.png',
+                            height: 58,
+                            width: double.infinity,
+                            fit: BoxFit.contain,
                           ),
                           const SizedBox(height: 4),
+                          // Text(
+                          //   context.strings.appName,
+                          //   style: const TextStyle(
+                          //     fontSize: 23,
+                          //     fontWeight: FontWeight.w800,
+                          //     color: Color(0xFF102657),
+                          //   ),
+                          // ),
+                          const SizedBox(height: 4),
                           Text(
-                            isPortuguese
-                                ? "Mobilidade, vagas e serviços em um só lugar"
-                                : "Parking, mobility and services in one place",
+                            context.strings.loginTagline,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Color(0xFF55708F),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 10),
                           _AccessModeSelector(
                             loginMode: displayedLoginMode,
                             isPortuguese: isPortuguese,
@@ -167,7 +215,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               });
                             },
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 10),
                           if (authState.status != AuthStatus.mfaRequired) ...[
                             _textField(
                               controller: emailController,
@@ -285,8 +333,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             child: Text(
                               loginMode == LoginMode.customer
                                   ? (isPortuguese
-                                        ? "Criar conta cliente"
-                                        : "Create customer account")
+                                        ? "Criar conta"
+                                        : "Create account")
                                   : (isPortuguese
                                         ? "Cadastrar estabelecimento parceiro"
                                         : "Register partner business"),
@@ -547,7 +595,7 @@ class _RigaudTechFooter extends StatelessWidget {
       onTap: _openRigaudTech,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.86),
+          color: Colors.white.withValues(alpha: 0.60),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Padding(
@@ -559,8 +607,8 @@ class _RigaudTechFooter extends StatelessWidget {
                 isPortuguese ? "Desenvolvido por" : "Developed by",
                 style: const TextStyle(
                   color: Color(0xFF55708F),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(width: 6),
@@ -568,8 +616,8 @@ class _RigaudTechFooter extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
                 child: Image.asset(
                   "assets/branding/logo_rigaud_tech_clean.png",
-                  width: 72,
-                  height: 20,
+                  width: 58,
+                  height: 16,
                   fit: BoxFit.contain,
                 ),
               ),
@@ -726,39 +774,11 @@ class _AccessModeButton extends StatelessWidget {
   }
 }
 
-class _ParkingLogoMark extends StatelessWidget {
-  const _ParkingLogoMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 68,
-      height: 68,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [Color(0xFF2AD2E5), Color(0xFF2788E8)],
-        ),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: const [
-          Icon(Icons.local_parking, size: 40, color: Colors.white),
-          Positioned(
-            right: 12,
-            bottom: 13,
-            child: Icon(Icons.location_on, size: 18, color: Color(0xFF102657)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _LoginBackgroundPainter extends CustomPainter {
   final LoginMode mode;
+  final double progress;
 
-  const _LoginBackgroundPainter(this.mode);
+  const _LoginBackgroundPainter(this.mode, {this.progress = 0});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -770,6 +790,76 @@ class _LoginBackgroundPainter extends CustomPainter {
       ..color = const Color(0xFF6FE7F1).withValues(alpha: 0.22)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
+
+    if (mode == LoginMode.partner) {
+      // Silhuetas discretas de painel: reforçam a operação sem competir com o login.
+      final panelPaint = Paint()
+        ..color = const Color(0xFFFFC66B).withValues(alpha: 0.13)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      for (var i = 0; i < 3; i++) {
+        final rect = Rect.fromLTWH(
+          size.width * (0.06 + i * 0.34),
+          size.height * (0.72 - i * 0.06),
+          size.width * 0.24,
+          size.height * 0.12,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+          panelPaint,
+        );
+        canvas.drawLine(
+          Offset(rect.left + 12, rect.bottom - 12),
+          Offset(rect.right - 12, rect.bottom - 12),
+          panelPaint,
+        );
+        final barHeight =
+            size.height *
+            (0.025 + 0.035 * math.sin(progress * math.pi * 2 + i));
+        canvas.drawRect(
+          Rect.fromLTWH(
+            rect.left + 14,
+            rect.top + 14,
+            size.width * 0.035,
+            rect.height * 0.55 + barHeight,
+          ),
+          Paint()..color = const Color(0xFFFFC66B).withValues(alpha: 0.26),
+        );
+      }
+    } else {
+      // Grade leve de ruas para o modo cliente.
+      final gridPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.07)
+        ..strokeWidth = 1;
+      for (var i = 1; i < 7; i++) {
+        canvas.drawLine(
+          Offset(size.width * i / 7, 0),
+          Offset(size.width * i / 7, size.height),
+          gridPaint,
+        );
+        canvas.drawLine(
+          Offset(0, size.height * i / 7),
+          Offset(size.width, size.height * i / 7),
+          gridPaint,
+        );
+      }
+    }
+
+    final pulse = (math.sin(progress * math.pi * 2) + 1) / 2;
+    final movingPoint = Offset(
+      size.width * (0.18 + 0.64 * progress),
+      size.height * (0.27 + 0.10 * math.sin(progress * math.pi * 2)),
+    );
+    canvas.drawCircle(
+      movingPoint,
+      5 + pulse * 10,
+      Paint()..color = const Color(0xFF8AF4FF).withValues(alpha: 0.10),
+    );
+    canvas.drawCircle(
+      movingPoint,
+      4,
+      Paint()..color = Colors.white.withValues(alpha: 0.75),
+    );
 
     final path = Path()
       ..moveTo(size.width * 0.05, size.height * 0.25)
@@ -875,6 +965,6 @@ class _LoginBackgroundPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LoginBackgroundPainter oldDelegate) {
-    return oldDelegate.mode != mode;
+    return oldDelegate.mode != mode || oldDelegate.progress != progress;
   }
 }

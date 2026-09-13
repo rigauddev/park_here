@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/i18n/app_language.dart';
+import 'core/i18n/app_localizations.dart';
 import 'features/auth/pages/auth_gate.dart';
 
 Future<void> main() async {
@@ -31,8 +32,9 @@ class ParkFinderApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       locale: locale,
-      supportedLocales: const [Locale('pt', 'BR'), Locale('en')],
+      supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const [
+        AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,

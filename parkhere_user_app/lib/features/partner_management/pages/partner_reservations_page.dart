@@ -6,11 +6,18 @@ import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
 
-class PartnerReservationsPage extends ConsumerWidget {
+class PartnerReservationsPage extends ConsumerStatefulWidget {
   const PartnerReservationsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PartnerReservationsPage> createState() => _PartnerReservationsPageState();
+}
+
+class _PartnerReservationsPageState extends ConsumerState<PartnerReservationsPage> {
+  String parkingFilter = 'Todos';
+
+  @override
+  Widget build(BuildContext context) {
     final reservations = ref.watch(partnerReservationsProvider);
 
     return Scaffold(
@@ -32,12 +39,22 @@ class PartnerReservationsPage extends ConsumerWidget {
             return const Center(child: Text('Nenhuma reserva recebida.'));
           }
 
-          return ListView.builder(
+          final parkings = ['Todos', ...{for (final item in items) item.parkingName}];
+          final filtered = parkingFilter == 'Todos'
+              ? items
+              : items.where((item) => item.parkingName == parkingFilter).toList();
+          return ListView(
             padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              return _PartnerReservationCard(reservation: items[index]);
-            },
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: parkings.contains(parkingFilter) ? parkingFilter : 'Todos',
+                decoration: const InputDecoration(labelText: 'Filtrar por estacionamento'),
+                items: [for (final item in parkings) DropdownMenuItem(value: item, child: Text(item, overflow: TextOverflow.ellipsis))],
+                onChanged: (value) => setState(() => parkingFilter = value ?? 'Todos'),
+              ),
+              const SizedBox(height: 12),
+              for (final item in filtered) _PartnerReservationCard(reservation: item),
+            ],
           );
         },
       ),
@@ -146,7 +163,9 @@ class _PartnerReservationCard extends ConsumerWidget {
               ),
             ],
             if (reservation.status != 'completed' &&
-                reservation.status != 'cancelled') ...[
+                reservation.status != 'cancelled' &&
+                reservation.status != 'checked_in' &&
+                reservation.status != 'confirmed') ...[
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,

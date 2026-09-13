@@ -3,10 +3,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/services/routes/route_service.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/constants/terms_constants.dart';
 import '../../account/pages/vehicles_page.dart';
 import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -21,6 +24,8 @@ import '../providers/search_provider.dart';
 import '../providers/selected_plan_provider.dart';
 import '../providers/selected_services_provider.dart';
 import '../widgets/filter_sheet.dart';
+
+final selectedReservationGuideProvider = StateProvider<String?>((ref) => null);
 
 class HomeMapPage extends ConsumerStatefulWidget {
   const HomeMapPage({super.key});
@@ -281,6 +286,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     // Reset plano e serviços ao abrir
     ref.read(selectedPlanProvider.notifier).state = null;
     ref.read(selectedServicesProvider.notifier).state = SelectedServices();
+    ref.read(selectedReservationGuideProvider.notifier).state = null;
+    final affiliatedGuidesFuture = ref
+        .read(apiServiceProvider)
+        .get('/parkings/${parking.id}/guides');
 
     showModalBottomSheet(
       context: context,
@@ -293,6 +302,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
           builder: (context, ref, child) {
             final plan = ref.watch(selectedPlanProvider);
             final selected = ref.watch(selectedServicesProvider);
+            final selectedGuideId = ref.watch(selectedReservationGuideProvider);
             final areaPreference = ref.watch(selectedAreaPreferenceProvider);
             final selectedArea = areaPreference == AreaPreference.any
                 ? _firstAvailableArea(parking)
@@ -574,6 +584,74 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                   if (plan == PlanType.monthly)
                     Text("📆 Mensal: R\$ ${parking.pricing.monthlyPrice}"),
 
+                  const SizedBox(height: 16),
+                  Text(
+                    context.strings.isEnglish
+                        ? 'Guide referral (optional)'
+                        : 'Indicação de guia (opcional)',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  FutureBuilder<List<dynamic>>(
+                    future: affiliatedGuidesFuture,
+                    builder: (context, snapshot) {
+                      final guides = snapshot.data ?? const <dynamic>[];
+                      return DropdownButtonFormField<String?>(
+                        initialValue: selectedGuideId,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          hintText:
+                              snapshot.connectionState ==
+                                  ConnectionState.waiting
+                              ? (context.strings.isEnglish
+                                    ? 'Loading guides...'
+                                    : 'Carregando guias...')
+                              : (context.strings.isEnglish
+                                    ? 'Select a guide'
+                                    : 'Selecione um guia'),
+                          border: const OutlineInputBorder(),
+                        ),
+                        items: [
+                          DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text(
+                              context.strings.isEnglish
+                                  ? 'No referral'
+                                  : 'Sem indicação',
+                            ),
+                          ),
+                          for (final rawGuide in guides)
+                            DropdownMenuItem<String?>(
+                              value:
+                                  (rawGuide as Map<String, dynamic>)['id']
+                                      as String,
+                              child: Text(
+                                ((rawGuide)['name'] as String?)
+                                            ?.trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? (rawGuide)['name'] as String
+                                    : (rawGuide)['email'] as String? ??
+                                          (context.strings.isEnglish
+                                              ? 'Guide'
+                                              : 'Guia'),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) =>
+                            ref
+                                    .read(
+                                      selectedReservationGuideProvider.notifier,
+                                    )
+                                    .state =
+                                value,
+                      );
+                    },
+                  ),
+
                   const SizedBox(height: 20),
 
                   // Serviços adicionais
@@ -690,6 +768,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           dailyDays: dailyDays,
                           userLocationLat: position.latitude,
                           userLocationLng: position.longitude,
+                          guideUserId: selectedGuideId,
                         );
                       },
                       child: const Text(
@@ -1161,48 +1240,12 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required int dailyDays,
     required double userLocationLat,
     required double userLocationLng,
+    required String? guideUserId,
   }) async {
     final configuredArea = ref.read(selectedAreaPreferenceProvider);
     final areaPreference = configuredArea == AreaPreference.any
         ? _firstAvailableArea(parking)
         : configuredArea;
-    String? guideUserId;
-    if (selected.tourGuide) {
-      try {
-        final guides = await ref
-            .read(apiServiceProvider)
-            .get('/parkings/${parking.id}/guides');
-        if (!mounted) return;
-        if (guides.isNotEmpty) {
-          final selectedGuide = await showDialog<String>(
-            context: context,
-            builder: (context) => SimpleDialog(
-              title: const Text('Indicar guia / Select a guide'),
-              children: [
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, '__none__'),
-                  child: const Text('Sem indicação / No guide'),
-                ),
-                for (final rawGuide in guides)
-                  SimpleDialogOption(
-                    onPressed: () =>
-                        Navigator.pop(context, rawGuide['id'] as String),
-                    child: Text(
-                      (rawGuide['name'] as String?)?.trim().isNotEmpty == true
-                          ? rawGuide['name'] as String
-                          : rawGuide['email'] as String? ?? 'Guia',
-                    ),
-                  ),
-              ],
-            ),
-          );
-          if (selectedGuide == null) return;
-          if (selectedGuide != '__none__') guideUserId = selectedGuide;
-        }
-      } catch (_) {
-        // A indicação é opcional; a reserva pode seguir sem guia.
-      }
-    }
     await ref.read(accountProvider.notifier).syncVehicles();
     if (!mounted) return;
     final account = ref.read(accountProvider);
@@ -1244,6 +1287,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     if (!mounted) return;
 
     Navigator.of(context).pop();
+    final termsLocale = Localizations.localeOf(context).languageCode == 'en'
+        ? 'en'
+        : 'pt_BR';
 
     final preCheckin = PreCheckinModel(
       parking: parking,
@@ -1262,17 +1308,6 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
         builder: (_) => RoutePreviewPage(
           preCheckin: preCheckin,
           onRouteSelected: () async {
-            await ref
-                .read(preReservationProvider.notifier)
-                .createPreReservation(
-                  parkingId: parking.id,
-                  parkingName: parking.name,
-                  routeMinutes: minutes,
-                  plan: plan.name,
-                  spotType: areaPreference.name,
-                  total: total,
-                  availableSpots: parking.availableSpots,
-                );
             final token = ref.read(authProvider).accessToken;
             if (token == null) {
               throw Exception('Sessao expirada. Entre novamente.');
@@ -1281,6 +1316,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               '/reservations/pre-checkin',
               {
                 'parking_id': parking.id,
+                'terms_accepted': true,
+                'terms_version': reservationTermsVersion,
+                'terms_locale': termsLocale,
                 'route_minutes': minutes,
                 'estimated_total': total,
                 'vehicle_id': activeVehicle.id,
@@ -1307,6 +1345,18 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               token,
             );
             preCheckin.reservationId = response['id'] as String?;
+            await ref
+                .read(preReservationProvider.notifier)
+                .createPreReservation(
+                  parkingId: parking.id,
+                  parkingName: parking.name,
+                  routeMinutes: minutes,
+                  reservationId: response['id'] as String?,
+                  plan: plan.name,
+                  spotType: areaPreference.name,
+                  total: total,
+                  availableSpots: parking.availableSpots,
+                );
           },
         ),
       ),

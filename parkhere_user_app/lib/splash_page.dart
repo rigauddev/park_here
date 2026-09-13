@@ -13,7 +13,18 @@ class SplashPage extends ConsumerStatefulWidget {
   ConsumerState<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends ConsumerState<SplashPage> {
+class _SplashPageState extends ConsumerState<SplashPage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
   @override
   void initState() {
     super.initState();
@@ -37,6 +48,31 @@ class _SplashPageState extends ConsumerState<SplashPage> {
       }
     });
 
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF06142F), Color(0xFF0B2A5B), Color(0xFF20BFD3)],
+          ),
+        ),
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _animation,
+            builder: (context, child) => Transform.scale(
+              scale: 0.94 + (_animation.value * 0.06),
+              child: Opacity(opacity: 0.78 + (_animation.value * 0.22), child: child),
+            ),
+            child: Image.asset(
+              'assets/branding/icon_padrao_transparent.png',
+              width: 150,
+              height: 150,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

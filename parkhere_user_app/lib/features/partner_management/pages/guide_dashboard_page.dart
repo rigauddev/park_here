@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
@@ -16,6 +17,7 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
   int _approved = 0;
   int _pending = 0;
   int _indications = 0;
+  int _pendingIndications = 0;
   double _rating = 0;
   double _payout = 0;
 
@@ -37,7 +39,8 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
     setState(() {
       _approved = rows.where((item) => item['status'] == 'approved').length;
       _pending = rows.where((item) => item['status'] == 'pending').length;
-      _indications = dashboard['indications'] as int? ?? 0;
+      _indications = dashboard['completed_indications'] as int? ?? 0;
+      _pendingIndications = dashboard['pending_indications'] as int? ?? 0;
       _rating = (dashboard['rating'] as num?)?.toDouble() ?? 0;
       _payout = (dashboard['total_payout'] as num?)?.toDouble() ?? 0;
     });
@@ -45,7 +48,11 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Dashboard do guia / Guide dashboard')),
+    appBar: AppBar(
+      title: Text(
+        context.strings.isEnglish ? 'Guide dashboard' : 'Dashboard do guia',
+      ),
+    ),
     body: RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -79,7 +86,13 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
           Row(
             children: [
               Expanded(
-                child: _StatCard('Indicações', '$_indications', Icons.people),
+                child: _StatCard(
+                  context.strings.isEnglish
+                      ? 'Completed referrals'
+                      : 'Indicações concluídas',
+                  '$_indications',
+                  Icons.people,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -92,6 +105,12 @@ class _GuideDashboardPageState extends ConsumerState<GuideDashboardPage> {
             ],
           ),
           const SizedBox(height: 12),
+          Text(
+            context.strings.isEnglish
+                ? 'Referrals waiting for completion: $_pendingIndications'
+                : 'Indicações aguardando conclusão: $_pendingIndications',
+          ),
+          const SizedBox(height: 8),
           Card(
             child: ListTile(
               leading: const Icon(Icons.payments),

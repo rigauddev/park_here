@@ -18,6 +18,7 @@ class RoutePreviewPage extends StatefulWidget {
 
 class _RoutePreviewPageState extends State<RoutePreviewPage> {
   bool _loading = false;
+  bool _acceptTerms = false;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +48,7 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
             ),
             const SizedBox(height: 15),
             const Text(
-              'Ao iniciar, a pré-reserva será enviada ao estacionamento com o tempo estimado da rota + 5 minutos.',
+              'Ao iniciar, a pré-reserva será enviada ao estacionamento com o tempo estimado da rota + 5 minutos. Ao chegar, retorne ao ParkHere para realizar o check-in.',
               textAlign: TextAlign.center,
             ),
 
@@ -70,6 +71,8 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     if (_loading) return;
     setState(() => _loading = true);
     try {
+      final accepted = await _requestTermsAcceptance();
+      if (!accepted) return;
       await widget.onRouteSelected?.call();
       final destination =
           '${widget.preCheckin.parking.lat},${widget.preCheckin.parking.lng}';
@@ -93,6 +96,87 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<bool> _requestTermsAcceptance() async {
+    final english = Localizations.localeOf(context).languageCode == 'en';
+    final selectedTerms = <String>[
+      if (widget.preCheckin.carWash)
+        english
+            ? 'I reviewed the provider, package, location, time, price, scope, exclusions and rescheduling/cancellation rules for the car wash.'
+            : 'Revisei o prestador, pacote, local, horário, preço, escopo, itens não incluídos e regras de reagendamento/cancelamento do lava-jato.',
+      if (widget.preCheckin.tourGuide)
+        english
+            ? 'I reviewed the provider, itinerary, duration, meeting point, price, inclusions, safety/accessibility requirements and weather/cancellation terms.'
+            : 'Revisei prestador, roteiro, duração, ponto de encontro, preço, inclusões, requisitos de segurança/acessibilidade e política de clima e cancelamento.',
+      if (widget.preCheckin.transport)
+        english
+            ? 'I reviewed the carrier, origin, destination, time, passengers, luggage, price and delay/cancellation rules.'
+            : 'Revisei transportador, origem, destino, horário, passageiros, bagagem, preço e regras de atraso e cancelamento.',
+    ];
+    _acceptTerms = false;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(english ? 'Reservation terms' : 'Termos da reserva'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    english
+                        ? 'I reviewed the location, parking-space category, period, vehicle plate, price, fees, arrival estimate, grace period and cancellation terms. The identified business operates the parking service; statutory rights remain.'
+                        : 'Revisei unidade, categoria da vaga, período, placa, preço, taxas, previsão de chegada, tolerância e cancelamento. O estabelecimento identificado opera o estacionamento e informa as regras de guarda e permanência; continuam válidos os direitos previstos em lei.',
+                  ),
+                  const SizedBox(height: 12),
+                  for (final term in selectedTerms) ...[
+                    Text(term),
+                    const SizedBox(height: 8),
+                  ],
+                  Text(
+                    english
+                        ? 'ParkHere facilitates discovery, communication and the digital booking flow. The identified provider performs the booked service. ParkHere remains responsible for its own platform duties as required by law; this acceptance does not waive consumer rights.'
+                        : 'O ParkHere facilita a descoberta, comunicação e fluxo digital da reserva. O prestador identificado executa o serviço contratado. O ParkHere mantém as obrigações próprias da plataforma conforme sua atuação e a legislação; este aceite não renuncia a direitos legais do consumidor.',
+                  ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _acceptTerms,
+                    onChanged: (value) =>
+                        setDialogState(() => _acceptTerms = value ?? false),
+                    title: Text(
+                      english
+                          ? 'I reviewed and accept the terms for every service in this booking.'
+                          : 'Li e aceito os termos de todos os serviços desta reserva.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(english ? 'Cancel' : 'Voltar'),
+            ),
+            FilledButton(
+              onPressed: _acceptTerms
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
+              child: Text(
+                english ? 'Accept and continue' : 'Aceitar e continuar',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return accepted == true;
   }
 
   Future<void> _openMapChooser() async {

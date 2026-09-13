@@ -48,13 +48,15 @@ async def register_parking(
 #         "refresh_token": tokens[1],
 #     }
 
-# @router.post("/customer-signup", response_model=TokenResponse)
-# async def CustomerSignup(data: CustomerSignupRequest, db: AsyncSession = Depends(get_db)):
-#     tokens = await AuthService.CustomerSignup(db, data)
-#     return {
-#         "access_token": tokens[0],
-#         "refresh_token": tokens[1],
-    # }
+@router.post("/customer-signup", response_model=TokenResponse)
+async def customer_signup(data: CustomerSignupRequest, db: AsyncSession = Depends(get_db)):
+    tokens = await AuthService.CustomerSignup(db, data)
+    return {
+        "access_token": tokens[0],
+        "refresh_token": tokens[1],
+        "role": "customer",
+        "account_type": "customer",
+    }
 
 @router.post("/login")
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -72,8 +74,11 @@ async def verify_mfa(data: MFARequest, db: AsyncSession = Depends(get_db)):
     return tokens
 
 @router.post("/email/request-code")
-async def request_email_code(data: EmailCodeRequest):
-    return await AuthService.request_email_verification(data.email)
+async def request_email_code(
+    data: EmailCodeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await AuthService.request_email_verification(data.email, db)
 
 @router.post("/email/verify-code")
 async def verify_email_code(data: VerifyEmailCodeRequest):

@@ -266,25 +266,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                       ListTile(
                         title: const Text('Resumo da reserva'),
                         trailing: Text(
-                          'R\$ ${(_quote!['reservation_amount'] as num).toDouble().toStringAsFixed(2)}',
+                          'R\$ ${_money(_quote!['reservation_amount'])}',
                         ),
                       ),
                       ListTile(
                         title: const Text('Taxa do usuário'),
                         trailing: Text(
-                          'R\$ ${(_quote!['customer_fee_amount'] as num).toDouble().toStringAsFixed(2)}',
+                          'R\$ ${_money(_quote!['customer_fee_amount'])}',
                         ),
                       ),
                       ListTile(
                         title: const Text('Taxa do estabelecimento'),
                         trailing: Text(
-                          'R\$ ${(_quote!['establishment_fee_amount'] as num).toDouble().toStringAsFixed(2)}',
+                          'R\$ ${_money(_quote!['establishment_fee_amount'])}',
                         ),
                       ),
                       ListTile(
                         title: const Text('Total'),
                         trailing: Text(
-                          'R\$ ${(_quote!['total_amount'] as num).toDouble().toStringAsFixed(2)}',
+                          'R\$ ${_money(_quote!['total_amount'])}',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -376,4 +376,6 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         return method.pixKey ?? "Pix cadastrado";
     }
   }
+
+  String _money(dynamic value) => ((value as num?)?.toDouble() ?? widget.amount).toStringAsFixed(2);
 }

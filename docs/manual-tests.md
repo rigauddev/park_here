@@ -32,14 +32,28 @@ Contas seed:
 - MFA local: `000000`
 
 Para testar indicação de guia, cadastre um usuário parceiro com serviço `Guia
-turístico`, solicite afiliação a um estacionamento e aprove a solicitação no
-usuário gestor definindo comissão percentual ou fixa.
+turístico`, configure as comissões da unidade, solicite afiliação e aprove o
+pedido no usuário gestor.
 
-O seed já oferece `guia@parkhere.test` afiliado ao estacionamento principal. A
+O seed cadastra `guia@parkhere.test` como parceiro independente, com tenant e
+perfil próprios, afiliado ao estacionamento principal. A
 lista do guia mostra as ofertas por diária, semanal, mensal e longa duração antes
 de solicitar novas afiliações. A taxa da plataforma padrão para a comissão do
 guia é 20%; o guia vê o valor líquido e o estacionamento vê o bruto, a taxa e o
 líquido.
+
+Fluxo de indicação atualizado:
+
+1. Na conta gestora, abra **Afiliação e comissões**, escolha a unidade e defina
+   comissões positivas para diária, semanal, mensal e longa duração; só então
+   ative **Aceitar guias afiliados**.
+2. Na conta do guia, abra **Estacionamentos**, confira a oferta e solicite
+   afiliação. Na conta gestora, aprove o pedido.
+3. Na conta cliente, escolha estacionamento e plano; selecione o guia no campo
+   opcional de indicação, sem marcar o extra pago de passeio/guia.
+4. Conclua a reserva, check-in, pagamento e checkout. A reserva mantém o guia
+   indicado e a comissão congelada; o dashboard do guia conta repasse apenas
+   após a reserva chegar a `completed`.
 
 ## Android fisico por USB
 
@@ -125,3 +139,64 @@ Fluxo completo HTTP/MySQL:
 ```bash
 docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s tests -p test_pilot_http.py -v
 ```
+
+## Funcionalidades, cotas e aprovações administrativas
+
+1. Entre como admin do sistema e abra **Funcionalidades**. Selecione um parceiro
+   estacionamento e confira dashboard, unidades, mapa/reservas, serviços,
+   equipe, afiliações, caixa básico, Financeiro Pro, unidade adicional e serviço
+   adicional. Para guia, confira dashboard, serviços, afiliações e serviço extra.
+2. Configure `Financeiro Pro` como pago, informe valor e periodicidade, mantendo
+   desativado. Entre como gestor e toque no card. Deve abrir o resumo com preço,
+   cadeado e botão **Solicitar liberação**.
+3. Envie a solicitação. Confira estado pendente em **Minha empresa** ao reabrir
+   a funcionalidade e no painel admin em **Aprovações**. Não deve ocorrer débito.
+4. Aprove o pedido como admin; atualize o perfil e abra o Financeiro Pro. Deve
+   carregar dados reais de reservas, valores recebidos e taxas administrativas.
+   Confirme o registro em auditoria.
+5. Faça o mesmo para `additional_services`: cadastre o primeiro serviço sem
+   custo; tente incluir outro e confira o popup com valor. A API deve rejeitar
+   cadastro acima da capacidade até que a solicitação seja aprovada. Após
+   aprovação, o segundo serviço deve ser salvo.
+6. Faça o mesmo para `additional_units`. Antes da aprovação, o primeiro
+   estacionamento deve ser criado e o próximo deve abrir o pedido de unidade.
+   Depois de aprovar, crie a unidade e confira que a cota de dois operadores
+   daquela unidade continua obedecendo a regra existente.
+7. Confira caixa básico sem complemento Pro. Depois habilite Pro e confirme que
+   o relatório detalhado abre. Operador não deve ter acesso aos controles de
+   gestão nem ao Financeiro Pro.
+8. Configure uma função como gratuita e desativada: o app deve mostrar bloqueio
+   e instrução para procurar a equipe, sem exibir botão de compra. Reative-a no
+   admin e valide o acesso.
+9. Confirme que a decisão manual não representa pagamento confirmado. Ativação
+   automática, cobrança, webhook e vigência continuam pendentes da integração
+   Mercado Pago.
+# Aceite e privacidade antes de reservar
+
+- Inicie uma reserva em português e confirme que os termos do estacionamento e dos serviços escolhidos aparecem antes de abrir o app de mapas.
+- Tente continuar sem marcar o aceite; a reserva/pré-reserva não deve ser criada.
+- Marque aceite e conclua; confira que a resposta da API contém `terms_accepted_at`, `terms_version`, `terms_locale` e snapshot `accepted_terms` com plataforma, estacionamento e cada serviço selecionado.
+- Repita em inglês e confirme que os textos e `terms_locale=en` correspondem ao idioma selecionado.
+- Simule app antigo enviando versão anterior; API retorna `409` e a tela precisa solicitar novo aceite.
+- Na reserva operacional, o operador deve visualizar os termos do estacionamento e confirmar que o cliente os revisou antes de criar.
+- Aceite de marketing personalizado deve permanecer opcional, separado de reserva e conta, desmarcado por padrão e revogável em preferências. Esse controle ainda deve ser desenvolvido antes de qualquer segmentação de anúncios.
+
+## Unidades, escalas e acesso do operador
+
+- Associe um operador à matriz e a uma filial. Feche e reabra os detalhes do
+  operador; as duas unidades devem continuar selecionadas. E-mail e CPF devem
+  aparecer como dados de consulta, sem edição.
+- Crie uma escala numa unidade sem operadores associados. O calendário deve
+  continuar visível e os turnos devem ser criados como vagas abertas para
+  atribuição posterior.
+- Associe um operador à unidade e gere um turno. Tente criar para o mesmo
+  operador um turno sobreposto em outra unidade; a API deve rejeitar com `409`.
+- Em um dia sem turno, confirme que a tela ainda mostra o calendário e a
+  mensagem de que não há turnos naquele dia.
+- Entre como operador sem turno ativo: somente Escala, Perfil e Conta de repasse
+  ficam disponíveis. Mapa, reservas e demais rotas operacionais devem ficar
+  bloqueadas. Durante o turno, mapa e reservas devem mostrar a unidade escalada.
+- Gere uma escala e confirme que a animação de progresso aparece até o servidor
+  concluir a operação; teste também a criação de uma escala para filial.
+- Envie um template de e-mail com cabeçalho customizado sem imagem e confirme
+  que o e-mail recebido ainda exibe o logo inline do ParkHere.

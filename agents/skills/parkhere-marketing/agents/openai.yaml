@@ -1,0 +1,4 @@
+interface:
+  display_name: "ParkHere Marketing"
+  short_description: "Cria campanhas e conteúdo bilíngue do ParkHere"
+  default_prompt: "Use $parkhere-marketing para transformar funcionalidades do ParkHere em campanhas, roteiros e materiais de divulgação."

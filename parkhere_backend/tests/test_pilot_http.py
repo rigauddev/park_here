@@ -21,9 +21,11 @@ from app.modules.tenants.models.tenant_models import Tenant, TenantStatusEnum
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
+from app.modules.platform_fees.models import ParkingPlatformFee
 from app.modules.customer_assets.models import Vehicle
 
 
@@ -46,6 +48,18 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
                     first_hour_price=7, uncovered_first_hour_price=7, additional_hour_price=2, uncovered_additional_hour_price=2, daily_price=7, uncovered_daily_price=7)
                 db.add(parking)
                 await db.flush()
+                # Keep the cash-ledger scenario deterministic even when the
+                # local admin panel has a global or per-unit parking fee.
+                db.add(ParkingPlatformFee(
+                    tenant_id=tenant.id,
+                    parking_id=parking.id,
+                    service_type='parking',
+                    fee_mode='fixed',
+                    fixed_amount=0,
+                    percentage=0,
+                    min_fee=0,
+                    is_active=False,
+                ))
                 db.add(ParkingService(parking_id=parking.id, code='car_wash', name='Lavagem', price=5))
                 self.tenants.append(tenant.id)
                 self.users.append(user)
@@ -59,16 +73,23 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             db.add(operator)
             await db.commit()
             self.customer, self.vehicle, self.operator = customer, vehicle, operator
+            branch = Parking(tenant_id=self.tenants[0], name='Pilot Branch', address='Valenca BA', city='Valenca', lat=-13.36, lng=-39.06, total_spots=5, available_spots=5, uncovered_spots=5, first_hour_price=7, uncovered_first_hour_price=7, additional_hour_price=2, uncovered_additional_hour_price=2)
+            db.add(branch)
+            await db.commit()
+            self.branch_parking = branch.id
+            self.parkings.append(branch.id)
 
     def token(self, user):
         return create_access_token({'sub': user.email, 'tenant_id': user.tenant_id, 'role': user.role.value})
 
-    async def request(self, path, data=None, user=None, expected=200):
+    async def request(self, path, data=None, user=None, expected=200, method=None):
         user = user or self.users[0]
+        method = method or ('POST' if data is not None else 'GET')
         def send():
             req = Request('http://127.0.0.1:8000' + path,
                 data=json.dumps(data).encode() if data is not None else None,
-                headers={'Authorization': 'Bearer ' + self.token(user), 'Content-Type': 'application/json'})
+                headers={'Authorization': 'Bearer ' + self.token(user), 'Content-Type': 'application/json'},
+                method=method)
             try:
                 with urlopen(req, timeout=15) as r:
                     return r.status, json.load(r)
@@ -83,7 +104,9 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         return await self.request('/reservations/pre-checkin', dict(
             parking_id=self.parkings[0], spot_code=code, spot_type='uncovered',
             route_minutes=1, arrival_now=True, is_manual_arrival=True,
-            walk_in_plate='ABC-1234', walk_in_phone='(75) 99999-0000', **kwargs), user=user)
+            walk_in_plate='ABC-1234', walk_in_phone='(75) 99999-0000',
+            terms_accepted=True, terms_version='reservation-terms-2026-09-v1',
+            terms_locale='pt_BR', **kwargs), user=user)
 
     async def pay(self, reservation, method='pix'):
         intent = await self.request(f'/payments/reservations/{reservation["id"]}/intent',
@@ -95,9 +118,17 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(self.parkings[0], [p['id'] for p in parkings])
         reservation = await self.request('/reservations/pre-checkin', {
             'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
-            'route_minutes': 10, 'spot_type': 'uncovered', 'service_codes': ['car_wash', 'car_wash']}, user=self.customer)
+            'route_minutes': 10, 'spot_type': 'uncovered', 'service_codes': ['car_wash', 'car_wash'],
+            'terms_accepted': True, 'terms_version': 'reservation-terms-2026-09-v1',
+            'terms_locale': 'pt_BR'}, user=self.customer)
         self.assertEqual(reservation['services_amount'], 5)
         self.assertEqual(reservation['spot_code'], 'V001')
+        self.assertEqual(reservation['terms_version'], 'reservation-terms-2026-09-v1')
+        self.assertEqual(reservation['terms_locale'], 'pt_BR')
+        self.assertEqual(
+            [term['service_type'] for term in reservation['accepted_terms']],
+            ['platform', 'parking', 'car_wash'],
+        )
         intent = await self.request(f'/payments/reservations/{reservation["id"]}/intent', {'method': 'pix'}, user=self.customer)
         self.assertEqual(intent['gross_amount'], reservation['final_total'])
         await self.request(f'/payments/{intent["id"]}/confirm', {}, user=self.customer)
@@ -105,7 +136,19 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         result = await self.request(f'/reservations/{reservation["id"]}/checkout', {})
         self.assertEqual(result['status'], 'completed')
         layout = await self.request('/partners/parking-map')
-        self.assertEqual(layout['parkings'][0]['available_spots'], 10)
+        primary = next(item for item in layout['parkings'] if item['id'] == self.parkings[0])
+        self.assertEqual(primary['available_spots'], 10)
+
+    async def test_reservation_requires_current_terms_acceptance(self):
+        payload = {
+            'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
+            'route_minutes': 10, 'terms_version': 'reservation-terms-2026-09-v1',
+            'terms_locale': 'pt_BR', 'terms_accepted': False,
+        }
+        status, body = await self.request(
+            '/reservations/pre-checkin', payload, user=self.customer, expected=None
+        )
+        self.assertEqual(status, 422, body)
 
     async def test_walkin_pix_arrival_is_now_and_tenant_isolation(self):
         start = datetime.utcnow()
@@ -119,7 +162,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(r['id'], [x['id'] for x in other])
 
     async def test_same_spot_concurrency_and_cancellation(self):
-        payload = dict(parking_id=self.parkings[0], spot_code='V001', spot_type='uncovered', route_minutes=1, arrival_now=True, walk_in_plate='ABC1234', walk_in_phone='75999990000')
+        payload = dict(parking_id=self.parkings[0], spot_code='V001', spot_type='uncovered', route_minutes=1, arrival_now=True, walk_in_plate='ABC1234', walk_in_phone='75999990000', terms_accepted=True, terms_version='reservation-terms-2026-09-v1', terms_locale='pt_BR')
         responses = await asyncio.gather(*[self.request('/reservations/pre-checkin', payload, expected=None) for _ in range(2)])
         self.assertEqual(sorted(s for s, _ in responses), [200, 409])
         r = next(body for status, body in responses if status == 200)
@@ -166,14 +209,61 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         await self.request(f'/reservations/{r["id"]}/cancel', {}, user=self.operator, expected=403)
         await self.request(f'/reservations/{r["id"]}/cancel', {})
 
+    async def test_branch_schedule_allows_open_turn_and_rejects_operator_overlap(self):
+        assignments = await self.request(
+            f'/partners/operators/{self.operator.id}/parkings',
+            {'parking_ids': [self.parkings[0], self.branch_parking]},
+            method='PUT',
+        )
+        self.assertEqual(set(assignments['parking_ids']), {self.parkings[0], self.branch_parking})
+        loaded = await self.request(f'/partners/operators/{self.operator.id}/parkings')
+        self.assertEqual(set(loaded), {self.parkings[0], self.branch_parking})
+
+        starts = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0) + timedelta(days=3)
+        ends = starts + timedelta(hours=8)
+        await self.request('/partners/shifts', {
+            'operator_id': self.operator.id,
+            'parking_id': self.parkings[0],
+            'starts_at': starts.isoformat(),
+            'ends_at': ends.isoformat(),
+        }, expected=201)
+        await self.request('/partners/shifts', {
+            'operator_id': self.operator.id,
+            'parking_id': self.branch_parking,
+            'starts_at': (starts + timedelta(hours=1)).isoformat(),
+            'ends_at': (ends + timedelta(hours=1)).isoformat(),
+        }, expected=409)
+
+        suggestion = await self.request('/partners/shifts/suggest', {
+            'parking_id': self.branch_parking,
+            'operator_ids': [],
+            'starts_on': starts.date().isoformat(),
+            'ends_on': starts.date().isoformat(),
+            'daily_hours': 8,
+            'opening_time': '08:00',
+            'closing_time': '18:00',
+        })
+        self.assertEqual(len(suggestion['suggestions']), 1)
+        self.assertIsNone(suggestion['suggestions'][0]['operator_id'])
+        created = await self.request('/partners/shifts', {
+            'operator_id': None,
+            'parking_id': self.branch_parking,
+            'starts_at': suggestion['suggestions'][0]['starts_at'],
+            'ends_at': suggestion['suggestions'][0]['ends_at'],
+        }, expected=201)
+        self.assertEqual(created['parking_id'], self.branch_parking)
+
     async def asyncTearDown(self):
         async with self.session() as db:
             debt_ids = select(PartnerFeeDebt.id).where(PartnerFeeDebt.tenant_id.in_(self.tenants))
             await db.execute(delete(PartnerFeeSettlement).where(PartnerFeeSettlement.debt_id.in_(debt_ids)))
             for model in [PartnerFeeDebt, PaymentTransaction]:
                 await db.execute(delete(model).where(model.tenant_id.in_(self.tenants)))
+            await db.execute(delete(OperatorWorkShift).where(OperatorWorkShift.parking_id.in_(self.parkings)))
+            await db.execute(delete(OperatorParkingAssignment).where(OperatorParkingAssignment.parking_id.in_(self.parkings)))
             await db.execute(delete(Reservation).where(Reservation.parking_id.in_(self.parkings)))
             await db.execute(delete(ParkingService).where(ParkingService.parking_id.in_(self.parkings)))
+            await db.execute(delete(ParkingPlatformFee).where(ParkingPlatformFee.parking_id.in_(self.parkings)))
             await db.execute(delete(Parking).where(Parking.id.in_(self.parkings)))
             await db.execute(delete(Vehicle).where(Vehicle.user_id == self.customer.id))
             await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id])))

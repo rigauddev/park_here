@@ -68,7 +68,7 @@ class AuthService:
             code = generate_otp()
             print(code)
 
-            await EmailService.send_mfa_email(email, code)
+            await EmailService.send_mfa_email(email, code, db, name, "pt_BR")
 
             return admin_user
 
@@ -109,7 +109,11 @@ class AuthService:
             ),
         )
         db.add(partner_user)
-
+        await db.commit()
+        await db.refresh(partner_user)
+        await EmailService.send_template(
+            db, partner_user.email, "welcome", "pt_BR", {"name": partner_user.name}
+        )
         return partner_user
     
     @staticmethod
@@ -128,6 +132,9 @@ class AuthService:
         db.add(user)
 
         await db.commit()
+        await EmailService.send_template(
+            db, user.email, "welcome", "pt_BR", {"name": user.name}
+        )
 
         access_token = create_access_token({
             "sub": user.email,
@@ -142,7 +149,10 @@ class AuthService:
         return access_token, refresh_token
     @staticmethod
     async def CustomerSignup(db: AsyncSession, data):
-
+        existing = await db.execute(select(User).where(User.email == data.email.strip().lower()))
+        if existing.scalar_one_or_none():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=409, detail="E-mail já cadastrado")
         # Criar customer
         user = User(
             name=data.name,
@@ -151,10 +161,14 @@ class AuthService:
             email=data.email,
             password_hash=hash_password(data.password),
             role=UserRoleEnum.CUSTOMER
+            ,cpf=data.cpf
         )
         db.add(user)
 
         await db.commit()
+        await EmailService.send_template(
+            db, user.email, "welcome", "pt_BR", {"name": user.name}
+        )
 
         access_token = create_access_token({
             "sub": user.email,
@@ -168,13 +182,15 @@ class AuthService:
         return access_token, refresh_token
 
     @staticmethod
-    async def request_email_verification(email: str):
+    async def request_email_verification(email: str, db: AsyncSession):
         normalized_email = email.strip().lower()
         token = create_mfa_token(normalized_email, AuthService.DEV_EMAIL_CODE)
-        EmailService.send_email(
-            to_email=normalized_email,
-            subject="Codigo de validacao ParkHere",
-            body=f"<h1>{AuthService.DEV_EMAIL_CODE}</h1>",
+        await EmailService.send_template(
+            db,
+            normalized_email,
+            "mfa_code",
+            "pt_BR",
+            {"name": normalized_email, "code": AuthService.DEV_EMAIL_CODE},
         )
         print(f"Email validation code for {normalized_email}: {AuthService.DEV_EMAIL_CODE}")
         return {"email_token": token}
@@ -244,6 +260,9 @@ class AuthService:
         if not user:
             return None
 
+        if not user.is_active:
+            return None
+
         if not verify_password(data.password, user.password_hash):
             return None
 
@@ -289,6 +308,9 @@ class AuthService:
         user = result.scalar_one_or_none()
 
         if not user:
+            return None
+
+        if not user.is_active:
             return None
 
         access_token = create_access_token({
@@ -348,10 +370,12 @@ class AuthService:
         print("📲 SMS enviado para {user.phone}: Seu código de verificação é: {otp}", {new_mfa_token})
 
         if method == "email":
-            EmailService.send_email(
-                to_email=user.email,
-                subject="Seu código de verificação",
-                body=f"<h1>{otp}</h1>"
+            await EmailService.send_template(
+                db,
+                user.email,
+                "mfa_code",
+                "pt_BR",
+                {"name": user.name, "code": otp},
             )
 
         elif method == "sms" and user.phone_verified:

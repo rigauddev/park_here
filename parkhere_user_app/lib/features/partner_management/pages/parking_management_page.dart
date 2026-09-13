@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/managed_parking_model.dart';
 import '../providers/partner_parking_provider.dart';
+import '../models/partner_profile_model.dart';
+import '../providers/partner_profile_provider.dart';
+import 'partner_feature_access_page.dart';
 
 class ParkingManagementPage extends ConsumerWidget {
   const ParkingManagementPage({super.key});
@@ -11,6 +14,7 @@ class ParkingManagementPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final parkings = ref.watch(partnerParkingProvider);
+    final partner = ref.watch(partnerProfileProvider).asData?.value;
 
     return Scaffold(
       appBar: AppBar(
@@ -24,7 +28,21 @@ class ParkingManagementPage extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
+        onPressed: () {
+          if (partner != null && partner.unitCount >= partner.unitLimit) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartnerFeatureAccessPage(
+                  partner: partner,
+                  featureKey: 'additional_units',
+                ),
+              ),
+            );
+            return;
+          }
+          _openForm(context, partner: partner);
+        },
         icon: const Icon(Icons.add),
         label: const Text('Novo'),
       ),
@@ -47,7 +65,8 @@ class ParkingManagementPage extends ConsumerWidget {
             itemBuilder: (context, index) {
               return _ManagedParkingCard(
                 parking: items[index],
-                onEdit: () => _openForm(context, items[index]),
+                onEdit: () =>
+                    _openForm(context, parking: items[index], partner: partner),
               );
             },
           );
@@ -56,12 +75,111 @@ class ParkingManagementPage extends ConsumerWidget {
     );
   }
 
-  void _openForm(BuildContext context, [ManagedParkingModel? parking]) {
+  void _openForm(
+    BuildContext context, {
+    ManagedParkingModel? parking,
+    PartnerProfileModel? partner,
+  }) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ParkingManagementFormPage(parking: parking),
+        builder: (_) =>
+            ParkingManagementFormPage(parking: parking, partner: partner),
       ),
+    );
+  }
+}
+
+class _OperatingHoursEditor extends StatelessWidget {
+  final Map<String, Map<String, String>?> hours;
+  final ValueChanged<Map<String, Map<String, String>?>> onChanged;
+  const _OperatingHoursEditor({required this.hours, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = {
+      'mon': 'Segunda',
+      'tue': 'Terça',
+      'wed': 'Quarta',
+      'thu': 'Quinta',
+      'fri': 'Sexta',
+      'sat': 'Sábado',
+      'sun': 'Domingo',
+    };
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Horário de funcionamento',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Defina os dias e horários usados pela geração de escalas.',
+            ),
+            for (final entry in labels.entries)
+              _dayRow(context, entry.key, entry.value),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dayRow(BuildContext context, String key, String label) {
+    final value = hours[key];
+    final closed = value == null;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      title: Text(label),
+      subtitle: Text(
+        closed ? 'Fechado' : '${value['open']} – ${value['close']}',
+      ),
+      trailing: Switch(
+        value: !closed,
+        onChanged: (enabled) {
+          final next = {...hours};
+          next[key] = enabled ? {'open': '08:00', 'close': '18:00'} : null;
+          onChanged(next);
+        },
+      ),
+      onTap: closed
+          ? null
+          : () async {
+              final initial = _parse(value['open'] ?? '08:00');
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: initial,
+              );
+              if (picked == null) return;
+              if (!context.mounted) return;
+              final finish = await showTimePicker(
+                context: context,
+                initialTime: _parse(value['close'] ?? '18:00'),
+              );
+              if (finish == null) return;
+              if (!context.mounted) return;
+              final next = {
+                ...hours,
+                key: {
+                  'open': picked.format(context),
+                  'close': finish.format(context),
+                },
+              };
+              onChanged(next);
+            },
+    );
+  }
+
+  TimeOfDay _parse(String value) {
+    final parts = value.split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts.first) ?? 8,
+      minute: int.tryParse(parts.last) ?? 0,
     );
   }
 }
@@ -192,8 +310,9 @@ class _PriceLine extends StatelessWidget {
 
 class ParkingManagementFormPage extends ConsumerStatefulWidget {
   final ManagedParkingModel? parking;
+  final PartnerProfileModel? partner;
 
-  const ParkingManagementFormPage({super.key, this.parking});
+  const ParkingManagementFormPage({super.key, this.parking, this.partner});
 
   @override
   ConsumerState<ParkingManagementFormPage> createState() =>
@@ -228,6 +347,12 @@ class _ParkingManagementFormPageState
   final coveredDailyController = TextEditingController();
   final coveredWeeklyController = TextEditingController();
   final coveredMonthlyController = TextEditingController();
+  final Map<String, List<TextEditingController>> specialPricing = {
+    'vip': List.generate(5, (_) => TextEditingController()),
+    'large': List.generate(5, (_) => TextEditingController()),
+    'bus': List.generate(5, (_) => TextEditingController()),
+    'pickup': List.generate(5, (_) => TextEditingController()),
+  };
 
   final serviceNameController = TextEditingController();
   final servicePriceController = TextEditingController();
@@ -237,6 +362,10 @@ class _ParkingManagementFormPageState
   bool wantsAutomaticAccess = false;
   bool hasAutomaticAccess = false;
   bool isActive = true;
+  final Map<String, Map<String, String>?> operatingHours = {
+    for (final day in const ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
+      day: {'open': '08:00', 'close': '18:00'},
+  };
   String serviceCode = 'car_wash';
   List<ManagedParkingServiceModel> services = [];
   bool isSaving = false;
@@ -254,6 +383,10 @@ class _ParkingManagementFormPageState
     final total = _sumSpots();
     if (totalController.text != total.toString()) {
       totalController.text = total.toString();
+    }
+    if (widget.parking == null &&
+        availableController.text != total.toString()) {
+      availableController.text = total.toString();
     }
   }
 
@@ -302,6 +435,9 @@ class _ParkingManagementFormPageState
     busController.text = parking.busSpots.toString();
     pickupController.text = parking.pickupSpots.toString();
     has24hGate = parking.has24hGate;
+    operatingHours
+      ..clear()
+      ..addAll(parking.operatingHours);
     hasSecuritySystem = parking.hasSecuritySystem;
     wantsAutomaticAccess = parking.wantsAutomaticAccess;
     hasAutomaticAccess = parking.hasAutomaticAccess;
@@ -321,6 +457,11 @@ class _ParkingManagementFormPageState
       coveredWeeklyController,
       coveredMonthlyController,
     ]);
+    for (final entry in parking.categoryPricing.entries) {
+      if (specialPricing.containsKey(entry.key)) {
+        _fillPricing(entry.value, specialPricing[entry.key]!);
+      }
+    }
   }
 
   @override
@@ -352,6 +493,7 @@ class _ParkingManagementFormPageState
       coveredMonthlyController,
       serviceNameController,
       servicePriceController,
+      ...specialPricing.values.expand((items) => items),
     ]) {
       controller.dispose();
     }
@@ -404,7 +546,13 @@ class _ParkingManagementFormPageState
                     child: _field(totalController, 'Total', readOnly: true),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: _field(availableController, 'Disponíveis')),
+                  Expanded(
+                    child: _field(
+                      availableController,
+                      'Disponíveis',
+                      readOnly: true,
+                    ),
+                  ),
                 ],
               ),
               _field(arrivalToleranceController, 'Tolerância de chegada (min)'),
@@ -414,6 +562,24 @@ class _ParkingManagementFormPageState
                   const SizedBox(width: 10),
                   Expanded(child: _field(uncoveredController, 'Descobertas')),
                 ],
+              ),
+              for (final entry in {
+                'vip': 'VIP',
+                'large': 'Carro grande',
+                'bus': 'Ônibus',
+                'pickup': 'Picape',
+              }.entries)
+                if (_countFor(entry.key) > 0)
+                  _PricingSection(
+                    title: 'Tarifas ${entry.value}',
+                    controllers: specialPricing[entry.key]!,
+                  ),
+              OutlinedButton.icon(
+                onPressed: () => _showMessage(
+                  'Para criar um tipo especial, informe quantidade acima de zero e suas tarifas.',
+                ),
+                icon: const Icon(Icons.add),
+                label: const Text('Adicionar tipo especial'),
               ),
               const SizedBox(height: 4),
               Text(
@@ -443,6 +609,14 @@ class _ParkingManagementFormPageState
                 onChanged: (value) => setState(() => has24hGate = value),
                 title: const Text('Portaria 24h'),
                 contentPadding: EdgeInsets.zero,
+              ),
+              _OperatingHoursEditor(
+                hours: operatingHours,
+                onChanged: (value) => setState(
+                  () => operatingHours
+                    ..clear()
+                    ..addAll(value),
+                ),
               ),
               SwitchListTile(
                 value: hasSecuritySystem,
@@ -608,6 +782,39 @@ class _ParkingManagementFormPageState
       return;
     }
 
+    final partner = widget.partner;
+    if (partner != null && !partner.hasFeature('services_management')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'services_management',
+          ),
+        ),
+      );
+      return;
+    }
+    final currentUnitServices = widget.parking?.services.length ?? 0;
+    final nextTenantCount =
+        (partner?.serviceCount ?? 0) -
+        currentUnitServices +
+        services.length +
+        1;
+    if (partner != null && nextTenantCount > partner.serviceLimit) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'additional_services',
+            requestedQuantity: nextTenantCount - partner.serviceLimit,
+          ),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       services = [
         ...services,
@@ -700,8 +907,20 @@ class _ParkingManagementFormPageState
         coveredMonthlyController,
       ]),
       services: services,
+      categoryPricing: {
+        for (final entry in specialPricing.entries)
+          if (_countFor(entry.key) > 0) entry.key: _pricing(entry.value),
+      },
+      operatingHours: operatingHours,
     );
   }
+
+  int _countFor(String key) => switch (key) {
+    'vip' => _int(vipController, 'VIP'),
+    'large' => _int(largeController, 'Carro grande'),
+    'bus' => _int(busController, 'Ônibus'),
+    _ => _int(pickupController, 'Picape'),
+  };
 
   ParkingAreaPricingModel _pricing(List<TextEditingController> controllers) {
     if (controllers.any((controller) => _double(controller, 'Tarifa') < 0)) {

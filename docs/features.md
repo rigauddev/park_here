@@ -25,6 +25,9 @@
 - Enviar documentacao do estabelecimento, alvara e documentos pessoais do responsavel.
 - Aguardar vistoria/aprovacao antes de publicar.
 - Gerenciar usuarios internos: admin, operador, guia/servico.
+- Parceiro guia turístico mantém empresa e tenant próprios, publica serviços de guia e pode solicitar afiliação a outros parceiros para indicar os serviços deles.
+- Parceiros podem aceitar ou desativar afiliados por unidade/serviço. A oferta de comissão fixa ou percentual é definida para cada modalidade do serviço, mostrada ao guia antes da solicitação e congelada na reserva indicada.
+- A indicação do guia é opcional na escolha do plano da reserva e independente da contratação de passeio/serviço de guia. A comissão do estacionamento é apurada pelo backend após a conclusão da reserva.
 - Definir permissoes do operador ao criar usuario interno.
 - Configurar precificacao.
 - Configurar servicos adicionais.
@@ -34,6 +37,10 @@
 - Consultar reservas ativas, expiradas, canceladas e finalizadas.
 - Ver no mapa operacional a previsao de chegada das pre-reservas recebidas.
 - Consultar reservas agendadas e aplicar politica de cancelamento configurada.
+- Usar caixa e dashboard operacional básico incluídos no serviço. O Financeiro
+  Pro é um complemento administrativo separado que mostra relatórios reais de
+  reservas, recebimentos e taxas por período; sua cobrança automática ainda
+  depende da integração de pagamentos.
 
 ## Admin Plataforma
 
@@ -102,3 +109,14 @@ V2:
 - Reconhecimento facial.
 - Cameras e dispositivos integrados por eventos.
 - Validacao automatica com fallback manual.
+
+## Funcionalidades e cotas comerciais por parceiro
+
+O painel de gestao controla por empresa acesso e classificacao gratuita/paga
+para dashboard, unidades, mapa/reservas, servicos, equipe, afiliacoes, caixa
+basico e Financeiro Pro, conforme a categoria do parceiro. Um servico e uma
+unidade sao incluidos; extras possuem valor e quantidade configurados no admin,
+solicitacao persistida e aprovacao manual. A API aplica os limites e os
+entitlements. Compra automatica, conciliacao, vigencia e webhook permanecem
+pendentes do Mercado Pago. Pacotes de operadores continuam no fluxo de cotas
+existente; cada unidade adiciona dois operadores conforme a regra atual.

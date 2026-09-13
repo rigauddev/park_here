@@ -20,6 +20,7 @@ class User(BaseModel):
     password_hash = Column(String(255), nullable=False)
 
     phone = Column(String(20), nullable=True)
+    cpf = Column(String(14), nullable=True, unique=True)
 
     phone_verified = Column(Boolean, default=False)
     email_verified = Column(Boolean, default=False)
@@ -33,5 +34,6 @@ class User(BaseModel):
     permissions = Column(Text, nullable=True)
 
     is_active = Column(Boolean, default=True)
+    deactivation_reason = Column(Text, nullable=True)
 
     tenant = relationship("Tenant")

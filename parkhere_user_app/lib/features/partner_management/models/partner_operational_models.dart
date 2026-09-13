@@ -1,3 +1,5 @@
+import 'managed_parking_model.dart';
+
 class PartnerSlotReservation {
   final String id;
   final String status;
@@ -156,6 +158,9 @@ class PartnerParkingLayout {
   final double paidAmount;
   final Map<String, double> servicesAmountByStatus;
   final List<PartnerParkingSlot> slots;
+  final Map<String, ParkingAreaPricingModel> categoryPricing;
+  final ParkingAreaPricingModel? uncoveredPricing;
+  final ParkingAreaPricingModel? coveredPricing;
 
   const PartnerParkingLayout({
     required this.id,
@@ -173,6 +178,9 @@ class PartnerParkingLayout {
     required this.paidAmount,
     required this.servicesAmountByStatus,
     required this.slots,
+    this.categoryPricing = const {},
+    this.uncoveredPricing,
+    this.coveredPricing,
   });
 
   factory PartnerParkingLayout.fromJson(Map<String, dynamic> json) {
@@ -202,7 +210,30 @@ class PartnerParkingLayout {
         for (final item in json['slots'] as List<dynamic>)
           PartnerParkingSlot.fromJson(item as Map<String, dynamic>),
       ],
+      categoryPricing: {
+        for (final entry in (json['category_pricing'] as Map<String, dynamic>? ?? {}).entries)
+          entry.key: ParkingAreaPricingModel.fromJson(entry.value as Map<String, dynamic>),
+      },
+      uncoveredPricing: json['uncovered_pricing'] is Map<String, dynamic>
+          ? ParkingAreaPricingModel.fromJson(json['uncovered_pricing'] as Map<String, dynamic>)
+          : null,
+      coveredPricing: json['covered_pricing'] is Map<String, dynamic>
+          ? ParkingAreaPricingModel.fromJson(json['covered_pricing'] as Map<String, dynamic>)
+          : null,
     );
+  }
+
+  Map<String, double> pricingFor(String type) {
+    final category = categoryPricing[type];
+    final fallback = type == 'covered' || type == 'vip' ? coveredPricing : uncoveredPricing;
+    final selected = category ?? fallback;
+    if (selected == null) return const {};
+    return {
+      'hourly': selected.firstHourPrice,
+      'daily': selected.dailyPrice,
+      'weekly': selected.weeklyPrice,
+      'monthly': selected.monthlyPrice,
+    };
   }
 }
 

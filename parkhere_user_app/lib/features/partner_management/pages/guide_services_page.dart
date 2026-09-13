@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../models/partner_profile_model.dart';
+import '../pages/partner_feature_access_page.dart';
 
 class GuideServicesPage extends ConsumerStatefulWidget {
   const GuideServicesPage({super.key});
@@ -13,6 +15,7 @@ class GuideServicesPage extends ConsumerStatefulWidget {
 class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
   final _api = ApiService();
   List<Map<String, dynamic>> _services = [];
+  PartnerProfileModel? _partner;
 
   @override
   void initState() {
@@ -24,12 +27,41 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
     final result = await _api.getAuthorized('/partners/guide/services', token);
+    final partnerData = await _api.getAuthorizedMap('/partners/me', token);
     if (mounted) {
-      setState(() => _services = result.cast<Map<String, dynamic>>());
+      setState(() {
+        _services = result.cast<Map<String, dynamic>>();
+        _partner = PartnerProfileModel.fromJson(partnerData);
+      });
     }
   }
 
   Future<void> _add() async {
+    final partner = _partner;
+    if (partner != null && !partner.hasFeature('services_management')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'services_management',
+          ),
+        ),
+      );
+      return;
+    }
+    if (partner != null && partner.serviceCount >= partner.serviceLimit) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'additional_services',
+          ),
+        ),
+      );
+      return;
+    }
     final name = TextEditingController();
     final description = TextEditingController();
     final price = TextEditingController();
@@ -86,15 +118,25 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
     final amount = double.tryParse(price.text.replaceAll(',', '.')) ?? 0;
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
-    await _api.postAuthorized('/partners/guide/services', {
-      'name': name.text,
-      'description': description.text,
-      'price': amount,
-      'duration_minutes': duration.text,
-      'schedule': {'description': schedule.text.trim()},
-      'is_active': true,
-    }, token);
-    await _load();
+    try {
+      await _api.postAuthorized('/partners/guide/services', {
+        'name': name.text,
+        'description': description.text,
+        'price': amount,
+        'duration_minutes': duration.text,
+        'schedule': {'description': schedule.text.trim()},
+        'is_active': true,
+      }, token);
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível cadastrar o serviço: $error'),
+          ),
+        );
+      }
+    }
   }
 
   @override

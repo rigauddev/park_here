@@ -42,7 +42,14 @@ async def list_affiliated_guides(parking_id: str, db: AsyncSession = Depends(get
     result = await db.execute(
         select(GuideParkingLink, User)
         .join(User, User.id == GuideParkingLink.guide_user_id)
-        .where(GuideParkingLink.parking_id == parking_id, GuideParkingLink.status == 'approved')
+        .join(Parking, Parking.id == GuideParkingLink.parking_id)
+        .where(
+            GuideParkingLink.parking_id == parking_id,
+            GuideParkingLink.status == 'approved',
+            Parking.accepts_guide_affiliates.is_(True),
+            User.is_active.is_(True),
+            User.tenant_id != Parking.tenant_id,
+        )
     )
     return [
         {'id': guide.id, 'name': guide.name, 'email': guide.email}

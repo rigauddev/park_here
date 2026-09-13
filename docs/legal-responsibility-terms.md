@@ -1,18 +1,28 @@
-# Termos De Responsabilidade MVP
+# Termos de responsabilidade MVP — referência interna
 
-Este documento orienta os textos de aceite do ParkHere. Nao substitui revisao juridica.
+Este documento orienta os textos de aceite do ParkHere. Nao substitui revisao juridica. Ver tambem [minutas por categoria](legal-service-terms-draft.md) e a skill [parkhere-legal-review](../agents/skills/parkhere-legal-review/SKILL.md). Os termos ainda devem ser revisados por advogado brasileiro antes de uso público.
 
 ## Bases Consultadas
 
 - Codigo de Defesa do Consumidor, especialmente responsabilidade por servico.
 - Sumula 130 do STJ sobre responsabilidade por dano ou furto de veiculo em estacionamento.
 - LGPD para dados pessoais, documentos, localizacao, imagens e biometria.
+- Orientacao ANPD sobre legítimo interesse e direitos do titular.
 
 Fontes:
 
 - https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm
 - https://arquivocidadao.stj.jus.br/index.php/sumula-130
 - https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/L13709compilado.htm
+- https://www.gov.br/anpd/pt-br/centrais-de-conteudo/materiais-educativos-e-publicacoes/guia_orientativo_hipoteses_legais_tratamento_de_dados_pessoais_legitimo_interesse
+- https://www.gov.br/anpd/pt-br/canais_atendimento/cidadao-titular-de-dados/denuncia-peticao-de-titular-referente-lgpd
+- https://www.stj.jus.br/sites/portalp/Paginas/Comunicacao/Noticias/08042021-Site-de-comercio-eletronico-nao-e-responsavel-por-fraude-praticada-fora-da-plataforma.aspx
+
+## Posicionamento da plataforma e aceite na reserva
+
+ParkHere pode informar que conecta cliente e prestador e facilita a descoberta, solicitação, reserva e comunicação. O texto não deve declarar que a plataforma nunca responde por problemas do serviço: o papel real, publicidade, cobrança, suporte e participação em cada operação importam, e direitos do consumidor não podem ser afastados por aceite genérico. A redação atual e cada contrato de categoria devem passar por revisão jurídica.
+
+No momento da reserva, identificar o prestador e apresentar condições de cada serviço contratado. O backend persiste snapshot localizado/versionado e timestamp em cada reserva (`terms_accepted_at`, `terms_version`, `terms_locale`, `accepted_terms_snapshot`). Marketing personalizado é separado do aceite necessário à reserva.
 
 ## Aceite Do Cliente Ao Criar Conta
 
