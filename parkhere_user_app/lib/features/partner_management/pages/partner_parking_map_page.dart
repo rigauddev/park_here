@@ -1407,10 +1407,10 @@ class _FreeSlotReservationDialogState
         ref.invalidate(partnerReservationsProvider);
         if (!mounted) return;
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pix simulado. Nenhuma cobrança realizada.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Pix simulado. Nenhuma cobrança realizada.',
+          isError: false,
         );
         return;
       }
@@ -1858,10 +1858,10 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
         widget.onCompleted();
         if (!mounted) return;
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pix simulado. Nenhuma cobrança realizada.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Pix simulado. Nenhuma cobrança realizada.',
+          isError: false,
         );
         return;
       }
@@ -1897,8 +1897,10 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pagamento recebido no caixa.')),
+      await ApiFeedback.show(
+        context,
+        'Pagamento recebido no caixa.',
+        isError: false,
       );
     } catch (error) {
       if (!mounted) return;
@@ -2036,9 +2038,7 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Check-in realizado.')));
+      await ApiFeedback.show(context, 'Check-in realizado.', isError: false);
     } catch (error) {
       if (!mounted) return;
       await _showCenteredError(context, 'Erro ao realizar check-in: $error');
@@ -2177,9 +2177,7 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Checkout realizado.')));
+      await ApiFeedback.show(context, 'Checkout realizado.', isError: false);
     } catch (error) {
       if (!mounted) return;
       await _showCenteredError(context, 'Erro ao realizar checkout: $error');

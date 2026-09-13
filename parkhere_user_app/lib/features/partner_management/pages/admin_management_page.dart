@@ -1145,12 +1145,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       final value = int.tryParse(input.text.trim());
       if (value == null || value < 0) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                _tr('Informe um número válido.', 'Enter a valid number.'),
-              ),
-            ),
+          await ApiFeedback.show(
+            context,
+            _tr('Informe um número válido.', 'Enter a valid number.'),
           );
         }
       } else {
@@ -2005,10 +2002,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       );
       if (dialogContext.mounted) Navigator.pop(dialogContext);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(active ? 'Serviço ativado.' : 'Serviço desativado.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          active ? 'Serviço ativado.' : 'Serviço desativado.',
+          isError: false,
         );
       }
       await _load();
@@ -2135,12 +2132,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       token,
     );
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Taxa individual salva; ela substitui a taxa padrão para este parceiro.',
-          ),
-        ),
+      await ApiFeedback.show(
+        context,
+        'Taxa individual salva; ela substitui a taxa padrão para este parceiro.',
+        isError: false,
       );
     }
   }
@@ -2189,10 +2184,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         token,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(active ? 'Acesso reativado.' : 'Acesso desativado.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          active ? 'Acesso reativado.' : 'Acesso desativado.',
+          isError: false,
         );
       }
       await _load();
