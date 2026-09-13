@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, Query
 import unicodedata
 from sqlalchemy import select
@@ -102,6 +103,10 @@ def _to_response(parking: Parking) -> ParkingResponse:
             coveredFirstHourPrice=parking.covered_first_hour_price,
             uncoveredFirstHourPrice=parking.uncovered_first_hour_price,
         ),
+        category_pricing={
+            key: value
+            for key, value in json.loads(parking.category_pricing or '{}').items()
+        },
         hasCarWash="car_wash" in services,
         hasTourGuide="tour_guide" in services,
         hasTransportService="transport" in services,

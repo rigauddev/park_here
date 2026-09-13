@@ -26,6 +26,8 @@ class ReservationModel {
   final bool checkedIn;
   final String paymentStatus;
   final String? paymentMethod;
+  final String apiStatus;
+  final String? cancelledByName;
 
   // Serviços adicionais
   final bool carWash;
@@ -57,6 +59,8 @@ class ReservationModel {
     this.checkedIn = false,
     this.paymentStatus = 'pending_checkin',
     this.paymentMethod,
+    this.apiStatus = 'pre_reserved',
+    this.cancelledByName,
   });
 
   ReservationModel copyWith({
@@ -96,6 +100,8 @@ class ReservationModel {
       checkedIn: checkedIn,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      apiStatus: apiStatus,
+      cancelledByName: cancelledByName,
     );
   }
 
@@ -120,6 +126,8 @@ class ReservationModel {
     'checkedIn': checkedIn,
     'paymentStatus': paymentStatus,
     'paymentMethod': paymentMethod,
+    'apiStatus': apiStatus,
+    'cancelledByName': cancelledByName,
     'parking': {
       'id': preCheckin.parking.id,
       'name': preCheckin.parking.name,
@@ -191,6 +199,8 @@ class ReservationModel {
       checkedIn: json['checkedIn'] as bool? ?? false,
       paymentStatus: json['paymentStatus'] as String? ?? 'pending_checkin',
       paymentMethod: json['paymentMethod'] as String?,
+      apiStatus: json['apiStatus'] as String? ?? 'pre_reserved',
+      cancelledByName: json['cancelledByName'] as String?,
       firstHourPrice: (json['firstHourPrice'] as num?)?.toDouble() ?? 0,
       additionalHourPrice:
           (json['additionalHourPrice'] as num?)?.toDouble() ?? 0,
@@ -218,8 +228,10 @@ class ReservationModel {
   }
 
   factory ReservationModel.fromApi(Map<String, dynamic> json) {
-    final total = (json['final_total'] as num?)?.toDouble() ??
-        (json['estimated_total'] as num?)?.toDouble() ?? 0;
+    final total =
+        (json['final_total'] as num?)?.toDouble() ??
+        (json['estimated_total'] as num?)?.toDouble() ??
+        0;
     final plan = PlanType.values.firstWhere(
       (value) => value.name == json['pricing_plan'],
       orElse: () => PlanType.hourly,
@@ -254,14 +266,19 @@ class ReservationModel {
       hasCoveredArea: false,
       hasVipSpots: false,
     );
-    final created = DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now();
-    final expires = DateTime.tryParse(json['hold_expires_at'] as String? ?? '') ?? created.add(const Duration(hours: 12));
+    final created =
+        DateTime.tryParse(json['created_at'] as String? ?? '') ??
+        DateTime.now();
+    final expires =
+        DateTime.tryParse(json['hold_expires_at'] as String? ?? '') ??
+        created.add(const Duration(hours: 12));
     return ReservationModel(
       id: json['id'] as String,
       parkingName: parking.name,
       plan: plan,
       status: status,
-      checkinAt: DateTime.tryParse(json['checked_in_at'] as String? ?? '') ?? created,
+      checkinAt:
+          DateTime.tryParse(json['checked_in_at'] as String? ?? '') ?? created,
       checkoutAt: DateTime.tryParse(json['checked_out_at'] as String? ?? ''),
       estimatedValue: total,
       finalValue: (json['final_total'] as num?)?.toDouble(),
@@ -288,6 +305,8 @@ class ReservationModel {
       checkedIn: json['checked_in_at'] != null,
       paymentStatus: json['payment_status'] as String? ?? 'pending_checkin',
       paymentMethod: json['payment_method'] as String?,
+      apiStatus: json['status'] as String? ?? 'pre_reserved',
+      cancelledByName: json['cancelled_by_name'] as String?,
     );
   }
 }

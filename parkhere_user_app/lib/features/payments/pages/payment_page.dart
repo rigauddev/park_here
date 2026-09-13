@@ -15,6 +15,8 @@ import '../services/payment_service.dart';
 class PaymentPage extends ConsumerStatefulWidget {
   final double amount;
   final String? reservationId;
+  final String paymentPurpose;
+  final bool checkoutPayment;
   final bool payNow;
   final FutureOr<void> Function() onPaymentSuccess;
 
@@ -22,6 +24,8 @@ class PaymentPage extends ConsumerStatefulWidget {
     super.key,
     required this.amount,
     this.reservationId,
+    this.paymentPurpose = 'reservation',
+    this.checkoutPayment = false,
     required this.payNow,
     required this.onPaymentSuccess,
   });
@@ -45,7 +49,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Future<void> _loadQuote() async {
     final reservationId = widget.reservationId;
     final token = ref.read(authProvider).accessToken;
-    if (reservationId == null || token == null) return;
+    if (reservationId == null || token == null || widget.checkoutPayment) return;
     try {
       final quote = await PaymentService().reservationQuote(
         reservationId,
@@ -98,6 +102,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         method: paymentMethod,
         accessToken: accessToken,
         reservationId: widget.reservationId,
+        purpose: widget.paymentPurpose,
       );
 
       if (result.success) {
@@ -114,7 +119,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         await widget.onPaymentSuccess();
 
         if (mounted) {
-          Navigator.pop(context);
+          Navigator.pop(context, true);
         }
       } else {
         throw Exception("Pagamento recusado");
@@ -244,7 +249,11 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 ),
 
               Text(
-                widget.payNow
+                widget.checkoutPayment
+                    ? (widget.paymentPurpose == 'checkout_excess'
+                          ? 'Pagamento do excedente de permanência'
+                          : 'Pagamento pendente para liberar o checkout')
+                    : widget.payNow
                     ? "Pagamento necessário para iniciar"
                     : "Pagamento no checkout",
                 style: const TextStyle(fontSize: 18),
@@ -259,7 +268,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              if (_quote != null)
+              if (_quote != null && !widget.checkoutPayment)
                 Card(
                   child: Column(
                     children: [
@@ -377,5 +386,6 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     }
   }
 
-  String _money(dynamic value) => ((value as num?)?.toDouble() ?? widget.amount).toStringAsFixed(2);
+  String _money(dynamic value) =>
+      ((value as num?)?.toDouble() ?? widget.amount).toStringAsFixed(2);
 }

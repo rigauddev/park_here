@@ -200,3 +200,24 @@ docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s te
   concluir a operação; teste também a criação de uma escala para filial.
 - Envie um template de e-mail com cabeçalho customizado sem imagem e confirme
   que o e-mail recebido ainda exibe o logo inline do ParkHere.
+
+## Checkout com excedente e cancelamento
+
+- Crie uma pré-reserva de teste, pague, faça check-in e deixe o horário passar.
+  O checkout deve consultar a API; a resposta `402` deve apresentar minutos e
+  valor do excedente calculados no backend. Pague o propósito
+  `checkout_excess`, tente novamente e confira status finalizado e vaga liberada.
+- Na lista recebida do parceiro, uma reserva em permanência com atraso deve
+  apresentar tempo excedido e valor atualizado. Confira especialmente a tarifa
+  adicional da categoria da vaga.
+- Cliente pode cancelar somente pré-reserva não paga e ainda em estado
+  `pre_reserved`. Reserva confirmada/paga não pode ser cancelada por esse botão;
+  deve aguardar o módulo de pedido de reembolso.
+- Confira número de exibição `PH-XXXXXXXX` nos cards/detalhes e ordenação por
+  criação mais recente. O UUID continua como chave técnica.
+- A carteira de teste mostra cartões em cartões visuais empilhados e oferece
+  bandeira, titular, número e validade. Persistência atual é apenas local e
+  guarda metadados mascarados; não testar cobranças reais com cartão digitado.
+- O fluxo formal de reembolso (motivo, anexo opcional, prazo de três dias úteis,
+  decisão auditada e estorno no provedor) ainda não está implementado. Não
+  anunciar o valor de `cancellation_credit_amount` como dinheiro estornado.

@@ -73,3 +73,12 @@ Antes de qualquer biometria:
 - Deve existir alternativa manual sem biometria.
 - Deve haver politica de retencao, finalidade, seguranca, revogacao e auditoria.
 - Dados biometricos devem ser tratados como dados sensiveis.
+
+## Cancelamento e reembolso de reservas pagas
+
+- O endpoint de cancelamento atual não executa reembolso. O valor `cancellation_credit_amount` não é dinheiro devolvido nem confirmação de estorno.
+- O CDC prevê direito de arrependimento de sete dias para contratação fora do estabelecimento comercial, incluindo contratação eletrônica. A aplicação a cada categoria, início da execução do serviço, cálculo de prazo e eventual devolução parcial deve ser validada por advogado antes de publicar uma política ou descontar taxas.
+- O prazo operacional de três dias úteis para análise é um SLA de resposta da plataforma; ele não deve reduzir ou suspender direitos legais nem atrasar devolução que a lei determine.
+- Antes de ativar cobrança de taxa por cancelamento/reembolso, a tela deve mostrar valor pago, fundamento e valor estimado a devolver. Uma taxa só pode ser efetivada após revisão da política aplicável e aprovação jurídica.
+
+Referência primária: [Código de Defesa do Consumidor, art. 49 (Planalto)](https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm). Esta nota é triagem de produto, não parecer jurídico; validar com advogado brasileiro.

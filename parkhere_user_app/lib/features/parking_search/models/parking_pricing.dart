@@ -38,4 +38,15 @@ class ParkingPricing {
           (json["uncoveredFirstHourPrice"] as num?)?.toDouble() ?? 0,
     );
   }
+
+  factory ParkingPricing.fromCategoryJson(Map<String, dynamic> json) {
+    return ParkingPricing(
+      firstHourPrice: (json['first_hour_price'] as num?)?.toDouble() ?? 0,
+      additionalHourPrice:
+          (json['additional_hour_price'] as num?)?.toDouble() ?? 0,
+      dailyPrice: (json['daily_price'] as num?)?.toDouble() ?? 0,
+      weeklyPrice: (json['weekly_price'] as num?)?.toDouble() ?? 0,
+      monthlyPrice: (json['monthly_price'] as num?)?.toDouble() ?? 0,
+    );
+  }
 }

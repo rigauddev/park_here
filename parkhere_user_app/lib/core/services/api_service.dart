@@ -18,6 +18,13 @@ class ApiConnectionException implements Exception {
   String toString() => 'Nao foi possivel conectar com a API.';
 }
 
+class AuthorizedApiResponse {
+  final int statusCode;
+  final Map<String, dynamic> body;
+
+  const AuthorizedApiResponse({required this.statusCode, required this.body});
+}
+
 class ApiService {
   static Future<void> Function()? onUnauthorized;
   static const _timeout = Duration(seconds: 12);
@@ -113,6 +120,34 @@ class ApiService {
 
     await _handleUnauthorized(response);
     throw Exception(_errorMessage(response));
+  }
+
+  /// Returns structured non-2xx responses for endpoints whose status codes are
+  /// part of the workflow, such as 402 when checkout requires payment.
+  Future<AuthorizedApiResponse> postAuthorizedWithStatus(
+    String endpoint,
+    Map<String, dynamic> body,
+    String token,
+  ) async {
+    final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
+    final response = await http
+        .post(url, headers: _authorizedHeaders(token), body: jsonEncode(body))
+        .timeout(_timeout);
+    await _handleUnauthorized(response);
+
+    Map<String, dynamic> decoded;
+    try {
+      final value = jsonDecode(response.body);
+      decoded = value is Map<String, dynamic>
+          ? value
+          : <String, dynamic>{'detail': value};
+    } catch (_) {
+      decoded = <String, dynamic>{};
+    }
+    return AuthorizedApiResponse(
+      statusCode: response.statusCode,
+      body: decoded,
+    );
   }
 
   Future<Map<String, dynamic>> uploadAuthorizedFile(

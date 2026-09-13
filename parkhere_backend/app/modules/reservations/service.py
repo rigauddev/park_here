@@ -146,6 +146,17 @@ class ReservationService:
                 detail="Reservation cannot be cancelled",
             )
 
+        if reservation.payment_status == "paid":
+            raise HTTPException(
+                status_code=409,
+                detail="Paid reservations require a refund request; cancellation cannot substitute for a refund.",
+            )
+        if current_user.role == UserRoleEnum.CUSTOMER and reservation.status != "pre_reserved":
+            raise HTTPException(
+                status_code=409,
+                detail="Only an unpaid pre-reservation can be cancelled directly.",
+            )
+
         if reservation.status == "checked_in" and current_user.role not in {
             UserRoleEnum.PARTNER_MANAGER,
             UserRoleEnum.PARKING_ADMIN,
@@ -155,7 +166,11 @@ class ReservationService:
                 detail="Only partner administrator can cancel after check-in",
             )
 
-        fee_amount = await _calculate_cancellation_fee(db, reservation)
+        fee_amount = (
+            0.0
+            if current_user.role == UserRoleEnum.CUSTOMER
+            else await _calculate_cancellation_fee(db, reservation)
+        )
         credit_amount = max((reservation.final_total or 0) - fee_amount, 0) if reservation.payment_status == "paid" else 0
 
         reservation.status = "cancelled"
@@ -170,7 +185,8 @@ class ReservationService:
         parking.available_spots = min(parking.available_spots + 1, parking.total_spots)
         await db.commit()
         await db.refresh(reservation)
-        return to_response(reservation)
+        response = to_response(reservation)
+        return response.model_copy(update={"cancelled_by_name": current_user.name})
 
     @staticmethod
     async def checkin(
@@ -785,6 +801,7 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         cancelled_at=reservation.cancelled_at.isoformat() + "Z"
         if reservation.cancelled_at
         else None,
+        cancelled_by_user_id=reservation.cancelled_by_user_id,
         cancellation_fee_amount=reservation.cancellation_fee_amount,
         cancellation_credit_amount=reservation.cancellation_credit_amount,
         checkout_grace_minutes=reservation.checkout_grace_minutes,

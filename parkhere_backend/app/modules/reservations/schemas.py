@@ -103,6 +103,8 @@ class ReservationResponse(BaseModel):
     accepted_terms: list[dict] = Field(default_factory=list)
     notification_status: str
     cancelled_at: str | None = None
+    cancelled_by_user_id: str | None = None
+    cancelled_by_name: str | None = None
     cancellation_fee_amount: float = 0
     cancellation_credit_amount: float = 0
     checkout_grace_minutes: int = 15

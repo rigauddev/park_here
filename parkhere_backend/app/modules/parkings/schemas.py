@@ -118,6 +118,7 @@ class ParkingResponse(BaseModel):
     rating: float
     availableSpots: int
     pricing: ParkingPricingResponse
+    category_pricing: dict[str, ParkingAreaPricing] = Field(default_factory=dict)
     hasCarWash: bool
     hasTourGuide: bool
     hasTransportService: bool

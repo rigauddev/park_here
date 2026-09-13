@@ -423,7 +423,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       title: 'Avulso por hora',
                       subtitle: 'Ideal para paradas rápidas',
                       price:
-                          'R\$ ${parking.pricing.firstHourPrice.toStringAsFixed(2)}',
+                          'R\$ ${_priceForArea(parking, selectedArea, hourly: true).toStringAsFixed(2)}',
                       badge: 'Mais flexível',
                       highlighted: true,
                       onTap: () =>
@@ -436,7 +436,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       title: 'Diária',
                       subtitle: 'Para permanecer o dia todo',
                       price:
-                          'R\$ ${parking.pricing.dailyPrice.toStringAsFixed(2)}',
+                          'R\$ ${_priceForArea(parking, selectedArea).toStringAsFixed(2)}',
                       badge: 'Dia completo',
                       onTap: () {
                         ref.read(selectedDailyDaysProvider.notifier).state = 1;
@@ -450,7 +450,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       title: 'Mensal',
                       subtitle: 'Melhor para rotina frequente',
                       price:
-                          'R\$ ${parking.pricing.monthlyPrice.toStringAsFixed(2)}',
+                          'R\$ ${_monthlyPriceForArea(parking, selectedArea).toStringAsFixed(2)}',
                       badge: 'Recorrência',
                       onTap: () =>
                           ref.read(selectedPlanProvider.notifier).state =
@@ -478,7 +478,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                 total = _priceForArea(parking, selectedArea) * dailyDays;
                 break;
               case PlanType.monthly:
-                total = parking.pricing.monthlyPrice;
+                total = _monthlyPriceForArea(parking, selectedArea);
                 break;
             }
 
@@ -1368,6 +1368,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     AreaPreference area, {
     bool hourly = false,
   }) {
+    final category = parking.categoryPricing[area.name];
+    if (category != null) {
+      return hourly ? category.firstHourPrice : category.dailyPrice;
+    }
     if (hourly) {
       return area == AreaPreference.covered
           ? parking.pricing.coveredFirstHourPrice
@@ -1380,6 +1384,11 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
         : area == AreaPreference.uncovered
         ? parking.pricing.uncoveredDailyPrice
         : parking.pricing.dailyPrice;
+  }
+
+  double _monthlyPriceForArea(ParkingModel parking, AreaPreference area) {
+    return parking.categoryPricing[area.name]?.monthlyPrice ??
+        parking.pricing.monthlyPrice;
   }
 
   AreaPreference _firstAvailableArea(ParkingModel parking) {

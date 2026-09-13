@@ -18,6 +18,7 @@ class ParkingModel {
 
   // ✅ Precificação completa
   final ParkingPricing pricing;
+  final Map<String, ParkingPricing> categoryPricing;
 
   // Serviços adicionais
   final bool hasCarWash;
@@ -46,6 +47,7 @@ class ParkingModel {
     this.pickupSpots = 0,
     this.motoHomeSpots = 0,
     required this.pricing,
+    this.categoryPricing = const {},
     required this.hasCarWash,
     required this.hasTourGuide,
     required this.hasTransportService,
@@ -81,6 +83,13 @@ class ParkingModel {
       tourGuidePrice: (json["tourGuidePrice"] as num).toDouble(),
       transportPrice: (json["transportPrice"] as num).toDouble(),
       pricing: ParkingPricing.fromJson(json["pricing"]),
+      categoryPricing: (json['category_pricing'] as Map<String, dynamic>? ?? {})
+          .map(
+            (key, value) => MapEntry(
+              key,
+              ParkingPricing.fromCategoryJson(value as Map<String, dynamic>),
+            ),
+          ),
     );
   }
 }

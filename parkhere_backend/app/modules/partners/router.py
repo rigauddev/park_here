@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy import func
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
@@ -35,7 +36,11 @@ from app.modules.platform_fees.feature_catalog import feature_by_key, features_f
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
-from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
+from app.modules.reservations.service import (
+    calculate_checkout_excess,
+    expire_parking_reservations,
+    physical_spot_type,
+)
 from app.modules.reservations.models import Reservation
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
@@ -852,7 +857,8 @@ async def list_partner_reservations(
         db, current_user,
         ('parking_operations', 'cash_management_basic', 'dashboard', 'financial_management'),
     )
-    reservation_query = select(Reservation, Parking, User, Vehicle).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).where(Parking.tenant_id == current_user.tenant_id)
+    cancellation_actor = aliased(User)
+    reservation_query = select(Reservation, Parking, User, Vehicle, cancellation_actor.name).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).outerjoin(cancellation_actor, cancellation_actor.id == Reservation.cancelled_by_user_id).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
         now = _now_schedule_local()
         assigned_ids = (await db.scalars(select(OperatorWorkShift.parking_id).where(
@@ -865,14 +871,18 @@ async def list_partner_reservations(
         reservation_query.order_by(Reservation.created_at.desc())
     )
 
-    return [
-        {
+    payload = []
+    for reservation, parking, customer, vehicle, cancelled_by_name in result.all():
+        excess_minutes, excess_amount = calculate_checkout_excess(reservation, parking)
+        payload.append({
             "id": reservation.id,
             "parking_name": parking.name,
             "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),
             "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "status": reservation.status,
+            "cancelled_by_user_id": reservation.cancelled_by_user_id,
+            "cancelled_by_name": cancelled_by_name,
             "payment_status": reservation.payment_status,
             "notification_status": reservation.notification_status,
             "spot_type": reservation.spot_type,
@@ -887,11 +897,13 @@ async def list_partner_reservations(
             "guide_platform_fee_amount": reservation.guide_platform_fee_amount,
             "guide_payout_amount": reservation.guide_payout_amount,
             "final_total": reservation.final_total,
+            "checkout_excess_minutes": excess_minutes,
+            "checkout_excess_amount": excess_amount,
+            "checkout_grace_minutes": reservation.checkout_grace_minutes,
             "selected_services": _reservation_services(reservation),
             "created_at": reservation.created_at.isoformat() + "Z",
-        }
-        for reservation, parking, customer, vehicle in result.all()
-    ]
+        })
+    return payload
 
 
 @router.get('/financial-report')

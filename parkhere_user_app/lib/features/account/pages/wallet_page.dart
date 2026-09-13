@@ -20,6 +20,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   final expiryController = TextEditingController();
   final pixController = TextEditingController();
   WalletMethodType type = WalletMethodType.creditCard;
+  String selectedBrand = 'Visa';
 
   @override
   void dispose() {
@@ -85,11 +86,6 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                   label: Text('Debito'),
                   icon: Icon(Icons.payment),
                 ),
-                ButtonSegment(
-                  value: WalletMethodType.pix,
-                  label: Text('Pix'),
-                  icon: Icon(Icons.qr_code_2),
-                ),
               ],
               selected: {type},
               onSelectionChanged: (value) => setState(() => type = value.first),
@@ -104,6 +100,29 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ),
             )
           else ...[
+            DropdownButtonFormField<String>(
+              initialValue: selectedBrand,
+              decoration: const InputDecoration(
+                labelText: 'Bandeira do cartão',
+                prefixIcon: Icon(Icons.credit_card),
+              ),
+              items:
+                  const [
+                        'Visa',
+                        'Mastercard',
+                        'Elo',
+                        'American Express',
+                        'Hipercard',
+                      ]
+                      .map(
+                        (brand) =>
+                            DropdownMenuItem(value: brand, child: Text(brand)),
+                      )
+                      .toList(),
+              onChanged: (value) =>
+                  setState(() => selectedBrand = value ?? 'Visa'),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: holderController,
               textCapitalization: TextCapitalization.characters,
@@ -159,8 +178,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
 
     if (!isPix &&
         (holderController.text.trim().isEmpty ||
-            numberController.text.trim().length < 4 ||
-            expiryController.text.trim().isEmpty)) {
+            numberController.text.replaceAll(RegExp(r'\D'), '').length < 12 ||
+            !_isValidExpiry(expiryController.text.trim()))) {
       _showError('Informe nome, numero e validade do cartao.');
       return;
     }
@@ -169,7 +188,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     final lastFour = cardDigits.length >= 4
         ? cardDigits.substring(cardDigits.length - 4)
         : null;
-    final brand = isPix ? null : _detectBrand(cardDigits);
+    final brand = isPix ? null : selectedBrand;
     final label = isPix
         ? 'Pix ${pixController.text.trim()}'
         : '$brand final $lastFour';
@@ -207,12 +226,13 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  String _detectBrand(String digits) {
-    if (digits.startsWith('4')) return 'Visa';
-    if (digits.startsWith('5')) return 'Mastercard';
-    if (digits.startsWith('3')) return 'Amex';
-    if (digits.startsWith('6')) return 'Elo';
-    return 'Cartao';
+  bool _isValidExpiry(String value) {
+    final match = RegExp(r'^(0[1-9]|1[0-2])/(\d{2})$').firstMatch(value);
+    if (match == null) return false;
+    final month = int.parse(match.group(1)!);
+    final year = 2000 + int.parse(match.group(2)!);
+    final now = DateTime.now();
+    return DateTime(year, month + 1).isAfter(DateTime(now.year, now.month));
   }
 }
 
@@ -282,45 +302,81 @@ class _PaymentMethodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isPix = method.type == WalletMethodType.pix;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppTheme.softCyan,
-              foregroundColor: AppTheme.primary,
-              child: Icon(isPix ? Icons.qr_code_2 : Icons.credit_card),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    method.label,
-                    style: const TextStyle(
-                      color: AppTheme.primary,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    isPix
-                        ? method.pixKey ?? 'Pix cadastrado'
-                        : '${method.holderName ?? 'Titular'} | Val. ${method.expiry ?? '--/--'}',
-                    style: const TextStyle(color: AppTheme.textMuted),
-                  ),
-                ],
-              ),
-            ),
-            if (isActive)
-              const Icon(Icons.check_circle, color: AppTheme.success)
-            else
-              TextButton(onPressed: onActivate, child: const Text('Usar')),
-          ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF102657), Color(0xFF087EE1)],
         ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .12),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.credit_card, color: Colors.white70),
+              const Spacer(),
+              Text(
+                method.brand ?? (isPix ? 'PIX' : 'CARTÃO'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 8),
+                const Icon(Icons.check_circle, color: Colors.white),
+              ],
+            ],
+          ),
+          const SizedBox(height: 22),
+          Text(
+            isPix
+                ? (method.pixKey ?? 'Pix cadastrado')
+                : '••••  ••••  ••••  ${method.lastFour ?? '••••'}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 19,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  (method.holderName ?? 'TITULAR').toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                method.expiry ?? '',
+                style: const TextStyle(color: Colors.white70),
+              ),
+              if (!isActive)
+                TextButton(
+                  onPressed: onActivate,
+                  child: const Text(
+                    'Usar',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

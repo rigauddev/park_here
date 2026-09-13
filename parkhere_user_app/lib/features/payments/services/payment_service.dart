@@ -20,11 +20,12 @@ class PaymentService {
     required PaymentMethod method,
     required String accessToken,
     String? reservationId,
+    String purpose = 'reservation',
   }) async {
     if (reservationId != null) {
       final intent = await _api.postAuthorized(
         "/payments/reservations/$reservationId/intent",
-        {"method": _methodName(method)},
+        {"method": _methodName(method), "purpose": purpose},
         accessToken,
       );
       if (intent["is_simulated"] != true) {

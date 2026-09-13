@@ -211,21 +211,31 @@ class PartnerParkingLayout {
           PartnerParkingSlot.fromJson(item as Map<String, dynamic>),
       ],
       categoryPricing: {
-        for (final entry in (json['category_pricing'] as Map<String, dynamic>? ?? {}).entries)
-          entry.key: ParkingAreaPricingModel.fromJson(entry.value as Map<String, dynamic>),
+        for (final entry
+            in (json['category_pricing'] as Map<String, dynamic>? ?? {})
+                .entries)
+          entry.key: ParkingAreaPricingModel.fromJson(
+            entry.value as Map<String, dynamic>,
+          ),
       },
       uncoveredPricing: json['uncovered_pricing'] is Map<String, dynamic>
-          ? ParkingAreaPricingModel.fromJson(json['uncovered_pricing'] as Map<String, dynamic>)
+          ? ParkingAreaPricingModel.fromJson(
+              json['uncovered_pricing'] as Map<String, dynamic>,
+            )
           : null,
       coveredPricing: json['covered_pricing'] is Map<String, dynamic>
-          ? ParkingAreaPricingModel.fromJson(json['covered_pricing'] as Map<String, dynamic>)
+          ? ParkingAreaPricingModel.fromJson(
+              json['covered_pricing'] as Map<String, dynamic>,
+            )
           : null,
     );
   }
 
   Map<String, double> pricingFor(String type) {
     final category = categoryPricing[type];
-    final fallback = type == 'covered' || type == 'vip' ? coveredPricing : uncoveredPricing;
+    final fallback = type == 'covered' || type == 'vip'
+        ? coveredPricing
+        : uncoveredPricing;
     final selected = category ?? fallback;
     if (selected == null) return const {};
     return {
@@ -254,6 +264,9 @@ class PartnerReservationSummary {
   final List<PartnerReservationService> selectedServices;
   final DateTime createdAt;
   final DateTime holdExpiresAt;
+  final int checkoutExcessMinutes;
+  final double checkoutExcessAmount;
+  final String? cancelledByName;
 
   const PartnerReservationSummary({
     required this.id,
@@ -272,6 +285,9 @@ class PartnerReservationSummary {
     required this.selectedServices,
     required this.createdAt,
     required this.holdExpiresAt,
+    this.checkoutExcessMinutes = 0,
+    this.checkoutExcessAmount = 0,
+    this.cancelledByName,
   });
 
   factory PartnerReservationSummary.fromJson(Map<String, dynamic> json) {
@@ -295,6 +311,11 @@ class PartnerReservationSummary {
       ],
       createdAt: DateTime.parse(json['created_at'] as String),
       holdExpiresAt: DateTime.parse(json['hold_expires_at'] as String),
+      checkoutExcessMinutes:
+          (json['checkout_excess_minutes'] as num?)?.toInt() ?? 0,
+      checkoutExcessAmount:
+          (json['checkout_excess_amount'] as num?)?.toDouble() ?? 0,
+      cancelledByName: json['cancelled_by_name'] as String?,
     );
   }
 }

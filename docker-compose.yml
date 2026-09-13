@@ -53,7 +53,7 @@ services:
     volumes:
       - ./parkhere_user_app:/app
     command: >
-      sh -c "flutter pub get &&
+      sh -c "flutter pub get --offline &&
       flutter run -d web-server
       --web-hostname=0.0.0.0
       --web-port=8080"

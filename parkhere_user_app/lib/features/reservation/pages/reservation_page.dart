@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/local_storage_service.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/checkin_page.dart';
 import '../../parking_search/models/parking_model.dart';
@@ -107,7 +109,10 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                     userLocationLng: 0,
                   ),
                 ),
-              ...reservations.where((item) => preReservation == null || item.id != preReservation.id),
+              ...reservations.where(
+                (item) =>
+                    preReservation == null || item.id != preReservation.id,
+              ),
             ];
 
             if (allReservations.isEmpty) {
@@ -136,8 +141,10 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: ordered.length,
-                    itemBuilder: (context, index) =>
-                        _ReservationCard(reservation: ordered[index]),
+                    itemBuilder: (context, index) => _ReservationCard(
+                      reservation: ordered[index],
+                      onCancel: () => _cancelPreReservation(ordered[index]),
+                    ),
                   ),
                 ),
                 ListView(
@@ -195,6 +202,50 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
     );
   }
 
+  Future<void> _cancelPreReservation(ReservationModel reservation) async {
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar pré-reserva'),
+        content: TextField(
+          controller: reasonController,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Motivo (opcional)'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Voltar'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, reasonController.text),
+            child: const Text('Cancelar pré-reserva'),
+          ),
+        ],
+      ),
+    );
+    reasonController.dispose();
+    if (reason == null) return;
+    try {
+      final token = (await LocalStorageService().getTokens())['access'];
+      if (token == null) throw const ApiUnauthorizedException();
+      await ApiService().postAuthorized(
+        '/reservations/${reservation.id}/cancel',
+        {'reason': reason.trim().isEmpty ? null : reason.trim()},
+        token,
+      );
+      ref.invalidate(reservationsProvider);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
+
   List<_ContractedService> _contractedServices(
     List<ReservationModel> reservations,
   ) {
@@ -245,6 +296,11 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
 
     return services;
   }
+}
+
+String _displayReservationNumber(String id) {
+  final compact = id.replaceAll('-', '').toUpperCase();
+  return 'PH-${compact.substring(0, compact.length.clamp(0, 8))}';
 }
 
 class _ContractedService {
@@ -303,8 +359,9 @@ class _ContractedServiceCard extends StatelessWidget {
 
 class _ReservationCard extends StatelessWidget {
   final ReservationModel reservation;
+  final VoidCallback onCancel;
 
-  const _ReservationCard({required this.reservation});
+  const _ReservationCard({required this.reservation, required this.onCancel});
 
   @override
   Widget build(BuildContext context) {
@@ -334,7 +391,7 @@ class _ReservationCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        reservation.parkingName,
+                        '${reservation.parkingName} · ${_displayReservationNumber(reservation.id)}',
                         style: const TextStyle(
                           color: AppTheme.primary,
                           fontWeight: FontWeight.w800,
@@ -406,10 +463,6 @@ class _ReservationCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _InfoPill(
-                  label: 'Vagas disponíveis',
-                  value: '${reservation.preCheckin.parking.availableSpots}',
-                ),
                 if (reservation.tourGuide)
                   const _InfoPill(label: 'Guia', value: 'Indicado'),
               ],
@@ -435,6 +488,15 @@ class _ReservationCard extends StatelessWidget {
                       icon: const Icon(Icons.login),
                       label: const Text('Check-in'),
                     ),
+                  if (reservation.apiStatus == 'pre_reserved' &&
+                      reservation.paymentStatus != 'paid')
+                    OutlinedButton.icon(
+                      onPressed: onCancel,
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('Cancelar pré-reserva'),
+                    ),
+                  if (reservation.cancelledByName != null)
+                    Text('Cancelada por ${reservation.cancelledByName}'),
                   TextButton.icon(
                     onPressed: () {
                       Navigator.push(

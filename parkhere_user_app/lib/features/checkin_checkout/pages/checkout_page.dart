@@ -4,12 +4,11 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../payments/pages/payment_page.dart';
 import '../../reservation/models/reservation_model.dart';
+import '../../reservation/providers/reservation_provider.dart';
 import '../../reservation/pages/incident_dailog_page.dart';
-import '../providers/checkout_privider.dart';
 import '../../../core/services/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 // import '../services/checkout_service.dart';
-import 'checkout_qrcode_page.dart';
 
 class CheckoutPage extends ConsumerStatefulWidget {
   final ReservationModel reservation;
@@ -29,6 +28,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     'right': null,
   };
   bool _uploadingPhotos = false;
+  bool _processingCheckout = false;
 
   Future<void> _capturePhoto(String kind) async {
     final photo = await _picker.pickImage(
@@ -156,48 +156,102 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     );
 
     if (confirmed == true) {
-      ref.read(checkoutProvider.notifier).validate(widget.reservation);
+      await _attemptCheckout();
     }
+  }
+
+  Future<void> _attemptCheckout() async {
+    final navigator = Navigator.of(context);
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    setState(() => _processingCheckout = true);
+    try {
+      final response = await ApiService().postAuthorizedWithStatus(
+        '/reservations/${widget.reservation.id}/checkout',
+        {},
+        token,
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await _checkoutFinished();
+        return;
+      }
+
+      final detail = response.body['detail'];
+      final payload = detail is Map ? detail : response.body;
+      if (response.statusCode == 402) {
+        final excess =
+            (payload['checkout_excess_amount'] as num?)?.toDouble() ?? 0;
+        final due = (payload['amount_due'] as num?)?.toDouble() ?? excess;
+        final alreadyPaid = widget.reservation.paymentStatus == 'paid';
+        final amount = alreadyPaid ? excess : due;
+        if (amount <= 0) {
+          throw Exception(
+            'A API bloqueou o checkout sem informar valor pendente.',
+          );
+        }
+        final paid = await navigator.push<bool>(
+          MaterialPageRoute(
+            builder: (_) => PaymentPage(
+              amount: amount,
+              reservationId: widget.reservation.id,
+              paymentPurpose: alreadyPaid ? 'checkout_excess' : 'reservation',
+              checkoutPayment: true,
+              payNow: false,
+              onPaymentSuccess: () {},
+            ),
+          ),
+        );
+        if (paid == true && mounted) await _attemptCheckout();
+        return;
+      }
+      final message =
+          payload['message'] ??
+          payload['detail'] ??
+          'Não foi possível finalizar o checkout.';
+      throw Exception(message.toString());
+    } catch (error) {
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Checkout não finalizado'),
+            content: Text('$error', textAlign: TextAlign.center),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _processingCheckout = false);
+    }
+  }
+
+  Future<void> _checkoutFinished() async {
+    ref.invalidate(reservationsProvider);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Checkout concluído'),
+        content: const Text('A saída do veículo foi registrada com sucesso.'),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (mounted) Navigator.pop(context, true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(checkoutProvider);
-
-    ref.listen<CheckoutState>(checkoutProvider, (previous, next) {
-      if (next.status == CheckoutStatus.requiresPayment &&
-          next.amount != null) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PaymentPage(
-              amount: next.amount!,
-              reservationId: widget.reservation.id,
-              payNow: false,
-              onPaymentSuccess: () async {
-                await _finalizeCheckoutOnServer();
-                ref.read(checkoutProvider.notifier).paymentSuccess();
-              },
-            ),
-          ),
-        );
-      }
-
-      if (next.status == CheckoutStatus.generatingQr) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const CheckoutQRCodePage()),
-        );
-
-        ref.read(checkoutProvider.notifier).complete();
-      }
-
-      if (next.status == CheckoutStatus.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.error ?? "Erro inesperado")),
-        );
-      }
-    });
     return Scaffold(
       appBar: AppBar(title: const Text("Checkout")),
       body: Padding(
@@ -257,8 +311,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
             ),
 
             /// 🔄 Loading
-            if (state.status == CheckoutStatus.validating)
-              const CircularProgressIndicator(),
+            if (_processingCheckout) const CircularProgressIndicator(),
 
             const Spacer(),
 
@@ -283,9 +336,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed:
-                    state.status == CheckoutStatus.validating ||
-                        _uploadingPhotos
+                onPressed: _processingCheckout || _uploadingPhotos
                     ? null
                     : () async {
                         if (await _uploadCheckoutPhotos()) {
@@ -300,16 +351,6 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Future<void> _finalizeCheckoutOnServer() async {
-    final token = ref.read(authProvider).accessToken;
-    if (token == null) throw Exception('Sessão expirada. Entre novamente.');
-    await ApiService().postAuthorized(
-      '/reservations/${widget.reservation.id}/checkout',
-      {},
-      token,
     );
   }
 }

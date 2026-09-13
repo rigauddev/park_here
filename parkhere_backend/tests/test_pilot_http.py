@@ -139,6 +139,48 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         primary = next(item for item in layout['parkings'] if item['id'] == self.parkings[0])
         self.assertEqual(primary['available_spots'], 10)
 
+    async def test_paid_overstay_checkout_requires_only_server_calculated_excess(self):
+        reservation = await self.request('/reservations/pre-checkin', {
+            'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
+            'route_minutes': 10, 'spot_type': 'uncovered', 'terms_accepted': True,
+            'terms_version': 'reservation-terms-2026-09-v1', 'terms_locale': 'pt_BR',
+        }, user=self.customer)
+        initial_intent = await self.request(
+            f'/payments/reservations/{reservation["id"]}/intent',
+            {'method': 'pix'}, user=self.customer,
+        )
+        await self.request(
+            f'/payments/{initial_intent["id"]}/confirm', {}, user=self.customer,
+        )
+        await self.request(
+            f'/reservations/{reservation["id"]}/checkin?latitude=-13.37&longitude=-39.07',
+            {}, user=self.customer,
+        )
+        async with self.session() as db:
+            row = await db.get(Reservation, reservation['id'])
+            row.duration_hours = 1
+            row.checked_in_at = datetime.utcnow() - timedelta(hours=3)
+            await db.commit()
+
+        status, blocked = await self.request(
+            f'/reservations/{reservation["id"]}/checkout', {},
+            user=self.customer, expected=None,
+        )
+        self.assertEqual(status, 402, blocked)
+        excess = blocked['detail']['checkout_excess_amount']
+        self.assertGreater(excess, 0)
+        intent = await self.request(
+            f'/payments/reservations/{reservation["id"]}/intent',
+            {'method': 'credit_card', 'purpose': 'checkout_excess'},
+            user=self.customer,
+        )
+        self.assertEqual(intent['gross_amount'], excess)
+        await self.request(f'/payments/{intent["id"]}/confirm', {}, user=self.customer)
+        completed = await self.request(
+            f'/reservations/{reservation["id"]}/checkout', {}, user=self.customer,
+        )
+        self.assertEqual(completed['status'], 'completed')
+
     async def test_reservation_requires_current_terms_acceptance(self):
         payload = {
             'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
@@ -169,6 +211,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         cancelled = await self.request(f'/reservations/{r["id"]}/cancel', {})
         self.assertEqual(cancelled['cancellation_fee_amount'], 0)
         self.assertEqual(cancelled['cancellation_credit_amount'], 0)
+        self.assertEqual(cancelled['cancelled_by_name'], self.users[0].name)
         await self.request(f'/payments/reservations/{r["id"]}/intent', {'method': 'pix'}, expected=409)
         await self.reserve()
 

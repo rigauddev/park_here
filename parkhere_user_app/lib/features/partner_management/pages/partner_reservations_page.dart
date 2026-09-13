@@ -10,10 +10,12 @@ class PartnerReservationsPage extends ConsumerStatefulWidget {
   const PartnerReservationsPage({super.key});
 
   @override
-  ConsumerState<PartnerReservationsPage> createState() => _PartnerReservationsPageState();
+  ConsumerState<PartnerReservationsPage> createState() =>
+      _PartnerReservationsPageState();
 }
 
-class _PartnerReservationsPageState extends ConsumerState<PartnerReservationsPage> {
+class _PartnerReservationsPageState
+    extends ConsumerState<PartnerReservationsPage> {
   String parkingFilter = 'Todos';
 
   @override
@@ -39,21 +41,38 @@ class _PartnerReservationsPageState extends ConsumerState<PartnerReservationsPag
             return const Center(child: Text('Nenhuma reserva recebida.'));
           }
 
-          final parkings = ['Todos', ...{for (final item in items) item.parkingName}];
+          final parkings = [
+            'Todos',
+            ...{for (final item in items) item.parkingName},
+          ];
           final filtered = parkingFilter == 'Todos'
               ? items
-              : items.where((item) => item.parkingName == parkingFilter).toList();
+              : items
+                    .where((item) => item.parkingName == parkingFilter)
+                    .toList();
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               DropdownButtonFormField<String>(
-                initialValue: parkings.contains(parkingFilter) ? parkingFilter : 'Todos',
-                decoration: const InputDecoration(labelText: 'Filtrar por estacionamento'),
-                items: [for (final item in parkings) DropdownMenuItem(value: item, child: Text(item, overflow: TextOverflow.ellipsis))],
-                onChanged: (value) => setState(() => parkingFilter = value ?? 'Todos'),
+                initialValue: parkings.contains(parkingFilter)
+                    ? parkingFilter
+                    : 'Todos',
+                decoration: const InputDecoration(
+                  labelText: 'Filtrar por estacionamento',
+                ),
+                items: [
+                  for (final item in parkings)
+                    DropdownMenuItem(
+                      value: item,
+                      child: Text(item, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (value) =>
+                    setState(() => parkingFilter = value ?? 'Todos'),
               ),
               const SizedBox(height: 12),
-              for (final item in filtered) _PartnerReservationCard(reservation: item),
+              for (final item in filtered)
+                _PartnerReservationCard(reservation: item),
             ],
           );
         },
@@ -128,6 +147,7 @@ class _PartnerReservationCard extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             _Line('Estacionamento', reservation.parkingName),
+            _Line('Reserva', _displayReservationNumber(reservation.id)),
             _Line('Plano', _planLabel(reservation.pricingPlan)),
             _Line('Tipo de vaga', _spotTypeLabel(reservation.spotType)),
             _Line('Base', 'R\$ ${reservation.baseAmount.toStringAsFixed(2)}'),
@@ -140,6 +160,19 @@ class _PartnerReservationCard extends ConsumerWidget {
               'R\$ ${reservation.platformFeeAmount.toStringAsFixed(2)}',
             ),
             _Line('Total', 'R\$ ${reservation.finalTotal.toStringAsFixed(2)}'),
+            if (reservation.cancelledByName != null)
+              _Line('Cancelada por', reservation.cancelledByName!),
+            if (reservation.status == 'checked_in' &&
+                reservation.checkoutExcessMinutes > 0) ...[
+              _Line(
+                'Tempo excedido',
+                '${reservation.checkoutExcessMinutes} min',
+              ),
+              _Line(
+                'Excedente no checkout',
+                'R\$ ${reservation.checkoutExcessAmount.toStringAsFixed(2)}',
+              ),
+            ],
             if (reservation.selectedServices.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
@@ -237,6 +270,11 @@ class _PartnerReservationCard extends ConsumerWidget {
       _ => value,
     };
   }
+}
+
+String _displayReservationNumber(String id) {
+  final compact = id.replaceAll('-', '').toUpperCase();
+  return 'PH-${compact.substring(0, compact.length.clamp(0, 8))}';
 }
 
 class _ReservationCancelDialog extends ConsumerStatefulWidget {

@@ -547,6 +547,8 @@ Response: `ReservationResponse` com:
 }
 ```
 
+Cliente só pode cancelar diretamente a própria pré-reserva não paga (`status=pre_reserved` e `payment_status != paid`). Pagamento confirmado ou reserva confirmada retorna `409` e precisa de solicitação de reembolso; o endpoint atual não solicita nem executa estorno. `cancelled_by_user_id` e `cancelled_by_name` registram quem tomou a ação.
+
 ## Pagamento De Reserva E Excedente
 
 `POST /payments/reservations/{reservation_id}/intent`
@@ -625,15 +627,17 @@ Regras:
 - Checkout por hora permite tolerancia de 15 minutos apos o tempo contratado.
 - Se houver excedente sem pagamento, `POST /reservations/{reservation_id}/checkout` retorna `402` e mantem checkout bloqueado.
 - A confirmacao de pagamento do excedente grava `checkout_excess_paid_at` e libera nova tentativa de checkout.
+- O app chama primeiro o checkout. Quando a API responde `402`, usa os minutos e valor de excedente calculados no servidor e cria a intenção com `purpose=checkout_excess`; após confirmação, repete o checkout.
 
 Regras:
 
-- Cliente pode cancelar a propria pre-reserva/reserva.
+- Cliente só pode cancelar diretamente pré-reserva não paga. Reserva paga deve passar por pedido de reembolso; o endpoint atual não executa esse fluxo.
 - Operador pode cancelar somente pre-reserva ou reserva criada por ele enquanto nao houve check-in.
 - Reserva com check-in so pode ser cancelada pelo gestor do parceiro.
 - Cancelamento ate 5 minutos apos criacao nao cobra taxa.
 - Apos 5 minutos, aplica taxa administrativa ParkHere configurada como `platform_fee.service_type=cancellation`.
 - Taxa de cancelamento do parceiro por estacionamento entra no proximo bloco de politica operacional.
+- Solicitação de reembolso precisa de recurso persistido, motivo, anexo opcional, transação de pagamento vinculada, cálculo sujeito à política vigente, prazo de três dias úteis e decisão administrativa auditável. Reembolso financeiro automático depende do provedor e não existe no mock. Direitos legais aplicáveis prevalecem sobre taxas configuradas.
 
 
 ## Revisao de servicos e pagamento simulado — 06/09/2026
@@ -704,12 +708,17 @@ mensal. A migration `f1a2b3c4d5e6` cria o armazenamento desses preços.
 `GET /reservations` retorna o histórico do cliente autenticado, incluindo
 pré-reservas expiradas, canceladas, confirmadas, em check-in e concluídas.
 Pré-reservas vencidas são marcadas como `expired` durante a consulta.
+O retorno inclui `cancelled_by_user_id` e `cancelled_by_name`. O código exibido `PH-XXXXXXXX` é derivado do UUID e não substitui o identificador técnico. `GET /parkings` devolve `category_pricing` para que a escolha da categoria atualize os preços por hora, diária e mensal.
 
 ## Carteira e fotos de inspeção — 07/09/2026
 
 Clientes cadastram somente cartões na carteira; pagamentos Pix geram o QR Code
 no Mercado Pago durante a reserva. Usuários parceiros cadastram apenas a chave
 Pix de recebimento na conta de repasse.
+No MVP, a carteira de cliente guarda localmente somente bandeira, nome do titular,
+últimos quatro dígitos e validade em SharedPreferences. Número completo e CVV não
+são armazenados nem enviados à API. A carteira é apenas visual; cartão salvo ainda
+não é tokenização para cobrança real. Isso depende da integração segura com o Mercado Pago.
 
 O endpoint `POST /reservations/{reservation_id}/photos?kind=...` aceita fotos do
 check-in e checkout. O envio do checkout usa os mesmos tipos (`front`, `rear`,

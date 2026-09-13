@@ -51,7 +51,7 @@ class _ReservationDetailsPageState
           ),
           const SizedBox(height: 6),
           Text(
-            "Reserva #${reservation.id}",
+            "Reserva #PH-${reservation.id.replaceAll('-', '').substring(0, reservation.id.replaceAll('-', '').length.clamp(0, 8)).toUpperCase()}",
             style: const TextStyle(color: AppTheme.textMuted),
           ),
           const SizedBox(height: 18),
@@ -59,6 +59,8 @@ class _ReservationDetailsPageState
             title: "Resumo",
             children: [
               _DetailRow("Status", _statusLabel(reservation.status)),
+              if (reservation.cancelledByName != null)
+                _DetailRow('Cancelada por', reservation.cancelledByName!),
               _DetailRow("Pagamento", _paymentLabel(reservation.paymentStatus)),
               if (reservation.paymentMethod != null)
                 _DetailRow("Método", _methodLabel(reservation.paymentMethod!)),

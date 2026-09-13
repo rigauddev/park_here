@@ -30,11 +30,13 @@ async def list_my_reservations(
 ):
     """Return the customer's complete history, including expired reservations."""
     result = await db.execute(
-        select(Reservation)
+        select(Reservation, User.name)
+        .outerjoin(User, User.id == Reservation.cancelled_by_user_id)
         .where(Reservation.user_id == current_user.id)
         .order_by(Reservation.created_at.desc())
     )
-    reservations = list(result.scalars().all())
+    rows = list(result.all())
+    reservations = [row[0] for row in rows]
     now = datetime.utcnow()
     changed = False
     for reservation in reservations:
@@ -47,7 +49,13 @@ async def list_my_reservations(
             changed = True
     if changed:
         await db.commit()
-    return [to_response(reservation) for reservation in reservations]
+    actor_names = {reservation.id: name for reservation, name in rows}
+    return [
+        to_response(reservation).model_copy(
+            update={"cancelled_by_name": actor_names.get(reservation.id)}
+        )
+        for reservation in reservations
+    ]
 
 
 @router.post("/pre-checkin", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
