@@ -25,6 +25,7 @@ from app.modules.partners.operator_assignment_models import OperatorParkingAssig
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
+from app.modules.platform_fees.models import ParkingPlatformFee
 from app.modules.customer_assets.models import Vehicle
 
 
@@ -47,6 +48,18 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
                     first_hour_price=7, uncovered_first_hour_price=7, additional_hour_price=2, uncovered_additional_hour_price=2, daily_price=7, uncovered_daily_price=7)
                 db.add(parking)
                 await db.flush()
+                # Keep the cash-ledger scenario deterministic even when the
+                # local admin panel has a global or per-unit parking fee.
+                db.add(ParkingPlatformFee(
+                    tenant_id=tenant.id,
+                    parking_id=parking.id,
+                    service_type='parking',
+                    fee_mode='fixed',
+                    fixed_amount=0,
+                    percentage=0,
+                    min_fee=0,
+                    is_active=False,
+                ))
                 db.add(ParkingService(parking_id=parking.id, code='car_wash', name='Lavagem', price=5))
                 self.tenants.append(tenant.id)
                 self.users.append(user)
@@ -250,6 +263,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             await db.execute(delete(OperatorParkingAssignment).where(OperatorParkingAssignment.parking_id.in_(self.parkings)))
             await db.execute(delete(Reservation).where(Reservation.parking_id.in_(self.parkings)))
             await db.execute(delete(ParkingService).where(ParkingService.parking_id.in_(self.parkings)))
+            await db.execute(delete(ParkingPlatformFee).where(ParkingPlatformFee.parking_id.in_(self.parkings)))
             await db.execute(delete(Parking).where(Parking.id.in_(self.parkings)))
             await db.execute(delete(Vehicle).where(Vehicle.user_id == self.customer.id))
             await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id])))
