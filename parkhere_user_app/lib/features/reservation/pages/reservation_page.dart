@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/checkin_page.dart';
 import '../../parking_search/models/parking_model.dart';
@@ -239,9 +240,7 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
       ref.invalidate(reservationsProvider);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$error')));
+        await ApiFeedback.show(context, '$error');
       }
     }
   }

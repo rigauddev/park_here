@@ -242,3 +242,45 @@ e horário.
 - O fluxo formal de reembolso (motivo, anexo opcional, prazo de três dias úteis,
   decisão auditada e estorno no provedor) ainda não está implementado. Não
   anunciar o valor de `cancellation_credit_amount` como dinheiro estornado.
+
+## Jornadas, cores por unidade e PDF
+
+- Em **Minha empresa → unidade**, defina a jornada-base: horário comercial,
+  cobertura 24h em três turnos, plantão 24h com três dias de folga, ou setor
+  administrativo de até 8h por dia. Configure também os dias e horários semanais
+  de abertura; portaria 24h é uma configuração separada.
+- Gere a escala a partir de uma data e escolha a jornada a aplicar naquele
+  período. Para três turnos, confirme as faixas de 00–08, 08–16 e 16–00; sem
+  operadores suficientes, os turnos restantes devem aparecer abertos. Para
+  24h/3 folgas, confirme a rotação e a indicação de cobertura pendente quando
+  não houver quatro operadores. Para horário comercial, confirme que os dias
+  fechados não recebem turno e que o fechamento é respeitado.
+- Na visão do gestor, use os filtros de unidade e operador; confirme que cada
+  unidade mantém uma cor consistente no calendário, legenda e cartões. A visão
+  mensal e semanal deve mostrar dias mesmo sem turno.
+- Exporte o PDF para todas as unidades e depois para uma unidade/operador.
+  Quando houver mais de uma unidade, confira se cada bloco tem cabeçalho próprio
+  (matriz/filial), legenda de turno aberto e operador, data e horários. No perfil
+  do operador, exporte somente a escala permitida para ele.
+- Tente editar e cancelar um turno futuro; confira que os turnos abertos podem
+  receber operador depois e que conflitos do mesmo operador entre filiais são
+  rejeitados.
+
+## Funcionalidade paga e conferência do comprovante
+
+- No painel admin → Funcionalidades, configure preço individual para mensal,
+  anual e compra única (30 dias). Confira que cada parceiro recebe os três
+  valores configurados; preços zero representam recurso gratuito.
+- Na conta gestora, escolha o período, Pix/cartão de crédito/cartão de débito,
+  envie o comprovante e confirme o estado **Aguardando análise**. Teste PDF,
+  JPG e PNG e rejeite arquivo maior que 30 MB ou formato não aceito.
+- No painel admin → Aprovações, confira parceiro, funcionalidade, modalidade,
+  valor e método. Abra o comprovante, aprove e confirme liberação. Rejeite uma
+  solicitação e confirme que a funcionalidade não é liberada.
+- Reinicie/recrie somente API e web e confirme que os comprovantes continuam
+  disponíveis nos volumes Docker `feature_request_receipts` e
+  `operator_package_receipts`; não remova esses volumes durante atualizações.
+- A liberação mensal vence em 30 dias e a anual em 365; compra única vale 30
+  dias. A renovação recorrente automática e a confirmação automática Pix/cartão
+  dependem da integração Mercado Pago; até lá, cada pedido depende de revisão
+  administrativa do comprovante.

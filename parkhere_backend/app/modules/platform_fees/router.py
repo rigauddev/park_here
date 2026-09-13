@@ -1,6 +1,8 @@
 import json
-from datetime import datetime
+from pathlib import Path
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +55,7 @@ class PartnerFeatureRequest(BaseModel):
     is_enabled: bool
     is_paid: bool = False
     price: float = Field(default=0, ge=0)
+    billing_prices: dict[str, float] = Field(default_factory=dict)
     billing_period: str = 'monthly'
     notes: str | None = Field(default=None, max_length=500)
 
@@ -420,6 +423,8 @@ async def get_partner_features(tenant_id: str, db: AsyncSession = Depends(get_db
         'is_paid': by_key[feature['key']].is_paid if feature['key'] in by_key else feature['default_is_paid'],
         'price': by_key[feature['key']].price if feature['key'] in by_key else 0,
         'billing_period': by_key[feature['key']].billing_period if feature['key'] in by_key else feature['default_billing_period'],
+        'billing_prices': _feature_prices(by_key[feature['key']]) if feature['key'] in by_key else {},
+        'expires_at': by_key[feature['key']].expires_at.isoformat() + 'Z' if feature['key'] in by_key and by_key[feature['key']].expires_at else None,
         'notes': by_key[feature['key']].notes if feature['key'] in by_key else None,
         'requestable': feature['requestable'],
         'quantity_based': feature.get('quantity_based', False),
@@ -439,6 +444,10 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
         raise HTTPException(status_code=422, detail='Informe um preço maior que zero para uma funcionalidade paga')
     if data.billing_period not in {'monthly', 'annual', 'one_time'}:
         raise HTTPException(status_code=422, detail='Periodicidade inválida')
+    if set(data.billing_prices) - {'monthly', 'annual', 'one_time'}:
+        raise HTTPException(status_code=422, detail='Modalidade de cobrança inválida')
+    if any(value < 0 for value in data.billing_prices.values()):
+        raise HTTPException(status_code=422, detail='Os valores não podem ser negativos')
     item = await db.scalar(select(PartnerFeatureEntitlement).where(
         PartnerFeatureEntitlement.tenant_id == tenant_id,
         PartnerFeatureEntitlement.feature_key == feature_key,
@@ -448,9 +457,14 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
         db.add(item)
     before = {'is_enabled': item.is_enabled, 'is_paid': item.is_paid, 'price': item.price} if item.id else None
     item.is_enabled = data.is_enabled
+    if data.is_enabled:
+        item.expires_at = None
     item.is_paid = data.is_paid
     item.price = data.price
     item.billing_period = data.billing_period
+    item.billing_prices = json.dumps(
+        data.billing_prices or {data.billing_period: data.price}
+    )
     item.notes = data.notes
     _audit(db, current_user, 'partner.feature.updated', 'partner_feature', item.id or tenant_id,
            tenant_id, {'feature_key': feature_key, 'before': before, 'after': data.model_dump()})
@@ -458,7 +472,18 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
     await db.refresh(item)
     return {'tenant_id': tenant_id, 'feature_key': feature_key, 'is_enabled': item.is_enabled,
             'is_paid': item.is_paid, 'price': item.price, 'billing_period': item.billing_period,
+            'billing_prices': _feature_prices(item),
             'notes': item.notes}
+
+
+def _feature_prices(item: PartnerFeatureEntitlement) -> dict[str, float]:
+    try:
+        values = json.loads(item.billing_prices or '{}')
+    except json.JSONDecodeError:
+        values = {}
+    if not values and item.price > 0:
+        values[item.billing_period] = item.price
+    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual', 'one_time'}}
 
 
 @router.get('/feature-requests')
@@ -487,6 +512,8 @@ async def list_partner_feature_requests(
             'unit_price': request.unit_price,
             'total_price': request.total_price,
             'billing_period': request.billing_period,
+            'payment_method': request.payment_method,
+            'has_receipt': bool(request.receipt_path),
             'status': request.status,
             'notes': request.notes,
             'created_at': request.created_at.isoformat() + 'Z',
@@ -510,6 +537,8 @@ async def review_partner_feature_request(
         raise HTTPException(status_code=404, detail='Solicitação não encontrada')
     if request.status != 'pending_review':
         raise HTTPException(status_code=409, detail='Solicitação já analisada')
+    if not request.receipt_path:
+        raise HTTPException(status_code=409, detail='Anexe um comprovante para que a gestão revise o pagamento')
     tenant = await db.get(Tenant, request.tenant_id)
     profile = await db.scalar(select(PartnerProfile).where(
         PartnerProfile.tenant_id == request.tenant_id
@@ -548,6 +577,8 @@ async def review_partner_feature_request(
                 )
                 db.add(entitlement)
             entitlement.is_enabled = True
+            period_days = {'monthly': 30, 'annual': 365, 'one_time': 30}[request.billing_period]
+            entitlement.expires_at = datetime.utcnow() + timedelta(days=period_days)
         request.status = 'approved'
     else:
         request.status = 'rejected'
@@ -574,6 +605,23 @@ async def review_partner_feature_request(
         'status': request.status,
         'enabled': decision == 'approve',
     }
+
+
+@router.get('/feature-requests/{request_id}/receipt')
+async def download_feature_request_receipt(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    request = await db.get(PartnerFeatureRequestModel, request_id)
+    if request is None or not request.receipt_path:
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    path = Path(request.receipt_path).resolve()
+    root = Path('/app/storage/feature_requests').resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    return FileResponse(path, filename=path.name)
 
 
 @router.get('/email-templates')
@@ -707,6 +755,23 @@ async def list_operator_package_requests(db: AsyncSession = Depends(get_db), cur
         'status': row.status, 'has_receipt': bool(row.receipt_path),
         'created_at': row.created_at.isoformat() + 'Z',
     } for row in rows]
+
+
+@router.get('/operator-packages/requests/{request_id}/receipt')
+async def download_operator_package_receipt(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    row = await db.get(OperatorPackageRequest, request_id)
+    if row is None or not row.receipt_path:
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    path = Path(row.receipt_path).resolve()
+    root = Path('/app/storage/operator_packages').resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    return FileResponse(path, filename=path.name)
 
 
 @router.post('/operator-packages/requests/{request_id}/{decision}')

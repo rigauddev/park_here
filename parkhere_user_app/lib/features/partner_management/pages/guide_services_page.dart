@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/api_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_profile_model.dart';
 import '../pages/partner_feature_access_page.dart';
@@ -26,13 +27,25 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
   Future<void> _load() async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
-    final result = await _api.getAuthorized('/partners/guide/services', token);
-    final partnerData = await _api.getAuthorizedMap('/partners/me', token);
-    if (mounted) {
-      setState(() {
-        _services = result.cast<Map<String, dynamic>>();
-        _partner = PartnerProfileModel.fromJson(partnerData);
-      });
+    try {
+      final result = await _api.getAuthorized(
+        '/partners/guide/services',
+        token,
+      );
+      final partnerData = await _api.getAuthorizedMap('/partners/me', token);
+      if (mounted) {
+        setState(() {
+          _services = result.cast<Map<String, dynamic>>();
+          _partner = PartnerProfileModel.fromJson(partnerData);
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(
+          context,
+          'Não foi possível carregar os serviços: $error',
+        );
+      }
     }
   }
 
@@ -130,10 +143,9 @@ class _GuideServicesPageState extends ConsumerState<GuideServicesPage> {
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível cadastrar o serviço: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível cadastrar o serviço: $error',
         );
       }
     }

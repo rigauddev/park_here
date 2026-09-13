@@ -91,6 +91,7 @@ class ManagedParkingModel {
   final ParkingAreaPricingModel coveredPricing;
   final List<ManagedParkingServiceModel> services;
   final Map<String, Map<String, String>?> operatingHours;
+  final String workRegime;
   final Map<String, ParkingAreaPricingModel> categoryPricing;
 
   const ManagedParkingModel({
@@ -120,6 +121,7 @@ class ManagedParkingModel {
     required this.coveredPricing,
     required this.services,
     this.operatingHours = const {},
+    this.workRegime = 'commercial',
     this.categoryPricing = const {},
   });
 
@@ -142,6 +144,7 @@ class ManagedParkingModel {
       pickupSpots: json['pickup_spots'] as int? ?? 0,
       hasVipSpots: json['has_vip_spots'] as bool? ?? false,
       has24hGate: json['has_24h_gate'] as bool? ?? false,
+      workRegime: json['work_regime'] as String? ?? 'commercial',
       hasSecuritySystem: json['has_security_system'] as bool? ?? false,
       wantsAutomaticAccess: json['wants_automatic_access'] as bool? ?? false,
       hasAutomaticAccess: json['has_automatic_access'] as bool? ?? false,
@@ -196,6 +199,7 @@ class ManagedParkingModel {
       'pickup_spots': pickupSpots,
       'has_vip_spots': hasVipSpots,
       'has_24h_gate': has24hGate,
+      'work_regime': workRegime,
       'has_security_system': hasSecuritySystem,
       'wants_automatic_access': wantsAutomaticAccess,
       'has_automatic_access': hasAutomaticAccess,

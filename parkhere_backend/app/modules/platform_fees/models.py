@@ -56,6 +56,8 @@ class PartnerFeatureEntitlement(BaseModel):
     is_paid = Column(Boolean, nullable=False, default=False)
     price = Column(Float, nullable=False, default=0)
     billing_period = Column(String(20), nullable=False, default="monthly")
+    billing_prices = Column(Text, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(String(500), nullable=True)
 
 
@@ -70,7 +72,9 @@ class PartnerFeatureRequest(BaseModel):
     unit_price = Column(Float, nullable=False, default=0)
     total_price = Column(Float, nullable=False, default=0)
     billing_period = Column(String(20), nullable=False, default='one_time')
-    status = Column(String(30), nullable=False, default='pending_review', index=True)
+    status = Column(String(30), nullable=False, default='pending_payment', index=True)
+    payment_method = Column(String(20), nullable=False, default='pix')
+    receipt_path = Column(Text, nullable=True)
     notes = Column(String(500), nullable=True)
     reviewed_by = Column(String(36), ForeignKey('users.id'), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

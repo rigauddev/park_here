@@ -83,6 +83,10 @@ def _canonical_city(value: str) -> str:
 
 def _to_response(parking: Parking) -> ParkingResponse:
     services = {service.code: service for service in parking.services if service.is_active}
+    category_pricing = {
+        key: _normalize_category_pricing(value)
+        for key, value in json.loads(parking.category_pricing or '{}').items()
+    }
 
     return ParkingResponse(
         id=parking.id,
@@ -103,10 +107,7 @@ def _to_response(parking: Parking) -> ParkingResponse:
             coveredFirstHourPrice=parking.covered_first_hour_price,
             uncoveredFirstHourPrice=parking.uncovered_first_hour_price,
         ),
-        category_pricing={
-            key: value
-            for key, value in json.loads(parking.category_pricing or '{}').items()
-        },
+        category_pricing=category_pricing,
         hasCarWash="car_wash" in services,
         hasTourGuide="tour_guide" in services,
         hasTransportService="transport" in services,
@@ -129,3 +130,15 @@ def _to_response(parking: Parking) -> ParkingResponse:
         tourGuidePrice=services.get("tour_guide").price if "tour_guide" in services else 0,
         transportPrice=services.get("transport").price if "transport" in services else 0,
     )
+
+
+def _normalize_category_pricing(value: dict) -> dict[str, float]:
+    """Read current and pre-MVP seed formats into the stable public contract."""
+    first_hour = value.get('first_hour_price', value.get('hourly', 0))
+    return {
+        'first_hour_price': float(first_hour or 0),
+        'additional_hour_price': float(value.get('additional_hour_price', value.get('hourly', 0)) or 0),
+        'daily_price': float(value.get('daily_price', value.get('daily', 0)) or 0),
+        'weekly_price': float(value.get('weekly_price', value.get('weekly', 0)) or 0),
+        'monthly_price': float(value.get('monthly_price', value.get('monthly', 0)) or 0),
+    }

@@ -55,6 +55,7 @@ class ParkingManagementRequest(BaseModel):
     available_spots: int | None = None
     has_vip_spots: bool = False
     has_24h_gate: bool = False
+    work_regime: str = "commercial"
     operating_hours: dict[str, dict[str, str] | None] = Field(default_factory=dict)
     has_security_system: bool = False
     wants_automatic_access: bool = False
@@ -73,6 +74,14 @@ class ParkingManagementRequest(BaseModel):
         if len(codes) != len(set(codes)):
             raise ValueError("Service codes must be unique per parking")
         return services
+
+    @field_validator("work_regime")
+    @classmethod
+    def valid_work_regime(cls, value):
+        allowed = {"commercial", "three_shifts", "24h_on_3off", "administrative_8h"}
+        if value not in allowed:
+            raise ValueError("Invalid unit work regime")
+        return value
 
 
 class ParkingManagementResponse(BaseModel):
@@ -96,6 +105,7 @@ class ParkingManagementResponse(BaseModel):
     has_covered_area: bool
     has_vip_spots: bool
     has_24h_gate: bool
+    work_regime: str = "commercial"
     operating_hours: dict[str, dict[str, str] | None] = Field(default_factory=dict)
     has_security_system: bool
     wants_automatic_access: bool

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/widgets/api_feedback.dart';
 
 class AdminManagementPage extends ConsumerStatefulWidget {
   final int initialSection;
@@ -605,29 +608,81 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                 subtitle: Text(
                   '${request['status']} · empresa ${request['tenant_id']}',
                 ),
-                trailing: request['status'] == 'pending_review'
-                    ? Wrap(
-                        children: [
-                          IconButton(
-                            onPressed: () => _reviewOperatorRequest(
-                              request['id'] as String,
-                              'approve',
-                            ),
-                            icon: const Icon(Icons.check, color: Colors.green),
-                          ),
-                          IconButton(
-                            onPressed: () => _reviewOperatorRequest(
-                              request['id'] as String,
-                              'reject',
-                            ),
-                            icon: const Icon(Icons.close, color: Colors.red),
-                          ),
-                        ],
-                      )
-                    : null,
+                trailing: Wrap(
+                  children: [
+                    if (request['has_receipt'] == true)
+                      IconButton(
+                        tooltip: 'Visualizar comprovante',
+                        onPressed: () => _viewOperatorPackageReceipt(
+                          request['id'] as String,
+                        ),
+                        icon: const Icon(Icons.receipt_long_outlined),
+                      ),
+                    if (request['status'] == 'pending_review') ...[
+                      IconButton(
+                        onPressed: () => _reviewOperatorRequest(
+                          request['id'] as String,
+                          'approve',
+                        ),
+                        icon: const Icon(Icons.check, color: Colors.green),
+                      ),
+                      IconButton(
+                        onPressed: () => _reviewOperatorRequest(
+                          request['id'] as String,
+                          'reject',
+                        ),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
         ];
+
+  Future<void> _viewFeatureReceipt(String requestId) async {
+    await _viewReceipt(
+      '/admin/platform-fees/feature-requests/$requestId/receipt',
+    );
+  }
+
+  Future<void> _viewOperatorPackageReceipt(String requestId) async {
+    await _viewReceipt(
+      '/admin/platform-fees/operator-packages/requests/$requestId/receipt',
+    );
+  }
+
+  Future<void> _viewReceipt(String endpoint) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      final bytes = await _api.getAuthorizedBytes(endpoint, token);
+      final isPng =
+          bytes.length > 8 &&
+          bytes[0] == 0x89 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x4e;
+      final isJpeg = bytes.length > 2 && bytes[0] == 0xff && bytes[1] == 0xd8;
+      if (isPng || isJpeg) {
+        final doc = pw.Document();
+        doc.addPage(
+          pw.Page(
+            build: (_) => pw.Center(child: pw.Image(pw.MemoryImage(bytes))),
+          ),
+        );
+        await Printing.layoutPdf(onLayout: (_) => doc.save());
+      } else {
+        await Printing.layoutPdf(onLayout: (_) async => bytes);
+      }
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(
+          context,
+          'Não foi possível abrir o comprovante: $error',
+        );
+      }
+    }
+  }
 
   List<Widget> _featureRequestCards() => _featureRequests.isEmpty
       ? [
@@ -660,30 +715,38 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                       : request['billing_period'] == 'annual'
                       ? '/ ano'
                       : 'uma vez'}\n'
-                  'Status: ${request['status']}',
+                  'Status: ${request['status']}'
+                  '${request['payment_method'] == null ? '' : '\nPagamento: ${request['payment_method']} · comprovante ${request['has_receipt'] == true ? 'anexado' : 'pendente'}'}',
                 ),
-                trailing: request['status'] == 'pending_review'
-                    ? Wrap(
-                        children: [
-                          IconButton(
-                            tooltip: 'Aprovar e liberar',
-                            onPressed: () => _reviewFeatureRequest(
-                              request['id'] as String,
-                              'approve',
-                            ),
-                            icon: const Icon(Icons.check, color: Colors.green),
-                          ),
-                          IconButton(
-                            tooltip: 'Recusar',
-                            onPressed: () => _reviewFeatureRequest(
-                              request['id'] as String,
-                              'reject',
-                            ),
-                            icon: const Icon(Icons.close, color: Colors.red),
-                          ),
-                        ],
-                      )
-                    : null,
+                trailing: Wrap(
+                  children: [
+                    if (request['has_receipt'] == true)
+                      IconButton(
+                        tooltip: 'Visualizar comprovante',
+                        onPressed: () =>
+                            _viewFeatureReceipt(request['id'] as String),
+                        icon: const Icon(Icons.receipt_long_outlined),
+                      ),
+                    if (request['status'] == 'pending_review')
+                      IconButton(
+                        tooltip: 'Aprovar e liberar',
+                        onPressed: () => _reviewFeatureRequest(
+                          request['id'] as String,
+                          'approve',
+                        ),
+                        icon: const Icon(Icons.check, color: Colors.green),
+                      ),
+                    if (request['status'] == 'pending_review')
+                      IconButton(
+                        tooltip: 'Recusar',
+                        onPressed: () => _reviewFeatureRequest(
+                          request['id'] as String,
+                          'reject',
+                        ),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                      ),
+                  ],
+                ),
               ),
             ),
         ];
@@ -1100,9 +1163,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           await _load();
         } catch (error) {
           if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Limite: $error')));
+            await ApiFeedback.show(context, 'Limite: $error');
           }
         }
       }
@@ -1164,9 +1225,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Parceiro: $error')));
+        await ApiFeedback.show(context, 'Parceiro: $error');
       }
     } finally {
       reasonController.dispose();
@@ -1187,9 +1246,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Unidade: $error')));
+        await ApiFeedback.show(context, 'Unidade: $error');
       }
       return;
     }
@@ -1306,9 +1363,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         await _load();
       } catch (error) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Dados da unidade: $error')));
+          await ApiFeedback.show(context, 'Dados da unidade: $error');
         }
       }
     } else if (result == 'fees') {
@@ -1332,9 +1387,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       )).cast<Map<String, dynamic>>();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Taxas da unidade: $error')));
+        await ApiFeedback.show(context, 'Taxas da unidade: $error');
       }
       return;
     }
@@ -1503,9 +1556,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     } catch (error) {
       if (mounted) {
         setState(() => _featureLoading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Funcionalidades: $error')));
+        await ApiFeedback.show(context, 'Funcionalidades: $error');
       }
     }
   }
@@ -1516,6 +1567,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     bool? isPaid,
     double? price,
     String? billingPeriod,
+    Map<String, double>? billingPrices,
   }) async {
     final tenantId = _featureTenantId;
     final token = ref.read(authProvider).accessToken;
@@ -1527,6 +1579,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           'is_enabled': isEnabled ?? feature['is_enabled'] == true,
           'is_paid': isPaid ?? feature['is_paid'] == true,
           'price': price ?? (feature['price'] as num? ?? 0).toDouble(),
+          'billing_prices': billingPrices ?? feature['billing_prices'] ?? {},
           'billing_period':
               billingPeriod ?? feature['billing_period'] ?? 'monthly',
           'notes': feature['notes'],
@@ -1536,9 +1589,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _loadPartnerFeatures(tenantId);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Não foi possível salvar: $error')),
-        );
+        await ApiFeedback.show(context, 'Não foi possível salvar: $error');
       }
     }
   }
@@ -1547,8 +1598,21 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     var enabled = feature['is_enabled'] == true;
     var paid = feature['is_paid'] == true;
     var period = feature['billing_period'] as String? ?? 'monthly';
-    final price = TextEditingController(
-      text: '${feature['price'] ?? 0}'.replaceAll('.', ','),
+    final prices = (feature['billing_prices'] as Map<String, dynamic>?) ?? {};
+    final monthly = TextEditingController(
+      text:
+          '${prices['monthly'] ?? (period == 'monthly' ? feature['price'] : 0) ?? 0}'
+              .replaceAll('.', ','),
+    );
+    final annual = TextEditingController(
+      text:
+          '${prices['annual'] ?? (period == 'annual' ? feature['price'] : 0) ?? 0}'
+              .replaceAll('.', ','),
+    );
+    final oneTime = TextEditingController(
+      text:
+          '${prices['one_time'] ?? (period == 'one_time' ? feature['price'] : 0) ?? 0}'
+              .replaceAll('.', ','),
     );
     final saved = await showDialog<bool>(
       context: context,
@@ -1576,12 +1640,40 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                     onChanged: (value) => setDialogState(() => paid = value),
                   ),
                   TextField(
-                    controller: price,
+                    controller: monthly,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
                     decoration: InputDecoration(
-                      labelText: _tr('Preço (BRL)', 'Price (BRL)'),
+                      labelText: _tr(
+                        'Preço mensal recorrente (BRL)',
+                        'Monthly recurring price (BRL)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annual,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr('Preço anual (BRL)', 'Annual price (BRL)'),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: oneTime,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Pagamento único · 30 dias (BRL)',
+                        'One-time · 30 days (BRL)',
+                      ),
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -1631,11 +1723,22 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         feature,
         isEnabled: enabled,
         isPaid: paid,
-        price: double.tryParse(price.text.replaceAll(',', '.')) ?? 0,
+        price: switch (period) {
+          'annual' => double.tryParse(annual.text.replaceAll(',', '.')) ?? 0,
+          'one_time' => double.tryParse(oneTime.text.replaceAll(',', '.')) ?? 0,
+          _ => double.tryParse(monthly.text.replaceAll(',', '.')) ?? 0,
+        },
         billingPeriod: period,
+        billingPrices: {
+          'monthly': double.tryParse(monthly.text.replaceAll(',', '.')) ?? 0,
+          'annual': double.tryParse(annual.text.replaceAll(',', '.')) ?? 0,
+          'one_time': double.tryParse(oneTime.text.replaceAll(',', '.')) ?? 0,
+        },
       );
     }
-    price.dispose();
+    monthly.dispose();
+    annual.dispose();
+    oneTime.dispose();
   }
 
   List<Widget> _emailTemplateSection() => [
@@ -1796,9 +1899,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           await _load();
         } catch (error) {
           if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Template: $error')));
+            await ApiFeedback.show(context, 'Template: $error');
           }
         }
       }
@@ -1913,10 +2014,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível atualizar o serviço: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível atualizar o serviço: $error',
         );
       }
     }
@@ -1970,12 +2070,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Não foi possível carregar as taxas do parceiro: $error',
-            ),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível carregar as taxas do parceiro: $error',
         );
       }
     }
@@ -2101,10 +2198,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível atualizar o usuário: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível atualizar o usuário: $error',
         );
       }
     }
@@ -2113,12 +2209,21 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   Future<void> _reviewOperatorRequest(String id, String decision) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
-    await _api.postAuthorized(
-      '/admin/platform-fees/operator-packages/requests/$id/$decision',
-      {},
-      token,
-    );
-    await _load();
+    try {
+      await _api.postAuthorized(
+        '/admin/platform-fees/operator-packages/requests/$id/$decision',
+        {},
+        token,
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(
+          context,
+          'Não foi possível analisar o pedido: $error',
+        );
+      }
+    }
   }
 
   Future<void> _reviewFeatureRequest(String id, String decision) async {
@@ -2133,10 +2238,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível analisar a solicitação: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível analisar a solicitação: $error',
         );
       }
     }

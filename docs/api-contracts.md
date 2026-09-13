@@ -122,20 +122,31 @@ Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
   mapa/reservas, serviços, equipe, afiliações e caixa básico/Pro. Guias recebem
   dashboard, serviços, afiliações e vagas para serviços adicionais. Cada item
   contém nomes e descrições em português/inglês, acesso, classificação paga ou
-  gratuita, preço, periodicidade e dados de solicitação por quantidade.
+  gratuita, `price`, `billing_period`, `billing_prices` e dados de solicitação
+  por quantidade.
 - `PUT /admin/platform-fees/partners/{tenant_id}/features/{feature_key}` grava
-  ativação, classificação como paga, preço, periodicidade (`monthly`,
-  `annual`, `one_time`) e observações. O preço é configurável por parceiro.
-  A cobrança automática e a vigência comercial ainda não estão conectadas.
-- `POST /partners/feature-requests` recebe
-  `{"feature_key":"financial_management","quantity":1,"notes":"..."}`.
-  Valida catálogo, preço e quantidade e grava snapshot de preço em uma
-  solicitação `pending_review`; não cobra automaticamente. `GET
-  /partners/feature-requests` retorna os pedidos da própria empresa.
+  ativação, classificação como paga, preços em `billing_prices` (`monthly`,
+  `annual`, `one_time`) e observações. `monthly` vence em 30 dias, `annual` em
+  365 dias e `one_time` em 30 dias após a aprovação administrativa.
+- `POST /partners/feature-requests` recebe `feature_key`, `quantity`,
+  `billing_period` (`monthly`, `annual`, `one_time`) e `payment_method`
+  (`pix`, `credit_card`, `debit_card`). A solicitação registra o preço
+  configurado para a modalidade e começa em `pending_payment`.
+- `POST /partners/feature-requests/{request_id}/receipt` recebe um arquivo PDF,
+  JPG ou PNG de até 30 MB, altera o status para `pending_review` e guarda o
+  arquivo no storage local do backend. `GET /partners/feature-requests` retorna
+  as solicitações e seus estados. O meio de pagamento é uma declaração para
+  conciliação manual; criação de cobrança e confirmação automática do Mercado
+  Pago ainda não estão conectadas.
 - `GET /admin/platform-fees/feature-requests` lista pedidos; o superadmin usa
   `PUT /admin/platform-fees/feature-requests/{request_id}/approve` ou
-  `/reject` para analisar. A aprovação libera o módulo ou capacidade e grava
-  auditoria. Pagamento automático ainda depende da integração Mercado Pago.
+  `/reject` para analisar. A aprovação exige comprovante anexado, libera o
+  módulo ou capacidade e grava auditoria. `GET
+  /admin/platform-fees/feature-requests/{request_id}/receipt` fornece o
+  comprovante apenas ao administrador.
+- `GET /admin/platform-fees/operator-packages/requests/{request_id}/receipt`
+  permite ao administrador consultar o comprovante de pacote de operadores;
+  ambos endpoints limitam o caminho ao diretório de storage do tipo de pedido.
 - Um serviço e uma unidade são incluídos por parceiro. Vagas adicionais de
   serviço/unidade são solicitadas em quantidade e aprovadas pela gestão. O
   backend impede exceder a capacidade em estacionamento e nos serviços do
@@ -243,6 +254,11 @@ Observacoes:
 `POST /partners/parking-management`
 
 `PUT /partners/parking-management/{parking_id}`
+
+O request e a resposta de unidade incluem `work_regime`: `commercial`,
+`three_shifts`, `24h_on_3off` ou `administrative_8h`. Esse campo descreve a
+jornada usada pelo gerador e é separado de `has_24h_gate`, que só informa se a
+portaria funciona 24 horas.
 
 Operadores do mesmo tenant podem ser associados a uma ou mais unidades:
 `GET/PUT /partners/operators/{operator_id}/parkings` recebe
@@ -734,11 +750,16 @@ limpeza do endpoint.
 - `GET /partners/schedule-history` retorna alterações de jornada para auditoria.
   A escala deve ser gerada somente para operadores associados à unidade.
 - `POST /partners/shifts/suggest` recebe `parking_id`, `operator_ids`, `starts_on`,
-  `ends_on` e `daily_hours`; `opening_time` e `closing_time` opcionais são usados
+  `ends_on`, `daily_hours` e `work_regime`; `opening_time` e `closing_time` opcionais são usados
   quando a unidade ainda não possui grade semanal configurada. Retorna turnos rotativos, folgas sugeridas,
   `required_people` e `coverage_warning`. A sugestão é editável antes de gravar.
   `operator_id` pode ser nulo: nesse caso o turno fica como vaga aberta para
   atribuição posterior, sem bloquear a criação da escala.
+  `three_shifts` gera três faixas de 8h a cada dia (deixa faixas sem operador
+  abertas); `24h_on_3off` agenda plantão de 24h com ciclo de três dias de folga;
+  `administrative_8h` gera jornadas limitadas a oito horas; `commercial` segue
+  os horários semanais da unidade e pode sobrepor faixas para evitar intervalo
+  descoberto. A API não exige que todos os turnos tenham operador.
   Operadores que já tenham escala no período em outra unidade não entram na
   sugestão e aparecem em `conflicting_operator_ids`; a gravação também bloqueia
   sobreposição para proteger a regra mesmo se a escala for alterada em paralelo.

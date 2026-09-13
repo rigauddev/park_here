@@ -51,6 +51,9 @@ class Parking(BaseModel):
     guide_commission_terms = Column(Text, nullable=True)
     category_pricing = Column(Text, nullable=True)
     operating_hours = Column(Text, nullable=True)
+    # Scheduling rule is separate from gate access (a 24h gate does not imply
+    # that one employee works a 24h shift).
+    work_regime = Column(String(30), nullable=False, default="commercial")
 
     services = relationship("ParkingService", back_populates="parking")
 

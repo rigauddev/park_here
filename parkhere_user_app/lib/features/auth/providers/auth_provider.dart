@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/services/api_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../models/auth_state.dart';
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
@@ -12,7 +13,10 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
 
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(AuthState.initial()) {
-    ApiService.onUnauthorized = logout;
+    ApiService.onUnauthorized = () async {
+      await logout();
+      await ApiFeedback.showSessionExpired();
+    };
     checkAuthOnStartup();
   }
 
@@ -38,6 +42,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     if (tokens["access"] != null && _isExpired(tokenClaims["exp"])) {
       await logout();
+      // Let AuthGate rebuild to the signed-out screen before presenting the
+      // same centered feedback used for an API 401 during an active session.
+      await Future<void>.delayed(Duration.zero);
+      await ApiFeedback.showSessionExpired();
       return;
     }
 
@@ -226,13 +234,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final accessToken = response['access_token'] as String;
     final refreshToken = response['refresh_token'] as String;
     final claims = _decodeAccessClaims(accessToken);
-    await _storage.saveTokens(accessToken, refreshToken,
-        accountType: 'customer', userEmail: email.trim().toLowerCase(),
-        role: claims['role'], tenantId: claims['tenant_id']);
-    state = state.copyWith(status: AuthStatus.authenticated,
-        accessToken: accessToken, refreshToken: refreshToken,
-        accountType: AuthAccountType.customer, role: claims['role'],
-        tenantId: claims['tenant_id'], userEmail: email.trim().toLowerCase());
+    await _storage.saveTokens(
+      accessToken,
+      refreshToken,
+      accountType: 'customer',
+      userEmail: email.trim().toLowerCase(),
+      role: claims['role'],
+      tenantId: claims['tenant_id'],
+    );
+    state = state.copyWith(
+      status: AuthStatus.authenticated,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      accountType: AuthAccountType.customer,
+      role: claims['role'],
+      tenantId: claims['tenant_id'],
+      userEmail: email.trim().toLowerCase(),
+    );
   }
 
   Future<String> requestPasswordReset(String email) async {

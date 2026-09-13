@@ -25,6 +25,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
     _animation.dispose();
     super.dispose();
   }
+
   @override
   void initState() {
     super.initState();
@@ -62,12 +63,15 @@ class _SplashPageState extends ConsumerState<SplashPage>
             animation: _animation,
             builder: (context, child) => Transform.scale(
               scale: 0.94 + (_animation.value * 0.06),
-              child: Opacity(opacity: 0.78 + (_animation.value * 0.22), child: child),
+              child: Opacity(
+                opacity: 0.78 + (_animation.value * 0.22),
+                child: child,
+              ),
             ),
             child: Image.asset(
               'assets/branding/icon_padrao_transparent.png',
-              width: 150,
-              height: 150,
+              width: 230,
+              height: 230,
               fit: BoxFit.contain,
             ),
           ),

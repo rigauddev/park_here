@@ -1369,17 +1369,22 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     bool hourly = false,
   }) {
     final category = parking.categoryPricing[area.name];
-    if (category != null) {
-      return hourly ? category.firstHourPrice : category.dailyPrice;
-    }
+    final configured = category == null
+        ? 0.0
+        : hourly
+        ? category.firstHourPrice
+        : category.dailyPrice;
+    if (configured > 0) return configured;
+    final covered =
+        area == AreaPreference.covered || area == AreaPreference.vip;
     if (hourly) {
-      return area == AreaPreference.covered
+      return covered
           ? parking.pricing.coveredFirstHourPrice
           : area == AreaPreference.uncovered
           ? parking.pricing.uncoveredFirstHourPrice
           : parking.pricing.firstHourPrice;
     }
-    return area == AreaPreference.covered
+    return covered
         ? parking.pricing.coveredDailyPrice
         : area == AreaPreference.uncovered
         ? parking.pricing.uncoveredDailyPrice
@@ -1387,8 +1392,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   }
 
   double _monthlyPriceForArea(ParkingModel parking, AreaPreference area) {
-    return parking.categoryPricing[area.name]?.monthlyPrice ??
-        parking.pricing.monthlyPrice;
+    final configured = parking.categoryPricing[area.name]?.monthlyPrice ?? 0;
+    if (configured > 0) return configured;
+    return parking.pricing.monthlyPrice;
   }
 
   AreaPreference _firstAvailableArea(ParkingModel parking) {

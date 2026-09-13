@@ -123,6 +123,7 @@ class ShiftSuggestionRequest(BaseModel):
     daily_hours: float = 8
     opening_time: str | None = None
     closing_time: str | None = None
+    work_regime: str | None = None
 
 
 class PartnerOperatorResponse(BaseModel):
@@ -161,6 +162,8 @@ class GuideServiceRequest(BaseModel):
 class PartnerFeatureActivationRequest(BaseModel):
     feature_key: str
     quantity: int = 1
+    billing_period: str
+    payment_method: str
     notes: str | None = None
 
 
@@ -237,15 +240,20 @@ async def get_my_partner_profile(
     partner_features = {}
     for feature in features_for_service_type(profile.service_type if profile else None):
         item = entitlements_by_key.get(feature['key'])
+        is_enabled = item.is_enabled if item else feature['default_is_enabled']
+        if item and item.expires_at and item.expires_at.replace(tzinfo=None) <= datetime.utcnow():
+            is_enabled = False
         partner_features[feature['key']] = {
             'name': feature['name'],
             'name_en': feature['name_en'],
             'description': feature['description'],
             'description_en': feature['description_en'],
-            'is_enabled': item.is_enabled if item else feature['default_is_enabled'],
+            'is_enabled': is_enabled,
             'is_paid': item.is_paid if item else feature['default_is_paid'],
             'price': item.price if item else 0,
             'billing_period': item.billing_period if item else feature['default_billing_period'],
+            'billing_prices': _feature_prices(item) if item else {},
+            'expires_at': item.expires_at.isoformat() + 'Z' if item and item.expires_at else None,
             'notes': item.notes if item else None,
             'requestable': feature['requestable'],
             'quantity_based': feature.get('quantity_based', False),
@@ -341,6 +349,8 @@ async def list_my_partner_feature_requests(
             'quantity': row.quantity,
             'total_price': row.total_price,
             'billing_period': row.billing_period,
+            'payment_method': row.payment_method,
+            'has_receipt': bool(row.receipt_path),
             'status': row.status,
             'created_at': row.created_at.isoformat() + 'Z',
         }
@@ -383,15 +393,22 @@ async def request_partner_feature(
             'code': 'feature_locked', 'feature_key': data.feature_key,
             'message': 'A gestão do sistema desativou novas solicitações para este recurso.',
         })
-    if unit_price <= 0:
-        raise HTTPException(status_code=409, detail='O preço desta funcionalidade ainda não foi configurado')
     if data.feature_key not in {'additional_units', 'additional_services'} and is_enabled:
         raise HTTPException(status_code=409, detail='Esta funcionalidade já está liberada')
+
+    if data.billing_period not in {'monthly', 'annual', 'one_time'}:
+        raise HTTPException(status_code=422, detail='Escolha uma modalidade de cobrança válida')
+    if data.payment_method not in {'credit_card', 'debit_card', 'pix'}:
+        raise HTTPException(status_code=422, detail='Escolha Pix, débito ou crédito')
+    prices = _feature_prices(entitlement) if entitlement else {}
+    unit_price = float(prices.get(data.billing_period, unit_price if billing_period == data.billing_period else 0))
+    if unit_price <= 0:
+        raise HTTPException(status_code=409, detail='O valor desta modalidade ainda não foi configurado pela gestão do app')
 
     pending = await db.scalar(select(PartnerFeatureRequest).where(
         PartnerFeatureRequest.tenant_id == current_user.tenant_id,
         PartnerFeatureRequest.feature_key == data.feature_key,
-        PartnerFeatureRequest.status == 'pending_review',
+        PartnerFeatureRequest.status.in_(['pending_payment', 'pending_review']),
     ))
     if pending:
         raise HTTPException(status_code=409, detail='Já existe uma solicitação pendente para esta funcionalidade')
@@ -403,7 +420,9 @@ async def request_partner_feature(
         quantity=data.quantity,
         unit_price=unit_price,
         total_price=round(unit_price * data.quantity, 2),
-        billing_period=billing_period,
+        billing_period=data.billing_period,
+        payment_method=data.payment_method,
+        status='pending_payment',
         notes=(data.notes or '').strip() or None,
     )
     db.add(request)
@@ -417,9 +436,56 @@ async def request_partner_feature(
         'unit_price': request.unit_price,
         'total_price': request.total_price,
         'billing_period': request.billing_period,
+        'payment_method': request.payment_method,
         'status': request.status,
         'created_at': request.created_at.isoformat() + 'Z',
     }
+
+
+@router.post('/feature-requests/{request_id}/receipt')
+async def upload_partner_feature_receipt(
+    request_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail='Somente o gestor pode enviar comprovante')
+    item = await db.scalar(select(PartnerFeatureRequest).where(
+        PartnerFeatureRequest.id == request_id,
+        PartnerFeatureRequest.tenant_id == current_user.tenant_id,
+    ))
+    if item is None:
+        raise HTTPException(status_code=404, detail='Solicitação não encontrada')
+    if item.status != 'pending_payment':
+        raise HTTPException(status_code=409, detail='Esta solicitação não aguarda comprovante')
+    if file.content_type not in {'application/pdf', 'image/jpeg', 'image/png'}:
+        raise HTTPException(status_code=422, detail='Anexe comprovante em PDF, JPG ou PNG')
+    content = await file.read()
+    if not content or len(content) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail='O comprovante deve ter até 30 MB')
+    target_dir = Path('/app/storage/feature_requests') / current_user.tenant_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(file.filename or 'receipt').suffix.lower()
+    target = target_dir / f'{item.id}{suffix}'
+    target.write_bytes(content)
+    item.receipt_path = str(target)
+    item.status = 'pending_review'
+    await db.commit()
+    return {'id': item.id, 'status': item.status, 'has_receipt': True}
+
+
+def _feature_prices(item: PartnerFeatureEntitlement | None) -> dict[str, float]:
+    if item is None:
+        return {}
+    try:
+        values = json.loads(item.billing_prices or '{}')
+    except json.JSONDecodeError:
+        values = {}
+    if not values and item.price > 0:
+        values[item.billing_period] = item.price
+    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual', 'one_time'}}
 
 
 @router.post('/me/documents', status_code=201)
@@ -1268,25 +1334,28 @@ async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession
     """Sugere uma escala rotativa; o gestor pode editar antes de confirmar."""
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
-    if data.ends_on < data.starts_on or not 1 <= data.daily_hours <= 12:
+    if data.ends_on < data.starts_on or not 1 <= data.daily_hours <= 24:
         raise HTTPException(status_code=422, detail="Período, operadores ou carga horária inválidos")
     parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
     if parking is None: raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
     assigned = (await db.scalars(select(OperatorParkingAssignment.operator_id).where(OperatorParkingAssignment.parking_id == data.parking_id, OperatorParkingAssignment.operator_id.in_(data.operator_ids)))).all()
     if len(assigned) != len(set(data.operator_ids)): raise HTTPException(status_code=422, detail="Todos os operadores precisam estar associados à unidade")
+    regime = data.work_regime or getattr(parking, "work_regime", "commercial") or "commercial"
+    if regime not in {"commercial", "three_shifts", "24h_on_3off", "administrative_8h"}:
+        raise HTTPException(status_code=422, detail="Modelo de jornada inválido")
     duration = int(data.daily_hours * 60)
-    continuous_hours = 24 if parking.has_24h_gate else 12
     configured_hours = json.loads(parking.operating_hours or '{}')
-    if not configured_hours and not parking.has_24h_gate and not (data.opening_time and data.closing_time):
+    if not configured_hours and regime not in {"three_shifts", "24h_on_3off"} and not (data.opening_time and data.closing_time):
         raise HTTPException(status_code=422, detail="Configure o funcionamento da unidade ou informe abertura e fechamento para gerar esta escala.")
     weekday_keys = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
-    required_people = max(1, (continuous_hours * 60 + duration - 1) // duration)
     suggestions = []
     local_start = _schedule_local(data.starts_on)
     local_end = _schedule_local(data.ends_on)
     day = local_start.replace(hour=0, minute=0, second=0, microsecond=0)
     end_day = local_end.replace(hour=0, minute=0, second=0, microsecond=0)
     index = 0
+    rotation_cursor = 0
+    last_24h_shift_day: dict[str, int] = {}
     conflicts = set()
     if data.operator_ids:
         conflict_window_start = max(day, _now_schedule_local())
@@ -1298,35 +1367,67 @@ async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession
         conflicts = {shift.operator_id for shift in existing}
     conflict_operator_ids = sorted(conflicts)
     while day <= end_day:
-        day_hours = None if parking.has_24h_gate else configured_hours.get(weekday_keys[day.weekday()])
-        if not parking.has_24h_gate and not configured_hours and data.opening_time and data.closing_time:
+        day_hours = None if regime in {"three_shifts", "24h_on_3off"} else configured_hours.get(weekday_keys[day.weekday()])
+        if regime not in {"three_shifts", "24h_on_3off"} and not configured_hours and data.opening_time and data.closing_time:
             day_hours = {"open": data.opening_time, "close": data.closing_time}
-        if not parking.has_24h_gate and not day_hours:
+        if regime not in {"three_shifts", "24h_on_3off"} and not day_hours:
             day += timedelta(days=1)
             continue
         candidates = [operator_id for operator_id in data.operator_ids if operator_id not in conflicts]
-        operator_id = candidates[index % len(candidates)] if candidates else None
-        if parking.has_24h_gate:
-            start_hour = (index % required_people) * int(data.daily_hours)
-            start = day.replace(hour=start_hour % 24)
+        slots: list[tuple[datetime, datetime]] = []
+        if regime == "three_shifts":
+            slots = [(day + timedelta(hours=slot * 8), day + timedelta(hours=(slot + 1) * 8)) for slot in range(3)]
+        elif regime == "24h_on_3off":
+            slots = [(day, day + timedelta(days=1))]
         else:
             open_text = day_hours.get('open', '08:00')
             hour, minute = (int(part) for part in open_text.split(':', 1))
             start = day.replace(hour=hour, minute=minute)
-        shift_duration = duration
-        if day_hours:
             close_text = day_hours.get('close', '18:00')
             close_hour, close_minute = (int(part) for part in close_text.split(':', 1))
             closing = day.replace(hour=close_hour, minute=close_minute)
-            shift_duration = max(60, min(duration, int((closing - start).total_seconds() // 60)))
-        finish = start + timedelta(minutes=shift_duration)
-        suggestions.append({"operator_id": operator_id, "starts_at": start.isoformat(), "ends_at": finish.isoformat(), "day_off_for": [item for item in data.operator_ids if item != operator_id]})
-        index += 1; day += timedelta(days=1)
-    warning = None if len(data.operator_ids) >= required_people else f"Cobertura pendente: esta unidade exige pelo menos {required_people} faixas de {data.daily_hours:g}h para operar {continuous_hours}h por dia. Os turnos foram criados como vagas abertas."
+            if closing <= start:
+                closing += timedelta(days=1)
+            operating_minutes = int((closing - start).total_seconds() // 60)
+            max_shift_minutes = 8 * 60 if regime == "administrative_8h" else duration
+            slot_count = max(1, (operating_minutes + max_shift_minutes - 1) // max_shift_minutes)
+            # Overlap shift starts to avoid a gap when the opening window is
+            # longer than one employee's configured workday.
+            for slot in range(slot_count):
+                slot_start = start + timedelta(minutes=min(slot * max_shift_minutes, max(operating_minutes - 60, 0)))
+                slot_end = min(slot_start + timedelta(minutes=max_shift_minutes), closing)
+                slots.append((slot_start, slot_end))
+
+        for slot_number, (slot_start, slot_end) in enumerate(slots):
+            if regime == "24h_on_3off":
+                operator_id = None
+                if candidates:
+                    for offset in range(len(candidates)):
+                        candidate_index = (rotation_cursor + offset) % len(candidates)
+                        candidate_id = candidates[candidate_index]
+                        last_day = last_24h_shift_day.get(candidate_id, -4)
+                        if index - last_day >= 4:
+                            operator_id = candidate_id
+                            last_24h_shift_day[candidate_id] = index
+                            rotation_cursor = (candidate_index + 1) % len(candidates)
+                            break
+            elif regime == "three_shifts":
+                operator_id = candidates[(index + slot_number) % len(candidates)] if candidates and slot_number < len(candidates) else None
+            else:
+                operator_id = candidates[(index + slot_number) % len(candidates)] if candidates and slot_number < len(candidates) else None
+            suggestions.append({"operator_id": operator_id, "starts_at": slot_start.isoformat(), "ends_at": slot_end.isoformat(), "work_regime": regime})
+        index += 1
+        day += timedelta(days=1)
+    required_people = 3 if regime == "three_shifts" else (4 if regime == "24h_on_3off" else 1)
+    warning = None
+    if regime == "three_shifts" and len(data.operator_ids) < required_people:
+        warning = "Cobertura pendente: três faixas de 8h foram criadas por dia. Os turnos sem operador continuam abertos para atribuição posterior."
+    elif regime == "24h_on_3off" and len(data.operator_ids) < 4:
+        warning = "A jornada 24h + 3 dias de folga deixa dias descobertos com menos de quatro operadores. Os dias sem operador aparecem como turnos abertos."
     if conflict_operator_ids:
         conflict_names = (await db.scalars(select(User.name).where(User.id.in_(conflict_operator_ids)))).all()
         warning = " ".join(filter(None, [warning, "Operadores já escalados em outra unidade no período foram removidos desta sugestão: " + ", ".join(conflict_names) + "."])).strip()
-    return {"parking_id": data.parking_id, "suggestions": suggestions, "required_people": required_people, "coverage_warning": warning, "conflicting_operator_ids": conflict_operator_ids, "rule": "A folga é atribuída automaticamente ao operador que não trabalha no dia; o gestor pode editar antes de salvar."}
+    return {"parking_id": data.parking_id, "work_regime": regime, "suggestions": suggestions, "required_people": required_people, "coverage_warning": warning, "conflicting_operator_ids": conflict_operator_ids, "rule": "A escala respeita a jornada escolhida. Turnos descobertos permanecem abertos; conflitos futuros em outra unidade não são atribuídos."}
 
 
 @router.get(
@@ -1436,12 +1537,15 @@ async def _ensure_partner_feature(db: AsyncSession, user: User, key: str) -> dic
         PartnerFeatureEntitlement.feature_key == key,
     ))
     enabled = entitlement.is_enabled if entitlement else feature['default_is_enabled']
+    if entitlement and entitlement.expires_at and entitlement.expires_at.replace(tzinfo=None) <= datetime.utcnow():
+        enabled = False
     if not enabled:
         raise HTTPException(status_code=403, detail={
             'code': 'feature_locked', 'feature_key': key, 'name': feature['name'],
             'is_paid': entitlement.is_paid if entitlement else feature['default_is_paid'],
             'price': entitlement.price if entitlement else 0,
             'billing_period': entitlement.billing_period if entitlement else feature['default_billing_period'],
+            'billing_prices': _feature_prices(entitlement),
         })
     return feature
 

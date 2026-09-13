@@ -35,7 +35,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
         self.session = async_sessionmaker(self.engine, expire_on_commit=False)
-        self.tenants, self.users, self.parkings = [], [], []
+        self.tenants, self.users, self.parkings, self.extra_users = [], [], [], []
         async with self.session() as db:
             for index in range(2):
                 uid = uuid.uuid4().hex
@@ -289,8 +289,13 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             'opening_time': '08:00',
             'closing_time': '18:00',
         })
-        self.assertEqual(len(suggestion['suggestions']), 1)
-        self.assertIsNone(suggestion['suggestions'][0]['operator_id'])
+        # A 10-hour commercial opening window exceeds an 8-hour workday, so
+        # the generator creates overlapping coverage slots and leaves both
+        # unassigned for later staffing.
+        self.assertEqual(len(suggestion['suggestions']), 2)
+        self.assertTrue(
+            all(item['operator_id'] is None for item in suggestion['suggestions'])
+        )
         created = await self.request('/partners/shifts', {
             'operator_id': None,
             'parking_id': self.branch_parking,
@@ -313,6 +318,44 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         loaded_shifts = await self.request('/partners/shifts')
         self.assertIn(updated['id'], [item['id'] for item in loaded_shifts])
 
+        # Four operators can cover a repeating 24h-on/3-days-off cycle. With
+        # fewer operators, uncovered days remain open instead of violating rest.
+        async with self.session() as db:
+            operators = []
+            for index in range(4):
+                operator = User(
+                    tenant_id=self.tenants[0], name=f'24h operator {index}',
+                    firt_name='Pilot', email=f'24h-{uuid.uuid4().hex}@test.invalid',
+                    password_hash='not-a-login', role=UserRoleEnum.OPERATOR,
+                )
+                db.add(operator)
+                await db.flush()
+                db.add(OperatorParkingAssignment(
+                    operator_id=operator.id, parking_id=self.branch_parking,
+                ))
+                operators.append(operator)
+            await db.commit()
+            self.extra_users.extend(operators)
+        cycle_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=10)
+        cycle = await self.request('/partners/shifts/suggest', {
+            'parking_id': self.branch_parking,
+            'operator_ids': [operator.id for operator in operators],
+            'starts_on': cycle_start.date().isoformat(),
+            'ends_on': (cycle_start + timedelta(days=7)).date().isoformat(),
+            'daily_hours': 24,
+            'work_regime': '24h_on_3off',
+        })
+        assigned_days = [
+            (datetime.fromisoformat(row['starts_at']).date(), row['operator_id'])
+            for row in cycle['suggestions'] if row['operator_id'] is not None
+        ]
+        self.assertEqual(len(assigned_days), 8)
+        last_work_day = {}
+        for day, operator_id in assigned_days:
+            if operator_id in last_work_day:
+                self.assertGreaterEqual((day - last_work_day[operator_id]).days, 4)
+            last_work_day[operator_id] = day
+
     async def asyncTearDown(self):
         async with self.session() as db:
             debt_ids = select(PartnerFeeDebt.id).where(PartnerFeeDebt.tenant_id.in_(self.tenants))
@@ -327,7 +370,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             await db.execute(delete(ParkingPlatformFee).where(ParkingPlatformFee.parking_id.in_(self.parkings)))
             await db.execute(delete(Parking).where(Parking.id.in_(self.parkings)))
             await db.execute(delete(Vehicle).where(Vehicle.user_id == self.customer.id))
-            await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id, self.second_operator.id])))
+            await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id, self.second_operator.id] + [u.id for u in self.extra_users])))
             await db.execute(delete(PartnerProfile).where(PartnerProfile.tenant_id.in_(self.tenants)))
             await db.execute(delete(Tenant).where(Tenant.id.in_(self.tenants)))
             await db.commit()

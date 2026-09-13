@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'core/i18n/app_language.dart';
 import 'core/i18n/app_localizations.dart';
+import 'core/widgets/api_feedback.dart';
 import 'features/auth/pages/auth_gate.dart';
 
 Future<void> main() async {
@@ -29,6 +30,7 @@ class ParkFinderApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = ref.watch(appLanguageProvider);
     return MaterialApp(
+      navigatorKey: ApiFeedback.navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       locale: locale,

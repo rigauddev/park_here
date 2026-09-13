@@ -115,6 +115,7 @@ class PartnerOperatorsNotifier
     double dailyHours = 8,
     String? openingTime,
     String? closingTime,
+    String workRegime = 'commercial',
   }) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
@@ -124,6 +125,7 @@ class PartnerOperatorsNotifier
       'starts_on': _localIso(startsOn),
       'ends_on': _localIso(endsOn),
       'daily_hours': dailyHours,
+      'work_regime': workRegime,
       if (openingTime != null) 'opening_time': openingTime,
       if (closingTime != null) 'closing_time': closingTime,
     }, token);

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../models/managed_parking_model.dart';
 import '../providers/partner_parking_provider.dart';
 import '../models/partner_profile_model.dart';
@@ -358,6 +360,7 @@ class _ParkingManagementFormPageState
   final servicePriceController = TextEditingController();
 
   bool has24hGate = false;
+  String workRegime = 'commercial';
   bool hasSecuritySystem = false;
   bool wantsAutomaticAccess = false;
   bool hasAutomaticAccess = false;
@@ -435,6 +438,7 @@ class _ParkingManagementFormPageState
     busController.text = parking.busSpots.toString();
     pickupController.text = parking.pickupSpots.toString();
     has24hGate = parking.has24hGate;
+    workRegime = parking.workRegime;
     operatingHours
       ..clear()
       ..addAll(parking.operatingHours);
@@ -609,6 +613,54 @@ class _ParkingManagementFormPageState
                 onChanged: (value) => setState(() => has24hGate = value),
                 title: const Text('Portaria 24h'),
                 contentPadding: EdgeInsets.zero,
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: workRegime,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: context.strings.isEnglish
+                      ? 'Work-schedule regime'
+                      : 'Jornada usada para gerar escalas',
+                  helperText: context.strings.isEnglish
+                      ? 'Gate access hours and employee shifts are separate settings.'
+                      : 'O funcionamento da portaria e a jornada dos operadores são configurações diferentes.',
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: 'commercial',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? 'Commercial schedule'
+                          : 'Horário comercial',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'three_shifts',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? '24h coverage · three 8h shifts'
+                          : 'Cobertura 24h · três turnos de 8h',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: '24h_on_3off',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? '24h on · three days off'
+                          : 'Plantão de 24h · três dias de folga',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'administrative_8h',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? 'Administrative · 8h per day'
+                          : 'Administrativo · 8h por dia',
+                    ),
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => workRegime = value ?? 'commercial'),
               ),
               _OperatingHoursEditor(
                 hours: operatingHours,
@@ -836,13 +888,11 @@ class _ParkingManagementFormPageState
       setState(() => isSaving = true);
       await ref.read(partnerParkingProvider.notifier).save(parking);
       if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Estacionamento salvo.')));
+      await ApiFeedback.show(context, 'Estacionamento salvo.', isError: false);
+      if (mounted) Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
-      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      await _showMessage(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
@@ -888,6 +938,7 @@ class _ParkingManagementFormPageState
       pickupSpots: pickup,
       hasVipSpots: vip > 0,
       has24hGate: has24hGate,
+      workRegime: workRegime,
       hasSecuritySystem: hasSecuritySystem,
       wantsAutomaticAccess: wantsAutomaticAccess,
       hasAutomaticAccess: hasAutomaticAccess,
@@ -968,10 +1019,8 @@ class _ParkingManagementFormPageState
     return value;
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  Future<void> _showMessage(String message) async {
+    await ApiFeedback.show(context, message);
   }
 }
 

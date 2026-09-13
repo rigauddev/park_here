@@ -640,26 +640,32 @@ def _base_amount(
     duration_hours: int,
 ) -> float:
     configured = json.loads(getattr(parking, "category_pricing", None) or "{}").get(spot_type)
-    if configured:
-        first_hour = configured.get("first_hour_price", 0)
-        additional_hour = configured.get("additional_hour_price", 0)
-        daily = configured.get("daily_price", 0)
-        weekly = configured.get("weekly_price", 0)
-        monthly = configured.get("monthly_price", 0)
-    elif spot_type in {"covered", "vip"}:
-        first_hour = parking.covered_first_hour_price
-        additional_hour = parking.covered_additional_hour_price
-        daily = parking.covered_daily_price
-        weekly = parking.covered_weekly_price
-        monthly = parking.covered_monthly_price
+    if spot_type in {"covered", "vip"}:
+        fallback = {
+            "first_hour_price": parking.covered_first_hour_price,
+            "additional_hour_price": parking.covered_additional_hour_price,
+            "daily_price": parking.covered_daily_price,
+            "weekly_price": parking.covered_weekly_price,
+            "monthly_price": parking.covered_monthly_price,
+        }
     else:
-        first_hour = parking.uncovered_first_hour_price or parking.first_hour_price
-        additional_hour = (
-            parking.uncovered_additional_hour_price or parking.additional_hour_price
-        )
-        daily = parking.uncovered_daily_price or parking.daily_price
-        weekly = parking.uncovered_weekly_price or parking.weekly_price
-        monthly = parking.uncovered_monthly_price or parking.monthly_price
+        fallback = {
+            "first_hour_price": parking.uncovered_first_hour_price or parking.first_hour_price,
+            "additional_hour_price": parking.uncovered_additional_hour_price or parking.additional_hour_price,
+            "daily_price": parking.uncovered_daily_price or parking.daily_price,
+            "weekly_price": parking.uncovered_weekly_price or parking.weekly_price,
+            "monthly_price": parking.uncovered_monthly_price or parking.monthly_price,
+        }
+
+    # Older MVP seed rows used {hourly, daily, weekly, monthly}; accept those
+    # rows while new management writes the explicit *_price shape. Zero/missing
+    # fields inherit the area's configured rate instead of silently charging 0.
+    configured = configured or {}
+    first_hour = configured.get("first_hour_price", configured.get("hourly", 0)) or fallback["first_hour_price"]
+    additional_hour = configured.get("additional_hour_price", configured.get("hourly", 0)) or fallback["additional_hour_price"]
+    daily = configured.get("daily_price", configured.get("daily", 0)) or fallback["daily_price"]
+    weekly = configured.get("weekly_price", configured.get("weekly", 0)) or fallback["weekly_price"]
+    monthly = configured.get("monthly_price", configured.get("monthly", 0)) or fallback["monthly_price"]
 
     if pricing_plan == "hourly":
         return first_hour + max(duration_hours - 1, 0) * additional_hour

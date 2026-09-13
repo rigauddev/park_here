@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/api_feedback.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
@@ -365,14 +367,10 @@ class _ReservationCancelDialogState
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Reserva cancelada.')));
+      await ApiFeedback.show(context, 'Reserva cancelada.', isError: false);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao cancelar reserva: $error')),
-      );
+      await ApiFeedback.show(context, 'Erro ao cancelar reserva: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }

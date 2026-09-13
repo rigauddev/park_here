@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/validators/form_validators.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../models/partner_operator_model.dart';
 import '../models/managed_parking_model.dart';
 import '../providers/partner_operators_provider.dart';
@@ -145,9 +146,7 @@ class PartnerUsersPage extends ConsumerWidget {
                 }
               } catch (error) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('$error')));
+                  await ApiFeedback.show(context, '$error');
                 }
               }
             },
@@ -287,10 +286,9 @@ class _OperatorAssignmentDialogState
     } catch (error) {
       if (!mounted) return;
       setState(() => loadingAssignments = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Não foi possível carregar as unidades: $error'),
-        ),
+      await ApiFeedback.show(
+        context,
+        'Não foi possível carregar as unidades: $error',
       );
     }
   }
@@ -406,10 +404,9 @@ class _OperatorAssignmentDialogState
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível salvar as unidades: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível salvar as unidades: $error',
         );
       }
     } finally {
@@ -565,12 +562,12 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
     if (!(formKey.currentState?.validate() ?? false)) return;
 
     if (!acceptedTerms) {
-      _message('Aceite os termos para criar o operador.');
+      await _message('Aceite os termos para criar o operador.');
       return;
     }
 
     if (selectedPermissions.isEmpty) {
-      _message('Selecione ao menos uma permissao para o operador.');
+      await _message('Selecione ao menos uma permissao para o operador.');
       return;
     }
 
@@ -591,13 +588,13 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
       Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
-      _message(error.toString().replaceFirst('Exception: ', ''));
+      await _message(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
   }
 
-  void _message(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  Future<void> _message(String text) async {
+    await ApiFeedback.show(context, text);
   }
 }

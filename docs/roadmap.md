@@ -1,5 +1,35 @@
 # Roadmap
 
+## Jornada, precificação, carteira e solicitações — 13/09/2026
+
+- A unidade persiste sua jornada-base separada do horário da portaria. Escalas
+  podem ser geradas em horário comercial, três faixas de 8h para cobertura 24h,
+  plantão 24h com ciclo 1x3, ou administrativo de até 8h; turnos sem operador
+  ficam abertos para atribuição posterior. O calendário diferencia unidades por
+  cor, filtra por unidade/operador e exporta PDF agrupado por unidade.
+- Compatibilidade de tarifa aceita tanto o formato antigo do seed (`hourly`,
+  `daily`, etc.) quanto as chaves atuais (`first_hour_price`, `daily_price`,
+  etc.). O valor da reserva volta a usar a categoria selecionada, com fallback
+  para tarifa da área quando a categoria ainda não tem configuração própria.
+- A carteira local permite selecionar o cartão padrão e mostra cada cartão com
+  identidade visual distinta. Guarda somente metadados mascarados em
+  SharedPreferences; não armazena PAN completo nem CVV e ainda não tokeniza no
+  Mercado Pago.
+- Pedidos de funcionalidades pagas aceitam preços mensal, anual e único por
+  30 dias, Pix/crédito/débito e comprovante para revisão manual. O admin pode
+  consultar o comprovante e aprovar/rejeitar; aprovação mensal dura 30 dias e
+  anual, 365 dias. Renovação recorrente automática e confirmação de pagamento
+  via provedor continuam pendentes da integração Mercado Pago. Isso não é uma
+  cobrança ou confirmação automática nesta fase.
+- O seed MVP é idempotente para os cenários ParkHere Valença e atualiza contas
+  e tarifas de demonstração identificadas; não exige `docker compose down -v`.
+  Ele também remove quatro contas de exemplo antigas explicitamente nomeadas.
+  Inspecione os dados locais antes de executá-lo. Aplique a migration e seed sem
+  remover o volume `mysql_data`.
+
+Critérios manuais desta rodada estão em
+[`manual-tests.md`](manual-tests.md#jornadas-cores-por-unidade-e-pdf).
+
 ## Revisao de continuidade — 06/09/2026
 
 Escopo desta rodada: servicos adicionais do estacionamento e gestao operacional do ParkHere.
@@ -255,8 +285,7 @@ templates de e-mail PT/EN com marca ParkHere. O snapshot da taxa é preservado
 na reserva para que uma alteração administrativa futura não modifique uma
 cobrança já apresentada.
 
-Ainda pendente: cobrança/renovação dos módulos pagos e bloqueio backend dos
-módulos quando o entitlement expirar; tela de auditoria no app; busca/paginação
+Ainda pendente: cobrança/renovação automática dos módulos pagos; tela de auditoria no app; busca/paginação
 de parceiros/clientes; afiliação genérica de guias a serviços que não sejam
 estacionamentos; idioma preferido de e-mail por usuário; módulos operacionais
 de hotel, lava-jato, restaurante, turismo e transporte.

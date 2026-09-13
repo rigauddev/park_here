@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_profile_model.dart';
 import '../providers/partner_profile_provider.dart';
@@ -30,12 +32,18 @@ class _PartnerFeatureAccessPageState
   late int _quantity;
   bool _submitting = false;
   bool _hasPendingRequest = false;
+  String? _requestId;
   String? _message;
+  String _billingPeriod = 'monthly';
+  String _paymentMethod = 'pix';
+  PlatformFile? _receipt;
 
   @override
   void initState() {
     super.initState();
     _quantity = widget.requestedQuantity.clamp(1, 100);
+    final configured = widget.partner.featureDetails(widget.featureKey) ?? {};
+    _billingPeriod = configured['billing_period'] as String? ?? 'monthly';
     _loadRequestStatus();
   }
 
@@ -47,12 +55,27 @@ class _PartnerFeatureAccessPageState
         '/partners/feature-requests',
         token,
       );
-      final pending = requests.cast<Map<String, dynamic>>().any(
-        (row) =>
-            row['feature_key'] == widget.featureKey &&
-            row['status'] == 'pending_review',
-      );
-      if (mounted) setState(() => _hasPendingRequest = pending);
+      final request = requests
+          .cast<Map<String, dynamic>>()
+          .where(
+            (row) =>
+                row['feature_key'] == widget.featureKey &&
+                (row['status'] == 'pending_review' ||
+                    row['status'] == 'pending_payment'),
+          )
+          .firstOrNull;
+      if (mounted) {
+        setState(() {
+          _requestId = request?['id'] as String?;
+          _hasPendingRequest = request?['status'] == 'pending_review';
+          if (request != null) {
+            _billingPeriod =
+                request['billing_period'] as String? ?? _billingPeriod;
+            _paymentMethod =
+                request['payment_method'] as String? ?? _paymentMethod;
+          }
+        });
+      }
     } catch (_) {
       // The access summary remains usable if request history cannot be fetched.
     }
@@ -63,13 +86,17 @@ class _PartnerFeatureAccessPageState
     final en = context.strings.isEnglish;
     final feature = widget.partner.featureDetails(widget.featureKey) ?? {};
     final paid = feature['is_paid'] == true;
-    final price = (feature['price'] as num?)?.toDouble() ?? 0;
+    final prices = (feature['billing_prices'] as Map<String, dynamic>?) ?? {};
+    final legacyPrice = (feature['price'] as num?)?.toDouble() ?? 0;
+    final price =
+        (prices[_billingPeriod] as num?)?.toDouble() ??
+        ((feature['billing_period'] == _billingPeriod) ? legacyPrice : 0);
     final quantityBased = feature['quantity_based'] == true;
     final requestable = feature['requestable'] == true;
     final canRequest = widget.partner.role != 'operator';
     final resourceRequestsEnabled =
         !quantityBased || feature['is_enabled'] == true;
-    final period = switch (feature['billing_period']) {
+    final period = switch (_billingPeriod) {
       'annual' => en ? 'year' : 'ano',
       'one_time' => en ? 'one-time' : 'pagamento único',
       _ => en ? 'month' : 'mês',
@@ -133,6 +160,64 @@ class _PartnerFeatureAccessPageState
                           ],
                         ),
                       ],
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        initialValue: _billingPeriod,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: en
+                              ? 'Billing option'
+                              : 'Modalidade de cobrança',
+                        ),
+                        items: [
+                          DropdownMenuItem(
+                            value: 'monthly',
+                            child: Text(
+                              en ? 'Monthly recurring' : 'Mensal recorrente',
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'annual',
+                            child: Text(en ? 'Annual' : 'Anual'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'one_time',
+                            child: Text(
+                              en ? 'One-time · 30 days' : 'Única · 30 dias',
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _billingPeriod = value ?? 'monthly'),
+                      ),
+                      const SizedBox(height: 12),
+                      SegmentedButton<String>(
+                        segments: [
+                          ButtonSegment(value: 'pix', label: Text('Pix')),
+                          ButtonSegment(
+                            value: 'credit_card',
+                            label: Text(en ? 'Credit' : 'Crédito'),
+                          ),
+                          ButtonSegment(
+                            value: 'debit_card',
+                            label: Text(en ? 'Debit' : 'Débito'),
+                          ),
+                        ],
+                        selected: {_paymentMethod},
+                        onSelectionChanged: (value) =>
+                            setState(() => _paymentMethod = value.first),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _submitting ? null : _chooseReceipt,
+                        icon: const Icon(Icons.attach_file),
+                        label: Text(
+                          _receipt?.name ??
+                              (en
+                                  ? 'Attach payment proof (PDF/JPG/PNG)'
+                                  : 'Anexar comprovante (PDF/JPG/PNG)'),
+                        ),
+                      ),
                       const Divider(height: 28),
                       Text(
                         paid
@@ -171,11 +256,13 @@ class _PartnerFeatureAccessPageState
                 onPressed:
                     _submitting ||
                         _hasPendingRequest ||
-                        !paid ||
-                        price <= 0 ||
-                        !requestable ||
-                        !canRequest ||
-                        !resourceRequestsEnabled
+                        _receipt == null ||
+                        (_requestId == null &&
+                            (!paid ||
+                                price <= 0 ||
+                                !requestable ||
+                                !canRequest ||
+                                !resourceRequestsEnabled))
                     ? null
                     : _request,
                 icon: _submitting
@@ -190,7 +277,9 @@ class _PartnerFeatureAccessPageState
                       ? (en ? 'Sending request…' : 'Enviando solicitação…')
                       : _hasPendingRequest
                       ? (en ? 'Request under review' : 'Solicitação em análise')
-                      : (en ? 'Request activation' : 'Solicitar liberação'),
+                      : (en
+                            ? 'Submit proof for review'
+                            : 'Enviar comprovante para análise'),
                 ),
               ),
               if (!paid ||
@@ -217,8 +306,8 @@ class _PartnerFeatureAccessPageState
               const SizedBox(height: 10),
               Text(
                 en
-                    ? 'The request is reviewed by ParkHere management. This action does not charge a payment method or activate the feature automatically.'
-                    : 'A solicitação será analisada pela gestão do ParkHere. Ela não cobra automaticamente nem libera a funcionalidade sem aprovação.',
+                    ? 'Attach proof of payment. ParkHere management reviews it and activates the feature after confirmation; card/Pix processing is not connected yet.'
+                    : 'Anexe o comprovante. A gestão ParkHere confere o pagamento e libera a funcionalidade após a confirmação; o processamento de cartão/Pix ainda será integrado.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -237,10 +326,25 @@ class _PartnerFeatureAccessPageState
       _message = null;
     });
     try {
-      await _api.postAuthorized('/partners/feature-requests', {
-        'feature_key': widget.featureKey,
-        'quantity': _quantity,
-      }, token);
+      var requestId = _requestId;
+      if (requestId == null) {
+        final response = await _api
+            .postAuthorized('/partners/feature-requests', {
+              'feature_key': widget.featureKey,
+              'quantity': _quantity,
+              'billing_period': _billingPeriod,
+              'payment_method': _paymentMethod,
+            }, token);
+        requestId = response['id'] as String;
+        if (mounted) setState(() => _requestId = requestId);
+      }
+      final receipt = _receipt!;
+      await _api.uploadAuthorizedFile(
+        '/partners/feature-requests/$requestId/receipt',
+        token,
+        receipt.name,
+        receipt.bytes!,
+      );
       if (!mounted) return;
       setState(() {
         _hasPendingRequest = true;
@@ -249,15 +353,44 @@ class _PartnerFeatureAccessPageState
             : 'Solicitação enviada. Você pode continuar usando as funcionalidades já liberadas.';
       });
       ref.invalidate(partnerProfileProvider);
+      await ApiFeedback.show(
+        context,
+        context.strings.isEnglish
+            ? 'Request submitted for payment review.'
+            : 'Solicitação enviada para análise do comprovante.',
+        isError: false,
+      );
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _message =
-              '${context.strings.isEnglish ? 'Could not submit request' : 'Não foi possível solicitar'}: $error',
-        );
+        final message =
+            '${context.strings.isEnglish ? 'Could not submit request' : 'Não foi possível solicitar'}: $error';
+        setState(() => _message = message);
+        await ApiFeedback.show(context, message);
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<void> _chooseReceipt() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+    if (!mounted || result == null || result.files.isEmpty) return;
+    final file = result.files.single;
+    if (file.bytes == null || file.size > 30 * 1024 * 1024) {
+      setState(
+        () => _message = context.strings.isEnglish
+            ? 'The file must be available in memory and no larger than 30 MB.'
+            : 'O arquivo deve estar disponível para envio e ter no máximo 30 MB.',
+      );
+      return;
+    }
+    setState(() {
+      _receipt = file;
+      _message = null;
+    });
   }
 }

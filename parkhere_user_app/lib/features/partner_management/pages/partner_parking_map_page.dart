@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
@@ -1489,22 +1490,18 @@ class _FreeSlotReservationDialogState
       ref.invalidate(partnerReservationsProvider);
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            mode == _OperationalReservationMode.preReserve
-                ? 'Pre-reserva criada.'
-                : payTiming == _OperationalPayTiming.now
-                ? 'Reserva confirmada com pagamento.'
-                : 'Reserva criada para pagamento no checkout.',
-          ),
-        ),
+      await ApiFeedback.show(
+        context,
+        mode == _OperationalReservationMode.preReserve
+            ? 'Pré-reserva criada.'
+            : payTiming == _OperationalPayTiming.now
+            ? 'Reserva confirmada com pagamento.'
+            : 'Reserva criada para pagamento no checkout.',
+        isError: false,
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erro ao criar reserva: $error')));
+      await ApiFeedback.show(context, 'Erro ao criar reserva: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }
@@ -1673,14 +1670,10 @@ class _CancelReservationDialogState
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Reserva cancelada.')));
+      await ApiFeedback.show(context, 'Reserva cancelada.', isError: false);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao cancelar reserva: $error')),
-      );
+      await ApiFeedback.show(context, 'Erro ao cancelar reserva: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }

@@ -40,13 +40,24 @@ class ParkingPricing {
   }
 
   factory ParkingPricing.fromCategoryJson(Map<String, dynamic> json) {
+    // Support legacy seed/API payloads while the backend refreshes stored rows.
+    final hourly = (json['hourly'] as num?)?.toDouble() ?? 0;
     return ParkingPricing(
-      firstHourPrice: (json['first_hour_price'] as num?)?.toDouble() ?? 0,
+      firstHourPrice: (json['first_hour_price'] as num?)?.toDouble() ?? hourly,
       additionalHourPrice:
-          (json['additional_hour_price'] as num?)?.toDouble() ?? 0,
-      dailyPrice: (json['daily_price'] as num?)?.toDouble() ?? 0,
-      weeklyPrice: (json['weekly_price'] as num?)?.toDouble() ?? 0,
-      monthlyPrice: (json['monthly_price'] as num?)?.toDouble() ?? 0,
+          (json['additional_hour_price'] as num?)?.toDouble() ?? hourly,
+      dailyPrice:
+          (json['daily_price'] as num?)?.toDouble() ??
+          (json['daily'] as num?)?.toDouble() ??
+          0,
+      weeklyPrice:
+          (json['weekly_price'] as num?)?.toDouble() ??
+          (json['weekly'] as num?)?.toDouble() ??
+          0,
+      monthlyPrice:
+          (json['monthly_price'] as num?)?.toDouble() ??
+          (json['monthly'] as num?)?.toDouble() ??
+          0,
     );
   }
 }

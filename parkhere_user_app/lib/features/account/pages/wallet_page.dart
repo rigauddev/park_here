@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../models/account_models.dart';
 import '../providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -21,6 +23,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   final pixController = TextEditingController();
   WalletMethodType type = WalletMethodType.creditCard;
   String selectedBrand = 'Visa';
+  bool _makeDefault = true;
 
   @override
   void dispose() {
@@ -57,14 +60,17 @@ class _WalletPageState extends ConsumerState<WalletPage> {
           if (account.walletMethods.isEmpty)
             const _EmptyWallet()
           else
-            for (final method in account.walletMethods)
+            for (var index = 0; index < account.walletMethods.length; index++)
               _PaymentMethodCard(
-                method: method,
-                isActive: account.activePaymentMethod?.id == method.id,
+                method: account.walletMethods[index],
+                isActive:
+                    account.activePaymentMethod?.id ==
+                    account.walletMethods[index].id,
+                colorIndex: index,
                 onActivate: () {
                   ref
                       .read(accountProvider.notifier)
-                      .setActiveWalletMethod(method.id);
+                      .setActiveWalletMethod(account.walletMethods[index].id);
                 },
               ),
           const SizedBox(height: 24),
@@ -156,6 +162,22 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ),
             ),
           ],
+          if (!isPartner && account.walletMethods.isNotEmpty)
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _makeDefault,
+              onChanged: (value) => setState(() => _makeDefault = value),
+              title: Text(
+                context.strings.isEnglish
+                    ? 'Set this card as default'
+                    : 'Definir este cartão como padrão',
+              ),
+              subtitle: Text(
+                context.strings.isEnglish
+                    ? 'You can change the default card at any time.'
+                    : 'Você pode trocar o cartão padrão a qualquer momento.',
+              ),
+            ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _addMethod,
@@ -193,6 +215,8 @@ class _WalletPageState extends ConsumerState<WalletPage> {
         ? 'Pix ${pixController.text.trim()}'
         : '$brand final $lastFour';
 
+    final willBeDefault =
+        ref.read(accountProvider).activePaymentMethod == null || _makeDefault;
     await ref
         .read(accountProvider.notifier)
         .addWalletMethod(
@@ -205,7 +229,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
             lastFour: lastFour,
             expiry: isPix ? null : expiryController.text.trim(),
             pixKey: isPix ? pixController.text.trim() : null,
-            isActive: true,
+            isActive: willBeDefault,
           ),
         );
 
@@ -215,15 +239,22 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     pixController.clear();
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Metodo salvo como principal.')),
+    setState(() => _makeDefault = false);
+    await ApiFeedback.show(
+      context,
+      willBeDefault
+          ? (context.strings.isEnglish
+                ? 'Payment method saved as default.'
+                : 'Método salvo como padrão.')
+          : (context.strings.isEnglish
+                ? 'Payment method saved in your wallet.'
+                : 'Método salvo na carteira.'),
+      isError: false,
     );
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ApiFeedback.show(context, message);
   }
 
   bool _isValidExpiry(String value) {
@@ -290,93 +321,109 @@ class _EmptyWallet extends StatelessWidget {
 class _PaymentMethodCard extends StatelessWidget {
   final WalletMethodModel method;
   final bool isActive;
+  final int colorIndex;
   final VoidCallback onActivate;
 
   const _PaymentMethodCard({
     required this.method,
     required this.isActive,
+    required this.colorIndex,
     required this.onActivate,
   });
 
   @override
   Widget build(BuildContext context) {
     final isPix = method.type == WalletMethodType.pix;
+    const gradients = [
+      [Color(0xFF102657), Color(0xFF087EE1)],
+      [Color(0xFF14532D), Color(0xFF16A085)],
+      [Color(0xFF5B216B), Color(0xFF9C4DCC)],
+      [Color(0xFF8A3D00), Color(0xFFEF6C00)],
+      [Color(0xFF263238), Color(0xFF546E7A)],
+    ];
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF102657), Color(0xFF087EE1)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .12),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+    return AnimatedScale(
+      scale: isActive ? 1 : .985,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradients[colorIndex % gradients.length],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.credit_card, color: Colors.white70),
-              const Spacer(),
-              Text(
-                method.brand ?? (isPix ? 'PIX' : 'CARTÃO'),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (isActive) ...[
-                const SizedBox(width: 8),
-                const Icon(Icons.check_circle, color: Colors.white),
-              ],
-            ],
-          ),
-          const SizedBox(height: 22),
-          Text(
-            isPix
-                ? (method.pixKey ?? 'Pix cadastrado')
-                : '••••  ••••  ••••  ${method.lastFour ?? '••••'}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 19,
-              letterSpacing: 1.1,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .12),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  (method.holderName ?? 'TITULAR').toUpperCase(),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.credit_card, color: Colors.white70),
+                const Spacer(),
+                Text(
+                  method.brand ?? (isPix ? 'PIX' : 'CARTÃO'),
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
+                if (isActive) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.check_circle, color: Colors.white),
+                ],
+              ],
+            ),
+            const SizedBox(height: 22),
+            Text(
+              isPix
+                  ? (method.pixKey ?? 'Pix cadastrado')
+                  : '••••  ••••  ••••  ${method.lastFour ?? '••••'}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 19,
+                letterSpacing: 1.1,
               ),
-              Text(
-                method.expiry ?? '',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              if (!isActive)
-                TextButton(
-                  onPressed: onActivate,
-                  child: const Text(
-                    'Usar',
-                    style: TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    (method.holderName ?? 'TITULAR').toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-            ],
-          ),
-        ],
+                Text(
+                  method.expiry ?? '',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                if (!isActive)
+                  TextButton(
+                    onPressed: onActivate,
+                    child: const Text(
+                      'Usar',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

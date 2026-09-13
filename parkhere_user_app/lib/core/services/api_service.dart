@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../constants/api_constants.dart';
@@ -176,9 +177,24 @@ class ApiService {
     throw Exception(_errorMessage(response));
   }
 
+  Future<Uint8List> getAuthorizedBytes(String endpoint, String token) async {
+    final response = await http
+        .get(
+          Uri.parse('${ApiConstants.baseUrl}$endpoint'),
+          headers: _authorizedHeaders(token),
+        )
+        .timeout(_timeout);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+    await _handleUnauthorized(response);
+    throw Exception(_errorMessage(response));
+  }
+
   http.MediaType _imageMediaType(String fileName) {
     final extension = fileName.toLowerCase().split('.').last;
     return switch (extension) {
+      'pdf' => http.MediaType('application', 'pdf'),
       'png' => http.MediaType('image', 'png'),
       'webp' => http.MediaType('image', 'webp'),
       'heic' => http.MediaType('image', 'heic'),
@@ -234,6 +250,7 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
+    await _handleUnauthorized(response);
     throw Exception(_errorMessage(response));
   }
 

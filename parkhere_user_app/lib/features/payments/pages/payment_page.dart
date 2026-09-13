@@ -9,6 +9,7 @@ import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
 import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../model/payment_method_enum.dart';
 import '../services/payment_service.dart';
 
@@ -49,7 +50,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Future<void> _loadQuote() async {
     final reservationId = widget.reservationId;
     final token = ref.read(authProvider).accessToken;
-    if (reservationId == null || token == null || widget.checkoutPayment) return;
+    if (reservationId == null || token == null || widget.checkoutPayment) {
+      return;
+    }
     try {
       final quote = await PaymentService().reservationQuote(
         reservationId,
@@ -76,16 +79,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         : _selectedMethod ?? _mapMethod(activeMethod.type);
 
     if (activeMethod == null || paymentMethod == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Selecione um método de pagamento")),
-      );
+      await ApiFeedback.show(context, 'Selecione um método de pagamento.');
       return;
     }
 
     if (_requiresCvv(activeMethod) && cvvController.text.trim().length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Informe o CVV para continuar")),
-      );
+      await ApiFeedback.show(context, 'Informe o CVV para continuar.');
       return;
     }
 
@@ -107,14 +106,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
       if (result.success) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result.isSimulated
-                  ? 'Pagamento simulado. Nenhuma cobrança foi realizada.'
-                  : 'Pagamento confirmado.',
-            ),
-          ),
+        await ApiFeedback.show(
+          context,
+          result.isSimulated
+              ? 'Pagamento simulado. Nenhuma cobrança foi realizada.'
+              : 'Pagamento confirmado.',
+          isError: false,
         );
         await widget.onPaymentSuccess();
 
@@ -126,9 +123,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Erro: ${e.toString()}")));
+      await ApiFeedback.show(context, 'Erro: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
