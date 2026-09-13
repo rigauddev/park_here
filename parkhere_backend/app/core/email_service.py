@@ -75,6 +75,15 @@ class EmailService:
                 template.footer_html,
             )
         )
+        if "cid:parkhere-logo" not in body:
+            # Admins can edit a template's header. Keep the ParkHere brand mark
+            # present even when a saved/custom header omitted the inline image.
+            body = (
+                '<div style="padding:20px 28px;background:#07194f">'
+                '<img src="cid:parkhere-logo" alt="ParkHere" '
+                'style="display:block;width:210px;max-width:100%;height:auto"></div>'
+                + body
+            )
         return EmailService.send_email(to_email, subject, body, inline_logo=True)
 
     @staticmethod

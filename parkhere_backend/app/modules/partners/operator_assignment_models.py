@@ -11,7 +11,7 @@ class OperatorParkingAssignment(BaseModel):
 
 class OperatorWorkShift(BaseModel):
     __tablename__ = "operator_work_shifts"
-    operator_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    operator_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=False)
     starts_at = Column(DateTime, nullable=False)
     ends_at = Column(DateTime, nullable=False)

@@ -33,6 +33,7 @@ class PartnerOperatorsNotifier
     required String name,
     required String email,
     required String phone,
+    String? cpf,
     required String password,
     required bool acceptedTerms,
     required List<String> permissions,
@@ -44,6 +45,7 @@ class PartnerOperatorsNotifier
       'name': name,
       'email': email,
       'phone': phone,
+      if (cpf != null && cpf.trim().isNotEmpty) 'cpf': cpf.trim(),
       'password': password,
       'accepted_terms': acceptedTerms,
       'permissions': permissions,
@@ -53,7 +55,10 @@ class PartnerOperatorsNotifier
     state = await AsyncValue.guard(fetch);
   }
 
-  Future<void> requestOperatorPackage({required int quantity, required String packageType}) async {
+  Future<void> requestOperatorPackage({
+    required int quantity,
+    required String packageType,
+  }) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada. Entre novamente.');
     await _api.postAuthorized('/partners/operator-packages/requests', {
@@ -63,33 +68,76 @@ class PartnerOperatorsNotifier
     }, token);
   }
 
-  Future<void> assignParkings(String operatorId, List<String> parkingIds) async {
+  Future<void> assignParkings(
+    String operatorId,
+    List<String> parkingIds,
+  ) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
-    await _api.putAuthorized('/partners/operators/$operatorId/parkings', {'parking_ids': parkingIds}, token);
+    await _api.putAuthorized('/partners/operators/$operatorId/parkings', {
+      'parking_ids': parkingIds,
+    }, token);
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(fetch);
   }
 
   Future<List<String>> fetchOperatorParkings(String operatorId) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
-    final data = await _api.getAuthorized('/partners/operators/$operatorId/parkings', token);
+    final data = await _api.getAuthorized(
+      '/partners/operators/$operatorId/parkings',
+      token,
+    );
     return data.cast<String>();
   }
 
-  Future<void> createShift({String? operatorId, required String parkingId, required DateTime startsAt, required DateTime endsAt}) async {
+  Future<void> createShift({
+    String? operatorId,
+    required String parkingId,
+    required DateTime startsAt,
+    required DateTime endsAt,
+  }) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
-    await _api.postAuthorized('/partners/shifts', {'operator_id': operatorId, 'parking_id': parkingId, 'starts_at': startsAt.toUtc().toIso8601String(), 'ends_at': endsAt.toUtc().toIso8601String()}, token);
+    await _api.postAuthorized('/partners/shifts', {
+      'operator_id': operatorId,
+      'parking_id': parkingId,
+      'starts_at': _localIso(startsAt),
+      'ends_at': _localIso(endsAt),
+    }, token);
   }
 
-  Future<Map<String, dynamic>> suggestShifts({required String parkingId, required List<String> operatorIds, required DateTime startsOn, required DateTime endsOn, double dailyHours = 8}) async {
+  Future<Map<String, dynamic>> suggestShifts({
+    required String parkingId,
+    required List<String> operatorIds,
+    required DateTime startsOn,
+    required DateTime endsOn,
+    double dailyHours = 8,
+    String? openingTime,
+    String? closingTime,
+  }) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) throw Exception('Sessão expirada.');
     final response = await _api.postAuthorized('/partners/shifts/suggest', {
-      'parking_id': parkingId, 'operator_ids': operatorIds, 'starts_on': startsOn.toUtc().toIso8601String(), 'ends_on': endsOn.toUtc().toIso8601String(), 'daily_hours': dailyHours,
+      'parking_id': parkingId,
+      'operator_ids': operatorIds,
+      'starts_on': _localIso(startsOn),
+      'ends_on': _localIso(endsOn),
+      'daily_hours': dailyHours,
+      if (openingTime != null) 'opening_time': openingTime,
+      if (closingTime != null) 'closing_time': closingTime,
     }, token);
     return response;
   }
+
+  String _localIso(DateTime value) => DateTime(
+    value.year,
+    value.month,
+    value.day,
+    value.hour,
+    value.minute,
+    value.second,
+  ).toIso8601String();
 
   Future<List<Map<String, dynamic>>> fetchShifts() async {
     final token = ref.read(authProvider).accessToken;

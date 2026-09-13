@@ -23,6 +23,7 @@ import '../../features/partner_management/pages/guide_dashboard_page.dart';
 import '../../features/partner_management/pages/guide_services_page.dart';
 import '../../features/partner_management/pages/admin_management_page.dart';
 import '../../features/partner_management/pages/partner_shifts_page.dart';
+import '../../features/partner_management/providers/partner_operators_provider.dart';
 
 enum _MainArea {
   menu,
@@ -52,6 +53,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   int _adminSection = 0;
   bool _menuExpanded = true;
   DateTime? _lastBackPress;
+  bool _operatorHasShiftToday = false;
 
   Future<bool> _handleBack() async {
     final now = DateTime.now();
@@ -70,7 +72,43 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   void initState() {
     super.initState();
     _selectedArea = _initialArea();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _loadOperatorShiftAccess(),
+    );
   }
+
+  Future<void> _loadOperatorShiftAccess() async {
+    if (!ref.read(authProvider).isOperator) return;
+    try {
+      final shifts = await ref
+          .read(partnerOperatorsProvider.notifier)
+          .fetchShifts();
+      final now = DateTime.now();
+      final hasActiveShift = shifts.any((shift) {
+        final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
+        final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
+        return !starts.isAfter(now) && !ends.isBefore(now);
+      });
+      if (!mounted) return;
+      setState(() {
+        _operatorHasShiftToday = hasActiveShift;
+        if (!hasActiveShift && !_isOperatorAllowedArea(_selectedArea)) {
+          _selectedArea = _MainArea.shifts;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _operatorHasShiftToday = false;
+        _selectedArea = _MainArea.shifts;
+      });
+    }
+  }
+
+  bool _isOperatorAllowedArea(_MainArea area) =>
+      area == _MainArea.shifts ||
+      area == _MainArea.profile ||
+      area == _MainArea.wallet;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +117,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     final isPartner = auth.isPartnerSession;
     final isPartnerOwner = auth.isPartnerOwner;
     final isGuide = auth.isTourGuide;
+    final isOperator = auth.isOperator;
     final isAdmin = auth.role == 'super_admin';
     if (isGuide &&
         (_selectedArea == _MainArea.financial ||
@@ -100,13 +139,23 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           isPartnerOwner,
           isGuide,
           isAdmin,
+          isOperator,
+          _operatorHasShiftToday,
           _adminSection,
         ),
       ),
     );
     final topBar = AppBar(
       title: const Text('ParkHere'),
-      actions: const [],
+      actions: isOperator
+          ? [
+              IconButton(
+                tooltip: 'Atualizar acesso do turno',
+                onPressed: _loadOperatorShiftAccess,
+                icon: const Icon(Icons.sync),
+              ),
+            ]
+          : const [],
       leading: isWebLayout
           ? IconButton(
               tooltip: _menuExpanded ? 'Ocultar menu' : 'Mostrar menu',
@@ -133,6 +182,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isPartnerOwner: isPartnerOwner,
                 isGuide: isGuide,
                 isAdmin: isAdmin,
+                isOperator: isOperator,
+                operatorHasShiftToday: _operatorHasShiftToday,
                 onSelected: _selectArea,
               ),
               const VerticalDivider(width: 1),
@@ -155,6 +206,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           isPartnerOwner: isPartnerOwner,
           isGuide: isGuide,
           isAdmin: isAdmin,
+          isOperator: isOperator,
+          operatorHasShiftToday: _operatorHasShiftToday,
           onSelected: (area, [serviceTabIndex]) {
             Navigator.pop(context);
             _selectArea(area, serviceTabIndex);
@@ -170,6 +223,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isPartnerOwner: isPartnerOwner,
                 isGuide: isGuide,
                 isAdmin: isAdmin,
+                isOperator: isOperator,
+                operatorHasShiftToday: _operatorHasShiftToday,
                 onSelected: _selectArea,
               ),
             Expanded(child: page),
@@ -182,6 +237,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             isPartnerOwner,
             isGuide,
             isAdmin,
+            isOperator,
+            _operatorHasShiftToday,
           ),
           onDestinationSelected: (index) {
             setState(() {
@@ -192,6 +249,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isPartnerOwner,
                 isGuide,
                 isAdmin,
+                isOperator,
+                _operatorHasShiftToday,
               );
             });
           },
@@ -227,25 +286,47 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 selectedIcon: Icon(Icons.menu_open),
                 label: 'Menu',
               ),
+            if (!isAdmin && isOperator && !_operatorHasShiftToday) ...[
+              const NavigationDestination(
+                icon: Icon(Icons.calendar_month_outlined),
+                selectedIcon: Icon(Icons.calendar_month),
+                label: 'Escala',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Perfil',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.account_balance_wallet_outlined),
+                selectedIcon: Icon(Icons.account_balance_wallet),
+                label: 'Repasse',
+              ),
+            ],
             if (!isAdmin && isPartner && (isPartnerOwner || isGuide))
               const NavigationDestination(
                 icon: Icon(Icons.business_center_outlined),
                 selectedIcon: Icon(Icons.business_center),
                 label: 'Gestão',
               ),
-            if (!isAdmin && isPartner)
+            if (!isAdmin &&
+                isPartner &&
+                (!isOperator || _operatorHasShiftToday))
               NavigationDestination(
                 icon: const Icon(Icons.local_parking_outlined),
                 selectedIcon: const Icon(Icons.local_parking),
                 label: isGuide ? 'Estacionamentos' : 'Vagas',
               )
-            else
+            else if (!isAdmin && !isPartner)
               const NavigationDestination(
                 icon: Icon(Icons.widgets_outlined),
                 selectedIcon: Icon(Icons.widgets),
                 label: 'Serviços',
               ),
-            if (!isAdmin && isPartner && !isGuide)
+            if (!isAdmin &&
+                isPartner &&
+                !isGuide &&
+                (!isOperator || _operatorHasShiftToday))
               const NavigationDestination(
                 icon: Icon(Icons.confirmation_number_outlined),
                 selectedIcon: Icon(Icons.confirmation_number),
@@ -275,7 +356,10 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 selectedIcon: Icon(Icons.lock),
                 label: 'Financeiro',
               ),
-            if (!isAdmin && isPartner && !isGuide)
+            if (!isAdmin &&
+                isPartner &&
+                !isGuide &&
+                (!isOperator || _operatorHasShiftToday))
               const NavigationDestination(
                 icon: Icon(Icons.person_outline),
                 selectedIcon: Icon(Icons.person),
@@ -293,9 +377,14 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isPartnerOwner,
     bool isGuide,
     bool isAdmin,
+    bool isOperator,
+    bool operatorHasShiftToday,
     int adminSection,
   ) {
     if (isAdmin) return AdminManagementPage(initialSection: adminSection);
+    if (isOperator && !operatorHasShiftToday && !_isOperatorAllowedArea(area)) {
+      return const PartnerShiftsPage();
+    }
     switch (area) {
       case _MainArea.menu:
         return const _MenuHubPage();
@@ -348,9 +437,23 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isPartnerOwner,
     bool isGuide,
     bool isAdmin,
+    bool isOperator,
+    bool operatorHasShiftToday,
   ) {
     if (isAdmin) return _adminSection.clamp(0, 5);
     if (isGuide) return area == _MainArea.map ? 1 : 0;
+    if (isOperator && !operatorHasShiftToday) {
+      switch (area) {
+        case _MainArea.shifts:
+          return 0;
+        case _MainArea.profile:
+          return 1;
+        case _MainArea.wallet:
+          return 2;
+        default:
+          return 0;
+      }
+    }
     if (isPartner && !isPartnerOwner) {
       switch (area) {
         case _MainArea.map:
@@ -398,12 +501,26 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isPartnerOwner,
     bool isGuide,
     bool isAdmin,
+    bool isOperator,
+    bool operatorHasShiftToday,
   ) {
     if (isAdmin) return _MainArea.management;
     if (isGuide) {
       if (index == 1) return _MainArea.map;
       if (index == 2) return _MainArea.profile;
       return _MainArea.management;
+    }
+    if (isOperator && !operatorHasShiftToday) {
+      switch (index) {
+        case 0:
+          return _MainArea.shifts;
+        case 1:
+          return _MainArea.profile;
+        case 2:
+          return _MainArea.wallet;
+        default:
+          return _MainArea.shifts;
+      }
     }
     if (isPartner && !isPartnerOwner) {
       switch (index) {
@@ -451,6 +568,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     final auth = ref.read(authProvider);
     if (auth.role == 'super_admin') return _MainArea.management;
     if (!auth.isPartnerSession) return _MainArea.map;
+    if (auth.isOperator) return _MainArea.shifts;
     return auth.isTourGuide || auth.isPartnerOwner
         ? _MainArea.management
         : _MainArea.map;
@@ -464,6 +582,8 @@ class _WebMenu extends ConsumerWidget {
   final bool isPartnerOwner;
   final bool isGuide;
   final bool isAdmin;
+  final bool isOperator;
+  final bool operatorHasShiftToday;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _WebMenu({
@@ -473,6 +593,8 @@ class _WebMenu extends ConsumerWidget {
     required this.isPartnerOwner,
     required this.isGuide,
     required this.isAdmin,
+    required this.isOperator,
+    required this.operatorHasShiftToday,
     required this.onSelected,
   });
 
@@ -563,7 +685,7 @@ class _WebMenu extends ConsumerWidget {
                       'Estacionamentos',
                       _MainArea.map,
                     )
-                  else
+                  else if (!isPartner || !isOperator || operatorHasShiftToday)
                     _MenuItem(
                       isPartner
                           ? Icons.local_parking_outlined
@@ -577,7 +699,9 @@ class _WebMenu extends ConsumerWidget {
                       'Meus serviços',
                       _MainArea.services,
                     ),
-                  if (isPartner && !isGuide)
+                  if (isPartner &&
+                      !isGuide &&
+                      (!isOperator || operatorHasShiftToday))
                     _MenuItem(
                       Icons.confirmation_number_outlined,
                       'Reservas recebidas',
@@ -695,6 +819,8 @@ class _MobileDrawer extends StatelessWidget {
   final bool isPartnerOwner;
   final bool isGuide;
   final bool isAdmin;
+  final bool isOperator;
+  final bool operatorHasShiftToday;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _MobileDrawer({
@@ -702,6 +828,8 @@ class _MobileDrawer extends StatelessWidget {
     required this.isPartnerOwner,
     required this.isGuide,
     required this.isAdmin,
+    required this.isOperator,
+    required this.operatorHasShiftToday,
     required this.onSelected,
   });
 
@@ -753,7 +881,15 @@ class _MobileDrawer extends StatelessWidget {
                   title: const Text('Minha empresa'),
                   onTap: () => onSelected(_MainArea.management),
                 ),
-              if (isPartner && !isGuide)
+              if (isPartner && isOperator)
+                ListTile(
+                  leading: const Icon(Icons.calendar_month_outlined),
+                  title: const Text('Minha escala'),
+                  onTap: () => onSelected(_MainArea.shifts),
+                ),
+              if (isPartner &&
+                  !isGuide &&
+                  (!isOperator || operatorHasShiftToday))
                 ListTile(
                   leading: const Icon(Icons.confirmation_number_outlined),
                   title: const Text('Reservas recebidas'),
@@ -765,7 +901,9 @@ class _MobileDrawer extends StatelessWidget {
                   title: const Text('Usuários'),
                   onTap: () => onSelected(_MainArea.users),
                 ),
-              if (isPartner && !isGuide)
+              if (isPartner &&
+                  !isGuide &&
+                  (!isOperator || operatorHasShiftToday))
                 ListTile(
                   leading: const Icon(Icons.local_parking_outlined),
                   title: const Text('Mapa de vagas'),

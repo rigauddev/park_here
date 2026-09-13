@@ -3,10 +3,11 @@ import re
 from uuid import uuid4
 from datetime import datetime, timedelta
 from math import ceil
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,9 +67,20 @@ class PartnerOperatorCreateRequest(BaseModel):
     name: str
     email: str
     phone: str | None = None
+    cpf: str | None = None
     password: str
     accepted_terms: bool
     permissions: list[str] | None = None
+
+    @field_validator("cpf")
+    @classmethod
+    def normalize_cpf(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        digits = re.sub(r"\D", "", value)
+        if len(digits) != 11 or len(set(digits)) == 1:
+            raise ValueError("CPF inválido")
+        return digits
 
 class OperatorPackageRequestCreate(BaseModel):
     quantity: int
@@ -99,6 +111,8 @@ class ShiftSuggestionRequest(BaseModel):
     starts_on: datetime
     ends_on: datetime
     daily_hours: float = 8
+    opening_time: str | None = None
+    closing_time: str | None = None
 
 
 class PartnerOperatorResponse(BaseModel):
@@ -106,6 +120,7 @@ class PartnerOperatorResponse(BaseModel):
     name: str
     email: str
     phone: str | None
+    cpf: str | None = None
     role: str
     permissions: list[str]
     is_active: bool
@@ -749,7 +764,7 @@ async def get_partner_parking_map(
     await _ensure_partner_feature(db, current_user, 'parking_operations')
     owned_query = select(Parking).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
-        now = datetime.utcnow()
+        now = _now_schedule_local()
         assigned_ids = (await db.scalars(select(OperatorWorkShift.parking_id).where(
             OperatorWorkShift.operator_id == current_user.id,
             OperatorWorkShift.starts_at <= now,
@@ -813,6 +828,8 @@ async def toggle_parking_slot_block(
     parking = await db.get(Parking, parking_id)
     if parking is None or parking.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
+    if current_user.role == UserRoleEnum.OPERATOR:
+        await _ensure_operator_on_parking_shift(db, current_user.id, parking_id)
     blocked = set(json.loads(parking.blocked_spots or "[]"))
     status = "available"
     if slot_code in blocked:
@@ -837,7 +854,7 @@ async def list_partner_reservations(
     )
     reservation_query = select(Reservation, Parking, User, Vehicle).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
-        now = datetime.utcnow()
+        now = _now_schedule_local()
         assigned_ids = (await db.scalars(select(OperatorWorkShift.parking_id).where(
             OperatorWorkShift.operator_id == current_user.id,
             OperatorWorkShift.starts_at <= now,
@@ -938,6 +955,8 @@ async def create_partner_operator(
     existing_result = await db.execute(select(User).where(User.email == normalized_email))
     if existing_result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
+    if data.cpf and await db.scalar(select(User.id).where(User.cpf == data.cpf)):
+        raise HTTPException(status_code=409, detail="CPF já cadastrado")
 
     count_result = await db.execute(
         select(func.count(User.id))
@@ -981,6 +1000,7 @@ async def create_partner_operator(
         email=normalized_email,
         password_hash=hash_password(data.password),
         phone=data.phone,
+        cpf=data.cpf,
         phone_verified=False,
         email_verified=True,
         role=UserRoleEnum.OPERATOR,
@@ -1086,11 +1106,15 @@ async def assign_operator_parkings(operator_id: str, data: OperatorParkingAssign
     await _ensure_partner_feature(db, current_user, 'team_management')
     operator = await db.scalar(select(User).where(User.id == operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
     if operator is None: raise HTTPException(status_code=404, detail="Operador não encontrado")
-    valid = (await db.scalars(select(Parking.id).where(Parking.tenant_id == current_user.tenant_id, Parking.id.in_(data.parking_ids)))).all()
+    requested_ids = list(dict.fromkeys(data.parking_ids))
+    valid = (await db.scalars(select(Parking.id).where(Parking.tenant_id == current_user.tenant_id, Parking.id.in_(requested_ids)))).all() if requested_ids else []
+    if set(valid) != set(requested_ids):
+        raise HTTPException(status_code=422, detail="Uma ou mais unidades não pertencem a esta empresa.")
     await db.execute(delete(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == operator_id))
     db.add_all([OperatorParkingAssignment(operator_id=operator_id, parking_id=parking_id) for parking_id in valid])
     await db.commit()
-    return {"operator_id": operator_id, "parking_ids": valid}
+    saved = (await db.scalars(select(OperatorParkingAssignment.parking_id).where(OperatorParkingAssignment.operator_id == operator_id))).all()
+    return {"operator_id": operator_id, "parking_ids": saved}
 
 @router.get("/shifts")
 async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -1107,12 +1131,16 @@ async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user:
 async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
-    if data.ends_at <= data.starts_at: raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
+    starts_at = _schedule_local(data.starts_at)
+    ends_at = _schedule_local(data.ends_at)
+    if ends_at <= starts_at: raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
     operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
     parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
     assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id)) if data.operator_id else None
     if not parking or (data.operator_id and (not operator or not assigned)): raise HTTPException(status_code=422, detail="Operador não está associado a este estacionamento")
-    shift = OperatorWorkShift(operator_id=data.operator_id, parking_id=data.parking_id, starts_at=data.starts_at, ends_at=data.ends_at)
+    if data.operator_id:
+        await _ensure_operator_has_no_shift_conflict(db, data.operator_id, starts_at, ends_at)
+    shift = OperatorWorkShift(operator_id=data.operator_id, parking_id=data.parking_id, starts_at=starts_at, ends_at=ends_at)
     db.add(shift); await db.commit(); await db.refresh(shift)
     return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id, "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
 
@@ -1172,18 +1200,35 @@ async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession
     duration = int(data.daily_hours * 60)
     continuous_hours = 24 if parking.has_24h_gate else 12
     configured_hours = json.loads(parking.operating_hours or '{}')
+    if not configured_hours and not parking.has_24h_gate and not (data.opening_time and data.closing_time):
+        raise HTTPException(status_code=422, detail="Configure o funcionamento da unidade ou informe abertura e fechamento para gerar esta escala.")
     weekday_keys = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
     required_people = max(1, (continuous_hours * 60 + duration - 1) // duration)
     suggestions = []
-    day = data.starts_on.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_day = data.ends_on.replace(hour=0, minute=0, second=0, microsecond=0)
+    local_start = _schedule_local(data.starts_on)
+    local_end = _schedule_local(data.ends_on)
+    day = local_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_day = local_end.replace(hour=0, minute=0, second=0, microsecond=0)
     index = 0
+    conflicts = set()
+    if data.operator_ids:
+        conflict_window_start = max(day, _now_schedule_local())
+        existing = (await db.scalars(select(OperatorWorkShift).where(
+            OperatorWorkShift.operator_id.in_(data.operator_ids),
+            OperatorWorkShift.starts_at < end_day + timedelta(days=1),
+            OperatorWorkShift.ends_at > conflict_window_start,
+        ))).all()
+        conflicts = {shift.operator_id for shift in existing}
+    conflict_operator_ids = sorted(conflicts)
     while day <= end_day:
         day_hours = None if parking.has_24h_gate else configured_hours.get(weekday_keys[day.weekday()])
+        if not parking.has_24h_gate and not configured_hours and data.opening_time and data.closing_time:
+            day_hours = {"open": data.opening_time, "close": data.closing_time}
         if not parking.has_24h_gate and not day_hours:
             day += timedelta(days=1)
             continue
-        operator_id = data.operator_ids[index % len(data.operator_ids)] if data.operator_ids else None
+        candidates = [operator_id for operator_id in data.operator_ids if operator_id not in conflicts]
+        operator_id = candidates[index % len(candidates)] if candidates else None
         if parking.has_24h_gate:
             start_hour = (index % required_people) * int(data.daily_hours)
             start = day.replace(hour=start_hour % 24)
@@ -1201,7 +1246,10 @@ async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession
         suggestions.append({"operator_id": operator_id, "starts_at": start.isoformat(), "ends_at": finish.isoformat(), "day_off_for": [item for item in data.operator_ids if item != operator_id]})
         index += 1; day += timedelta(days=1)
     warning = None if len(data.operator_ids) >= required_people else f"Cobertura pendente: esta unidade exige pelo menos {required_people} faixas de {data.daily_hours:g}h para operar {continuous_hours}h por dia. Os turnos foram criados como vagas abertas."
-    return {"parking_id": data.parking_id, "suggestions": suggestions, "required_people": required_people, "coverage_warning": warning, "rule": "A folga é atribuída automaticamente ao operador que não trabalha no dia; o gestor pode editar antes de salvar."}
+    if conflict_operator_ids:
+        conflict_names = (await db.scalars(select(User.name).where(User.id.in_(conflict_operator_ids)))).all()
+        warning = " ".join(filter(None, [warning, "Operadores já escalados em outra unidade no período foram removidos desta sugestão: " + ", ".join(conflict_names) + "."])).strip()
+    return {"parking_id": data.parking_id, "suggestions": suggestions, "required_people": required_people, "coverage_warning": warning, "conflicting_operator_ids": conflict_operator_ids, "rule": "A folga é atribuída automaticamente ao operador que não trabalha no dia; o gestor pode editar antes de salvar."}
 
 
 @router.get(
@@ -1404,11 +1452,49 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
         name=user.name,
         email=user.email,
         phone=user.phone,
+        cpf=user.cpf,
         role=user.role.value,
         permissions=_user_permissions(user),
         is_active=user.is_active,
         created_at=user.created_at.isoformat() + "Z",
     )
+
+
+def _schedule_local(value: datetime) -> datetime:
+    """Schedule times are wall-clock times in Brazil; DB stores them as naive local values."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+
+
+def _now_schedule_local() -> datetime:
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+
+
+async def _ensure_operator_has_no_shift_conflict(
+    db: AsyncSession, operator_id: str, starts_at: datetime, ends_at: datetime,
+) -> None:
+    conflict = await db.scalar(select(OperatorWorkShift.id).where(
+        OperatorWorkShift.operator_id == operator_id,
+        OperatorWorkShift.starts_at < ends_at,
+        OperatorWorkShift.ends_at > starts_at,
+    ).limit(1))
+    if conflict:
+        raise HTTPException(status_code=409, detail="Este operador já possui um turno sobreposto em outra unidade ou nesta mesma unidade.")
+
+
+async def _ensure_operator_on_parking_shift(
+    db: AsyncSession, operator_id: str, parking_id: str,
+) -> None:
+    now = _now_schedule_local()
+    shift_id = await db.scalar(select(OperatorWorkShift.id).where(
+        OperatorWorkShift.operator_id == operator_id,
+        OperatorWorkShift.parking_id == parking_id,
+        OperatorWorkShift.starts_at <= now,
+        OperatorWorkShift.ends_at >= now,
+    ).limit(1))
+    if shift_id is None:
+        raise HTTPException(status_code=403, detail="Você só pode operar esta unidade durante o seu turno escalado.")
 
 
 def _guide_service_payload(service: GuideService) -> dict:

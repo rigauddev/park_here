@@ -21,6 +21,7 @@ from app.modules.tenants.models.tenant_models import Tenant, TenantStatusEnum
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
@@ -59,16 +60,23 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             db.add(operator)
             await db.commit()
             self.customer, self.vehicle, self.operator = customer, vehicle, operator
+            branch = Parking(tenant_id=self.tenants[0], name='Pilot Branch', address='Valenca BA', city='Valenca', lat=-13.36, lng=-39.06, total_spots=5, available_spots=5, uncovered_spots=5, first_hour_price=7, uncovered_first_hour_price=7, additional_hour_price=2, uncovered_additional_hour_price=2)
+            db.add(branch)
+            await db.commit()
+            self.branch_parking = branch.id
+            self.parkings.append(branch.id)
 
     def token(self, user):
         return create_access_token({'sub': user.email, 'tenant_id': user.tenant_id, 'role': user.role.value})
 
-    async def request(self, path, data=None, user=None, expected=200):
+    async def request(self, path, data=None, user=None, expected=200, method=None):
         user = user or self.users[0]
+        method = method or ('POST' if data is not None else 'GET')
         def send():
             req = Request('http://127.0.0.1:8000' + path,
                 data=json.dumps(data).encode() if data is not None else None,
-                headers={'Authorization': 'Bearer ' + self.token(user), 'Content-Type': 'application/json'})
+                headers={'Authorization': 'Bearer ' + self.token(user), 'Content-Type': 'application/json'},
+                method=method)
             try:
                 with urlopen(req, timeout=15) as r:
                     return r.status, json.load(r)
@@ -115,7 +123,8 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         result = await self.request(f'/reservations/{reservation["id"]}/checkout', {})
         self.assertEqual(result['status'], 'completed')
         layout = await self.request('/partners/parking-map')
-        self.assertEqual(layout['parkings'][0]['available_spots'], 10)
+        primary = next(item for item in layout['parkings'] if item['id'] == self.parkings[0])
+        self.assertEqual(primary['available_spots'], 10)
 
     async def test_reservation_requires_current_terms_acceptance(self):
         payload = {
@@ -187,12 +196,58 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         await self.request(f'/reservations/{r["id"]}/cancel', {}, user=self.operator, expected=403)
         await self.request(f'/reservations/{r["id"]}/cancel', {})
 
+    async def test_branch_schedule_allows_open_turn_and_rejects_operator_overlap(self):
+        assignments = await self.request(
+            f'/partners/operators/{self.operator.id}/parkings',
+            {'parking_ids': [self.parkings[0], self.branch_parking]},
+            method='PUT',
+        )
+        self.assertEqual(set(assignments['parking_ids']), {self.parkings[0], self.branch_parking})
+        loaded = await self.request(f'/partners/operators/{self.operator.id}/parkings')
+        self.assertEqual(set(loaded), {self.parkings[0], self.branch_parking})
+
+        starts = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0) + timedelta(days=3)
+        ends = starts + timedelta(hours=8)
+        await self.request('/partners/shifts', {
+            'operator_id': self.operator.id,
+            'parking_id': self.parkings[0],
+            'starts_at': starts.isoformat(),
+            'ends_at': ends.isoformat(),
+        }, expected=201)
+        await self.request('/partners/shifts', {
+            'operator_id': self.operator.id,
+            'parking_id': self.branch_parking,
+            'starts_at': (starts + timedelta(hours=1)).isoformat(),
+            'ends_at': (ends + timedelta(hours=1)).isoformat(),
+        }, expected=409)
+
+        suggestion = await self.request('/partners/shifts/suggest', {
+            'parking_id': self.branch_parking,
+            'operator_ids': [],
+            'starts_on': starts.date().isoformat(),
+            'ends_on': starts.date().isoformat(),
+            'daily_hours': 8,
+            'opening_time': '08:00',
+            'closing_time': '18:00',
+        })
+        self.assertEqual(len(suggestion['suggestions']), 1)
+        self.assertIsNone(suggestion['suggestions'][0]['operator_id'])
+        created = await self.request('/partners/shifts', {
+            'operator_id': None,
+            'parking_id': self.branch_parking,
+            'starts_at': suggestion['suggestions'][0]['starts_at'],
+            'ends_at': suggestion['suggestions'][0]['ends_at'],
+        }, expected=201)
+        self.assertEqual(created['parking_id'], self.branch_parking)
+
     async def asyncTearDown(self):
         async with self.session() as db:
             debt_ids = select(PartnerFeeDebt.id).where(PartnerFeeDebt.tenant_id.in_(self.tenants))
             await db.execute(delete(PartnerFeeSettlement).where(PartnerFeeSettlement.debt_id.in_(debt_ids)))
             for model in [PartnerFeeDebt, PaymentTransaction]:
                 await db.execute(delete(model).where(model.tenant_id.in_(self.tenants)))
+            await db.execute(delete(OperatorWorkShift).where(OperatorWorkShift.parking_id.in_(self.parkings)))
+            await db.execute(delete(OperatorParkingAssignment).where(OperatorParkingAssignment.parking_id.in_(self.parkings)))
             await db.execute(delete(Reservation).where(Reservation.parking_id.in_(self.parkings)))
             await db.execute(delete(ParkingService).where(ParkingService.parking_id.in_(self.parkings)))
             await db.execute(delete(Parking).where(Parking.id.in_(self.parkings)))

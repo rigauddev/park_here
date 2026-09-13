@@ -246,10 +246,16 @@ Observacoes:
 
 Operadores do mesmo tenant podem ser associados a uma ou mais unidades:
 `GET/PUT /partners/operators/{operator_id}/parkings` recebe
-`{"parking_ids": ["..."]}`. O gestor cria escalas com
+`{"parking_ids": ["..."]}` e a resposta confirma os IDs persistidos. A tela
+carrega os vínculos existentes antes de permitir edição. `GET /partners/operators`
+também retorna o CPF cadastrado para consulta; e-mail e CPF aparecem como campos
+somente leitura nos detalhes do operador. O gestor cria escalas com
 `GET /partners/shifts` e `POST /partners/shifts`, informando `operator_id`,
 `parking_id`, `starts_at` e `ends_at`. A API valida que operador e unidade
-pertencem à mesma empresa e que o operador está associado à unidade.
+pertencem à mesma empresa, que o operador está associado à unidade e que ele não
+tenha outro turno sobreposto em qualquer unidade (resposta `409`). Datas sem fuso
+representam o horário local de Brasília; datas com fuso são convertidas para esse
+fuso antes de persistir.
 
 O mapa operacional (`GET /partners/parking-map`) devolve `category_pricing` e
 as tarifas de cada categoria (`uncovered_pricing`, `covered_pricing`). Ao criar
@@ -719,10 +725,14 @@ limpeza do endpoint.
 - `GET /partners/schedule-history` retorna alterações de jornada para auditoria.
   A escala deve ser gerada somente para operadores associados à unidade.
 - `POST /partners/shifts/suggest` recebe `parking_id`, `operator_ids`, `starts_on`,
-  `ends_on` e `daily_hours`, retornando turnos rotativos, folgas sugeridas,
+  `ends_on` e `daily_hours`; `opening_time` e `closing_time` opcionais são usados
+  quando a unidade ainda não possui grade semanal configurada. Retorna turnos rotativos, folgas sugeridas,
   `required_people` e `coverage_warning`. A sugestão é editável antes de gravar.
   `operator_id` pode ser nulo: nesse caso o turno fica como vaga aberta para
   atribuição posterior, sem bloquear a criação da escala.
+  Operadores que já tenham escala no período em outra unidade não entram na
+  sugestão e aparecem em `conflicting_operator_ids`; a gravação também bloqueia
+  sobreposição para proteger a regra mesmo se a escala for alterada em paralelo.
   O gerador consulta `operating_hours` da unidade por dia da semana, ignora dias
   fechados e limita o turno ao fechamento configurado.
 - `DELETE /partners/shifts/{shift_id}` cancela um turno e grava a alteração no

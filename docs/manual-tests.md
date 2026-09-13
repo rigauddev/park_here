@@ -180,3 +180,23 @@ docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s te
 - Simule app antigo enviando versão anterior; API retorna `409` e a tela precisa solicitar novo aceite.
 - Na reserva operacional, o operador deve visualizar os termos do estacionamento e confirmar que o cliente os revisou antes de criar.
 - Aceite de marketing personalizado deve permanecer opcional, separado de reserva e conta, desmarcado por padrão e revogável em preferências. Esse controle ainda deve ser desenvolvido antes de qualquer segmentação de anúncios.
+
+## Unidades, escalas e acesso do operador
+
+- Associe um operador à matriz e a uma filial. Feche e reabra os detalhes do
+  operador; as duas unidades devem continuar selecionadas. E-mail e CPF devem
+  aparecer como dados de consulta, sem edição.
+- Crie uma escala numa unidade sem operadores associados. O calendário deve
+  continuar visível e os turnos devem ser criados como vagas abertas para
+  atribuição posterior.
+- Associe um operador à unidade e gere um turno. Tente criar para o mesmo
+  operador um turno sobreposto em outra unidade; a API deve rejeitar com `409`.
+- Em um dia sem turno, confirme que a tela ainda mostra o calendário e a
+  mensagem de que não há turnos naquele dia.
+- Entre como operador sem turno ativo: somente Escala, Perfil e Conta de repasse
+  ficam disponíveis. Mapa, reservas e demais rotas operacionais devem ficar
+  bloqueadas. Durante o turno, mapa e reservas devem mostrar a unidade escalada.
+- Gere uma escala e confirme que a animação de progresso aparece até o servidor
+  concluir a operação; teste também a criação de uma escala para filial.
+- Envie um template de e-mail com cabeçalho customizado sem imagem e confirme
+  que o e-mail recebido ainda exibe o logo inline do ParkHere.

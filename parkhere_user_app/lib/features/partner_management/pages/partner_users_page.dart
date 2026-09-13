@@ -53,12 +53,19 @@ class PartnerUsersPage extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
             children: [
-              _LimitCard(count: items.length, onRequest: () => _openPackageRequest(context, ref)),
+              _LimitCard(
+                count: items.length,
+                onRequest: () => _openPackageRequest(context, ref),
+              ),
               const SizedBox(height: 14),
               if (items.isEmpty)
                 const Center(child: Text('Nenhum operador cadastrado.'))
               else
-                for (final operator in items) _OperatorCard(operator: operator, onConfigure: () => _openAssignment(context, ref, operator)),
+                for (final operator in items)
+                  _OperatorCard(
+                    operator: operator,
+                    onConfigure: () => _openAssignment(context, ref, operator),
+                  ),
             ],
           );
         },
@@ -73,34 +80,82 @@ class PartnerUsersPage extends ConsumerWidget {
     );
   }
 
-  void _openAssignment(BuildContext context, WidgetRef ref, PartnerOperatorModel operator) {
-    showDialog<void>(context: context, builder: (_) => _OperatorAssignmentDialog(operator: operator, ref: ref));
+  void _openAssignment(
+    BuildContext context,
+    WidgetRef ref,
+    PartnerOperatorModel operator,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _OperatorAssignmentDialog(operator: operator, ref: ref),
+    );
   }
 
   void _openPackageRequest(BuildContext context, WidgetRef ref) {
     final quantity = TextEditingController(text: '1');
-    showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
-      title: const Text('Adicionar operadores'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('O limite incluído foi atingido. Solicite operadores adicionais e envie o comprovante para aprovação da gestão.'),
-        const SizedBox(height: 16),
-        TextField(controller: quantity, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantidade de operadores', border: OutlineInputBorder())),
-      ])),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancelar')),
-        FilledButton(onPressed: () async {
-          final value = int.tryParse(quantity.text) ?? 0;
-          if (value < 1) return;
-          try {
-            await ref.read(partnerOperatorsProvider.notifier).requestOperatorPackage(quantity: value, packageType: value == 1 ? 'individual' : 'package');
-            if (dialogContext.mounted) Navigator.pop(dialogContext);
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Solicitação enviada. Aguarde a aprovação da gestão.')));
-          } catch (error) {
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
-          }
-        }, child: const Text('Solicitar')),
-      ],
-    ));
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Adicionar operadores'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'O limite incluído foi atingido. Solicite operadores adicionais e envie o comprovante para aprovação da gestão.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: quantity,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Quantidade de operadores',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final value = int.tryParse(quantity.text) ?? 0;
+              if (value < 1) return;
+              try {
+                await ref
+                    .read(partnerOperatorsProvider.notifier)
+                    .requestOperatorPackage(
+                      quantity: value,
+                      packageType: value == 1 ? 'individual' : 'package',
+                    );
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Solicitação enviada. Aguarde a aprovação da gestão.',
+                      ),
+                    ),
+                  );
+                }
+              } catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$error')));
+                }
+              }
+            },
+            child: const Text('Solicitar'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -115,26 +170,36 @@ class _LimitCard extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const CircleAvatar(
-              backgroundColor: AppTheme.softCyan,
-              foregroundColor: AppTheme.primary,
-              child: Icon(Icons.group_outlined),
+            Row(
+              children: [
+                const CircleAvatar(
+                  backgroundColor: AppTheme.softCyan,
+                  foregroundColor: AppTheme.primary,
+                  child: Icon(Icons.group_outlined),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '$count de 2 operadores incluidos. Acima disso, sera cobrada taxa adicional.',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '$count de 2 operadores incluidos. Acima disso, sera cobrada taxa adicional.',
-                style: const TextStyle(fontWeight: FontWeight.w700),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: onRequest,
+                icon: const Icon(Icons.add_business_outlined),
+                label: const Text('Solicitar operadores'),
               ),
             ),
           ],
-          ),
-          const SizedBox(height: 10),
-          Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(onPressed: onRequest, icon: const Icon(Icons.add_business_outlined), label: const Text('Solicitar operadores'))),
-        ]),
+        ),
       ),
     );
   }
@@ -192,27 +257,164 @@ class _OperatorAssignmentDialog extends ConsumerStatefulWidget {
   final PartnerOperatorModel operator;
   final WidgetRef ref;
   const _OperatorAssignmentDialog({required this.operator, required this.ref});
-  @override ConsumerState<_OperatorAssignmentDialog> createState() => _OperatorAssignmentDialogState();
+  @override
+  ConsumerState<_OperatorAssignmentDialog> createState() =>
+      _OperatorAssignmentDialogState();
 }
 
-class _OperatorAssignmentDialogState extends ConsumerState<_OperatorAssignmentDialog> {
+class _OperatorAssignmentDialogState
+    extends ConsumerState<_OperatorAssignmentDialog> {
   final selected = <String>{};
-  @override Widget build(BuildContext context) {
-    final parkings = ref.watch(partnerParkingProvider).maybeWhen(data: (value) => value, orElse: () => <ManagedParkingModel>[]);
+  bool loadingAssignments = true;
+  bool savingAssignments = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAssignments();
+  }
+
+  Future<void> _loadAssignments() async {
+    try {
+      final ids = await ref
+          .read(partnerOperatorsProvider.notifier)
+          .fetchOperatorParkings(widget.operator.id);
+      if (!mounted) return;
+      setState(() {
+        selected.addAll(ids);
+        loadingAssignments = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => loadingAssignments = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Não foi possível carregar as unidades: $error'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final parkings = ref
+        .watch(partnerParkingProvider)
+        .maybeWhen(
+          data: (value) => value,
+          orElse: () => <ManagedParkingModel>[],
+        );
     return AlertDialog(
-      title: Text('Unidades e escala · ${widget.operator.name}'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Align(alignment: Alignment.centerLeft, child: Text('Estacionamentos autorizados')),
-        for (final parking in parkings) CheckboxListTile(value: selected.contains(parking.id), title: Text(parking.name), onChanged: (value) => setState(() => value == true ? selected.add(parking.id!) : selected.remove(parking.id)), contentPadding: EdgeInsets.zero),
-        const Divider(),
-        const Text('Os turnos são definidos exclusivamente na tela Escalas. Aqui ficam apenas os estacionamentos autorizados.'),
-      ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: _save, child: const Text('Salvar'))],
+      title: Text('Dados do operador · ${widget.operator.name}'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _readOnlyField('E-mail', widget.operator.email),
+              _readOnlyField('CPF', widget.operator.cpf ?? 'Não informado'),
+              _readOnlyField(
+                'Telefone',
+                widget.operator.phone ?? 'Não informado',
+              ),
+              _readOnlyField(
+                'Situação',
+                widget.operator.isActive ? 'Ativo' : 'Inativo',
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Unidades autorizadas',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (loadingAssignments)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              if (!loadingAssignments && parkings.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('Nenhuma unidade cadastrada.'),
+                ),
+              if (!loadingAssignments)
+                for (final parking in parkings)
+                  CheckboxListTile(
+                    value: selected.contains(parking.id),
+                    title: Text(parking.name),
+                    onChanged: savingAssignments
+                        ? null
+                        : (value) => setState(
+                            () => value == true
+                                ? selected.add(parking.id!)
+                                : selected.remove(parking.id),
+                          ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+              const Divider(),
+              const Text(
+                'O e-mail e o CPF são apenas para consulta. Os turnos são gerenciados na tela Escalas.',
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: savingAssignments ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: loadingAssignments || savingAssignments ? null : _save,
+          icon: savingAssignments
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_outlined),
+          label: const Text('Salvar'),
+        ),
+      ],
     );
   }
+
+  Widget _readOnlyField(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: TextFormField(
+      initialValue: value,
+      readOnly: true,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+    ),
+  );
+
   Future<void> _save() async {
-    await ref.read(partnerOperatorsProvider.notifier).assignParkings(widget.operator.id, selected.toList());
-    if (mounted) Navigator.pop(context);
+    setState(() => savingAssignments = true);
+    try {
+      await ref
+          .read(partnerOperatorsProvider.notifier)
+          .assignParkings(widget.operator.id, selected.toList());
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível salvar as unidades: $error'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => savingAssignments = false);
+    }
   }
 }
 
@@ -231,6 +433,7 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final phoneController = TextEditingController();
+  final cpfController = TextEditingController();
   final passwordController = TextEditingController(text: 'Rig@ud2026');
   final selectedPermissions = <String>{..._operatorPermissionLabels.keys};
   bool acceptedTerms = false;
@@ -241,6 +444,7 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
     nameController.dispose();
     emailController.dispose();
     phoneController.dispose();
+    cpfController.dispose();
     passwordController.dispose();
     super.dispose();
   }
@@ -276,6 +480,17 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
                   decoration: const InputDecoration(labelText: 'Telefone'),
                   keyboardType: TextInputType.phone,
                   validator: FormValidators.phoneBr,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: cpfController,
+                  decoration: const InputDecoration(
+                    labelText: 'CPF (opcional)',
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? null
+                      : FormValidators.cpf(value),
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -367,6 +582,7 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
             name: nameController.text.trim(),
             email: emailController.text.trim(),
             phone: phoneController.text.trim(),
+            cpf: cpfController.text.trim(),
             password: passwordController.text.trim(),
             acceptedTerms: acceptedTerms,
             permissions: selectedPermissions.toList()..sort(),
