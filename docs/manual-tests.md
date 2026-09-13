@@ -3,17 +3,21 @@
 Use este roteiro para validar busca, reserva, caixa, check-in, checkout, tenant e
 compensacao de taxas do ParkHere.
 
-## Reset local
+## Preparar a homologação local sem apagar o banco
 
-Apagar banco, subir containers, aplicar migrations e rodar seed:
+O seed é repetível e não exige remover o volume MySQL. Após criar/recriar o
+banco, aplique migrations e carregue os cenários de teste:
 
 ```bash
-docker compose down -v
 docker compose up -d mysql api
 docker compose exec -T api alembic upgrade head
 docker compose exec -T api python -m app.scripts.seed_mvp_data
-docker compose up -d web
+docker compose up -d --build web
 ```
+
+`docker compose down -v` apaga permanentemente o banco local e os arquivos
+temporários. Use somente quando quiser zerar intencionalmente o ambiente de
+desenvolvimento; ele não é necessário para atualizar o seed.
 
 URLs:
 
@@ -200,6 +204,23 @@ docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s te
   concluir a operação; teste também a criação de uma escala para filial.
 - Envie um template de e-mail com cabeçalho customizado sem imagem e confirme
   que o e-mail recebido ainda exibe o logo inline do ParkHere.
+
+O seed também recria a matriz `ParkHere Valenca VIP` e a filial
+`ESTACIONAMENTO TESTE` na mesma empresa, com os IDs de unidade já usados no
+ambiente de teste. O gestor é `gestor.valenca.vip@parkhere.test` e o operador
+compartilhado entre unidades é `operador.valenca.vip@parkhere.test`; senha
+`123456`, MFA local `000000`. Um segundo operador de filial é
+`operador.valenca.filial@parkhere.test`.
+
+Para validar cobertura, o seed cria para dois dias após sua execução um turno
+da matriz atribuído ao operador compartilhado e um turno aberto sobreposto na
+filial. No dia seguinte há um turno de filial atribuído ao segundo operador.
+Na tela de escala, use as visões mês/semana, selecione o turno aberto e tente
+atribuir o operador compartilhado: a API deve recusar a colisão entre unidades
+com `409`. O segundo operador deve ser aceito. Edite horários, atualize a tela e
+confira que a alteração persiste e entra no histórico. O seed não apaga escalas
+manuais nem reserva; ele mantém estes turnos-fixture identificados por unidade
+e horário.
 
 ## Checkout com excedente e cancelamento
 

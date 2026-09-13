@@ -147,6 +147,11 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     );
     final topBar = AppBar(
       title: const Text('ParkHere'),
+      automaticallyImplyLeading:
+          !(!isWebLayout &&
+              !isPartner &&
+              !isAdmin &&
+              _selectedArea == _MainArea.map),
       actions: isOperator
           ? [
               IconButton(

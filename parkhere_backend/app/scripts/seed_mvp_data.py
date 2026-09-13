@@ -15,6 +15,7 @@ from app.modules.customer_assets.models import (
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.platform_fees.models import PlatformFee
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.payments.models import PartnerPaymentAccount
@@ -54,6 +55,7 @@ async def seed():
             await ensure_descriptive_seed_users(db)
             await ensure_partner_profile(db)
             await ensure_demo_partner_tenants(db)
+            await ensure_seed_schedule(db)
             await ensure_platform_fees(db)
             await ensure_partner_payment_accounts(db)
             await ensure_customer_seed_assets(db)
@@ -194,6 +196,7 @@ async def seed():
                 has_automatic_access=False,
             ),
             Parking(
+                id="f2870de7-2129-49d4-8d3a-9fc990010e21",
                 tenant_id=demo_tenants["pelourinho"].id,
                 name="ParkHere Valenca VIP",
                 address="Av. ACM, Centro, Valenca - BA",
@@ -383,6 +386,57 @@ async def seed():
                 wants_automatic_access=False,
                 has_automatic_access=False,
             ),
+            Parking(
+                id="786b3012-1773-445b-807b-5d1b18d2efef",
+                tenant_id=demo_tenants["pelourinho"].id,
+                name="ESTACIONAMENTO TESTE",
+                address="Rua Conselheiro Ferraz, Centro, Valença - BA",
+                city="Valenca",
+                lat=-13.3597,
+                lng=-39.0669,
+                rating=4.5,
+                total_spots=24,
+                available_spots=18,
+                covered_spots=10,
+                uncovered_spots=14,
+                vip_spots=2,
+                large_spots=2,
+                bus_spots=0,
+                pickup_spots=2,
+                first_hour_price=10,
+                additional_hour_price=5,
+                daily_price=40,
+                weekly_price=180,
+                monthly_price=300,
+                covered_first_hour_price=14,
+                covered_additional_hour_price=7,
+                covered_daily_price=52,
+                covered_weekly_price=230,
+                covered_monthly_price=380,
+                uncovered_first_hour_price=10,
+                uncovered_additional_hour_price=5,
+                uncovered_daily_price=40,
+                uncovered_weekly_price=180,
+                uncovered_monthly_price=300,
+                has_covered_area=True,
+                has_vip_spots=True,
+                has_24h_gate=False,
+                has_security_system=True,
+                operating_hours=json.dumps({
+                    "mon": {"open": "07:00", "close": "18:00"},
+                    "tue": {"open": "07:00", "close": "18:00"},
+                    "wed": {"open": "07:00", "close": "18:00"},
+                    "thu": {"open": "07:00", "close": "18:00"},
+                    "fri": {"open": "07:00", "close": "18:00"},
+                    "sat": {"open": "08:00", "close": "13:00"},
+                }),
+                category_pricing=json.dumps({
+                    "uncovered": {"hourly": 10, "daily": 40, "weekly": 180, "monthly": 300},
+                    "covered": {"hourly": 14, "daily": 52, "weekly": 230, "monthly": 380},
+                    "vip": {"hourly": 22, "daily": 90, "weekly": 390, "monthly": 680},
+                    "large": {"hourly": 18, "daily": 75, "weekly": 330, "monthly": 560},
+                }),
+            ),
         ]
         db.add_all(parkings)
         await db.flush()
@@ -434,6 +488,8 @@ async def seed():
                 ParkingService(parking_id=parkings[4].id, code="transport", name="Transfer urbano", price=45),
                 ParkingService(parking_id=parkings[5].id, code="car_wash", name="Lavagem ecológica", price=48),
                 ParkingService(parking_id=parkings[5].id, code="transport", name="Transporte executivo", price=55),
+                ParkingService(parking_id=parkings[6].id, code="car_wash", name="Lavagem teste", price=30),
+                ParkingService(parking_id=parkings[6].id, code="tour_guide", name="Passeio guiado de teste", price=50),
             ]
         )
 
@@ -501,6 +557,7 @@ async def seed():
 
         await ensure_platform_fees(db, commit=False)
         await ensure_partner_payment_accounts(db, tenant_id=tenant.id, commit=False)
+        await ensure_seed_schedule(db, commit=False)
 
         await db.commit()
 
@@ -551,6 +608,7 @@ async def refresh_existing_seed(db):
             "has_automatic_access": False,
         },
         "ParkHere Pelourinho VIP": {
+            "id": "f2870de7-2129-49d4-8d3a-9fc990010e21",
             "name": "ParkHere Valenca VIP",
             "tenant_id": demo_tenants["pelourinho"].id,
             "address": "Av. ACM, Centro, Valenca - BA",
@@ -716,6 +774,56 @@ async def refresh_existing_seed(db):
             "wants_automatic_access": False,
             "has_automatic_access": False,
         },
+        "ESTACIONAMENTO TESTE": {
+            "id": "786b3012-1773-445b-807b-5d1b18d2efef",
+            "tenant_id": demo_tenants["pelourinho"].id,
+            "address": "Rua Conselheiro Ferraz, Centro, Valença - BA",
+            "city": "Valenca",
+            "lat": -13.3597,
+            "lng": -39.0669,
+            "rating": 4.5,
+            "total_spots": 24,
+            "available_spots": 18,
+            "covered_spots": 10,
+            "uncovered_spots": 14,
+            "vip_spots": 2,
+            "large_spots": 2,
+            "bus_spots": 0,
+            "pickup_spots": 2,
+            "first_hour_price": 10,
+            "additional_hour_price": 5,
+            "daily_price": 40,
+            "weekly_price": 180,
+            "monthly_price": 300,
+            "covered_first_hour_price": 14,
+            "covered_additional_hour_price": 7,
+            "covered_daily_price": 52,
+            "covered_weekly_price": 230,
+            "covered_monthly_price": 380,
+            "uncovered_first_hour_price": 10,
+            "uncovered_additional_hour_price": 5,
+            "uncovered_daily_price": 40,
+            "uncovered_weekly_price": 180,
+            "uncovered_monthly_price": 300,
+            "has_covered_area": True,
+            "has_vip_spots": True,
+            "has_24h_gate": False,
+            "has_security_system": True,
+            "operating_hours": json.dumps({
+                "mon": {"open": "07:00", "close": "18:00"},
+                "tue": {"open": "07:00", "close": "18:00"},
+                "wed": {"open": "07:00", "close": "18:00"},
+                "thu": {"open": "07:00", "close": "18:00"},
+                "fri": {"open": "07:00", "close": "18:00"},
+                "sat": {"open": "08:00", "close": "13:00"},
+            }),
+            "category_pricing": json.dumps({
+                "uncovered": {"hourly": 10, "daily": 40, "weekly": 180, "monthly": 300},
+                "covered": {"hourly": 14, "daily": 52, "weekly": 230, "monthly": 380},
+                "vip": {"hourly": 22, "daily": 90, "weekly": 390, "monthly": 680},
+                "large": {"hourly": 18, "daily": 75, "weekly": 330, "monthly": 560},
+            }),
+        },
     }
     parking_specs["ParkHere Valenca VIP"] = parking_specs["ParkHere Pelourinho VIP"]
     parking_specs["ParkHere Valenca Comercio Express"] = parking_specs[
@@ -731,11 +839,11 @@ async def refresh_existing_seed(db):
 
         parking = existing.get(parking_name)
         if parking is None:
-            parking = Parking(name=parking_name, tenant_id=spec["tenant_id"])
+            parking = Parking(id=spec.get("id"), name=parking_name, tenant_id=spec["tenant_id"])
             db.add(parking)
 
         for field, value in spec.items():
-            if value is not None:
+            if field != "id" and value is not None:
                 setattr(parking, field, value)
         parking.has_covered_area = parking.covered_spots > 0
         parking.has_vip_spots = parking.vip_spots > 0
@@ -807,6 +915,10 @@ async def ensure_seed_parking_services(db, commit=True):
             {"code": "car_wash", "name": "Lavagem ecologica", "price": 48},
             {"code": "transport", "name": "Transporte executivo", "price": 55},
         ],
+        "ESTACIONAMENTO TESTE": [
+            {"code": "car_wash", "name": "Lavagem teste", "price": 30},
+            {"code": "tour_guide", "name": "Passeio guiado de teste", "price": 50},
+        ],
     }
 
     result = await db.execute(
@@ -841,6 +953,7 @@ async def ensure_seed_parking_services(db, commit=True):
 async def ensure_demo_partner_tenants(db, commit=True):
     specs = {
         "pelourinho": {
+            "id": "01881d44-6445-4868-b7af-d653e677c24f",
             "name": "Valenca Centro Parking Partners",
             "cnpj": "22333444000155",
             "email": "operacao.centro.valenca@parkhere.test",
@@ -888,6 +1001,7 @@ async def ensure_demo_partner_tenants(db, commit=True):
         tenant = result.scalar_one_or_none()
         if tenant is None:
             tenant = Tenant(
+                id=spec.get("id"),
                 name=spec["name"],
                 cnpj=spec["cnpj"],
                 email=spec["email"],
@@ -965,6 +1079,78 @@ async def ensure_demo_partner_tenants(db, commit=True):
         await db.commit()
 
     return tenants
+
+
+async def ensure_seed_schedule(db, commit=True):
+    """Prepare a two-unit fixture: one staffed shift and one open overlapping slot.
+
+    The overlap is intentional in the test data: the manager can verify that
+    assigning the same operator to both units is rejected by the API.
+    """
+    tenant = await db.scalar(select(Tenant).where(Tenant.cnpj == "22333444000155"))
+    if tenant is None:
+        return
+    matrix = await db.scalar(select(Parking).where(
+        Parking.tenant_id == tenant.id,
+        Parking.name == "ParkHere Valenca VIP",
+    ))
+    branch = await db.scalar(select(Parking).where(
+        Parking.tenant_id == tenant.id,
+        Parking.name == "ESTACIONAMENTO TESTE",
+    ))
+    if matrix is None or branch is None:
+        return
+
+    operator = await db.scalar(select(User).where(User.email == "operador.valenca.vip@parkhere.test"))
+    if operator is None:
+        return
+    second_operator = await _ensure_seed_user(
+        db,
+        tenant_id=tenant.id,
+        email="operador.valenca.filial@parkhere.test",
+        name="Operador de apoio Valença",
+        first_name="Operador",
+        phone="71999996667",
+        role=UserRoleEnum.OPERATOR,
+        permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
+    )
+    for operator_id, parking in (
+        (operator.id, matrix),
+        (operator.id, branch),
+        (second_operator.id, branch),
+    ):
+        assignment = await db.scalar(select(OperatorParkingAssignment).where(
+            OperatorParkingAssignment.operator_id == operator_id,
+            OperatorParkingAssignment.parking_id == parking.id,
+        ))
+        if assignment is None:
+            db.add(OperatorParkingAssignment(operator_id=operator_id, parking_id=parking.id))
+
+    fixture_day = (datetime.now() + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    next_day = fixture_day + timedelta(days=1)
+    fixtures = (
+        (matrix.id, operator.id, fixture_day.replace(hour=8), fixture_day.replace(hour=16)),
+        (branch.id, None, fixture_day.replace(hour=8), fixture_day.replace(hour=16)),
+        (branch.id, second_operator.id, next_day.replace(hour=9), next_day.replace(hour=17)),
+    )
+    for parking_id, operator_id, starts_at, ends_at in fixtures:
+        shift = await db.scalar(select(OperatorWorkShift).where(
+            OperatorWorkShift.parking_id == parking_id,
+            OperatorWorkShift.starts_at == starts_at,
+            OperatorWorkShift.ends_at == ends_at,
+        ))
+        if shift is None:
+            db.add(OperatorWorkShift(
+                parking_id=parking_id,
+                operator_id=operator_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            ))
+        else:
+            shift.operator_id = operator_id
+
+    if commit:
+        await db.commit()
 
 
 async def ensure_partner_seed_user(db, commit=True):
@@ -1166,7 +1352,8 @@ async def _ensure_seed_user(
                 permissions=permissions,
             )
         )
-        return
+        await db.flush()
+        return await db.scalar(select(User).where(User.email == email))
 
     user.tenant_id = tenant_id
     user.name = name
@@ -1178,6 +1365,7 @@ async def _ensure_seed_user(
     user.role = role
     user.permissions = permissions
     user.is_active = True
+    return user
 
 
 async def ensure_partner_operator_seed_user(db, commit=True):

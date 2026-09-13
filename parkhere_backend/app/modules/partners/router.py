@@ -101,6 +101,11 @@ class OperatorShiftRequest(BaseModel):
     starts_at: datetime
     ends_at: datetime
 
+class OperatorShiftUpdateRequest(BaseModel):
+    operator_id: str | None
+    starts_at: datetime
+    ends_at: datetime
+
 class OperatorWorkProfileRequest(BaseModel):
     operator_id: str
     parking_id: str
@@ -1146,7 +1151,7 @@ async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = D
     starts_at = _schedule_local(data.starts_at)
     ends_at = _schedule_local(data.ends_at)
     if ends_at <= starts_at: raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
-    operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
+    operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR).with_for_update())
     parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
     assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id)) if data.operator_id else None
     if not parking or (data.operator_id and (not operator or not assigned)): raise HTTPException(status_code=422, detail="Operador não está associado a este estacionamento")
@@ -1164,6 +1169,66 @@ async def cancel_operator_shift(shift_id: str, db: AsyncSession = Depends(get_db
     if shift is None: raise HTTPException(status_code=404, detail="Turno não encontrado")
     db.add(OperatorScheduleHistory(parking_id=shift.parking_id, changed_by=current_user.id, action="cancelled", details=json.dumps({"shift_id": shift_id})))
     await db.delete(shift); await db.commit()
+
+@router.put("/shifts/{shift_id}")
+async def update_operator_shift(shift_id: str, data: OperatorShiftUpdateRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Assign or edit a shift while keeping operators conflict-free across units."""
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    shift = await db.scalar(
+        select(OperatorWorkShift)
+        .join(Parking, Parking.id == OperatorWorkShift.parking_id)
+        .where(
+            OperatorWorkShift.id == shift_id,
+            Parking.tenant_id == current_user.tenant_id,
+        )
+    )
+    if shift is None:
+        raise HTTPException(status_code=404, detail="Turno não encontrado")
+
+    starts_at = _schedule_local(data.starts_at)
+    ends_at = _schedule_local(data.ends_at)
+    if ends_at <= starts_at:
+        raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
+
+    if data.operator_id:
+        operator = await db.scalar(select(User).where(
+            User.id == data.operator_id,
+            User.tenant_id == current_user.tenant_id,
+            User.role == UserRoleEnum.OPERATOR,
+            User.is_active.is_(True),
+        ).with_for_update())
+        assigned = await db.scalar(select(OperatorParkingAssignment.id).where(
+            OperatorParkingAssignment.operator_id == data.operator_id,
+            OperatorParkingAssignment.parking_id == shift.parking_id,
+        ))
+        if operator is None or assigned is None:
+            raise HTTPException(status_code=422, detail="Operador não está ativo e autorizado para esta unidade")
+        await _ensure_operator_has_no_shift_conflict(
+            db, data.operator_id, starts_at, ends_at, exclude_shift_id=shift.id,
+        )
+
+    previous = {
+        "operator_id": shift.operator_id,
+        "starts_at": shift.starts_at.isoformat(),
+        "ends_at": shift.ends_at.isoformat(),
+    }
+    shift.operator_id = data.operator_id
+    shift.starts_at = starts_at
+    shift.ends_at = ends_at
+    db.add(OperatorScheduleHistory(
+        parking_id=shift.parking_id,
+        changed_by=current_user.id,
+        action="updated",
+        details=json.dumps({"shift_id": shift.id, "before": previous, "after": {
+            "operator_id": shift.operator_id,
+            "starts_at": starts_at.isoformat(),
+            "ends_at": ends_at.isoformat(),
+        }}),
+    ))
+    await db.commit()
+    await db.refresh(shift)
+    return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id, "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
 
 @router.get("/work-profiles")
 async def list_work_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -1485,12 +1550,16 @@ def _now_schedule_local() -> datetime:
 
 async def _ensure_operator_has_no_shift_conflict(
     db: AsyncSession, operator_id: str, starts_at: datetime, ends_at: datetime,
+    exclude_shift_id: str | None = None,
 ) -> None:
-    conflict = await db.scalar(select(OperatorWorkShift.id).where(
+    query = select(OperatorWorkShift.id).where(
         OperatorWorkShift.operator_id == operator_id,
         OperatorWorkShift.starts_at < ends_at,
         OperatorWorkShift.ends_at > starts_at,
-    ).limit(1))
+    )
+    if exclude_shift_id:
+        query = query.where(OperatorWorkShift.id != exclude_shift_id)
+    conflict = await db.scalar(query.limit(1))
     if conflict:
         raise HTTPException(status_code=409, detail="Este operador já possui um turno sobreposto em outra unidade ou nesta mesma unidade.")
 

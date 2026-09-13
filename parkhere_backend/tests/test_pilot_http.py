@@ -22,6 +22,7 @@ from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
+from app.modules.partners.work_schedule_models import OperatorScheduleHistory
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
@@ -70,9 +71,11 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             vehicle = Vehicle(user_id=customer.id, nickname='Carro', plate='ABC1D23', brand='Fiat', model='Uno', color='Prata', vehicle_document='test', ownership_type='owner', is_active=True)
             db.add(vehicle)
             operator = User(tenant_id=self.tenants[0], name='Pilot operator', firt_name='Pilot', email=f'o{uuid.uuid4().hex}@test.invalid', password_hash='not-a-login', role=UserRoleEnum.OPERATOR)
-            db.add(operator)
+            second_operator = User(tenant_id=self.tenants[0], name='Pilot operator 2', firt_name='Pilot', email=f'o{uuid.uuid4().hex}@test.invalid', password_hash='not-a-login', role=UserRoleEnum.OPERATOR)
+            db.add_all([operator, second_operator])
             await db.commit()
             self.customer, self.vehicle, self.operator = customer, vehicle, operator
+            self.second_operator = second_operator
             branch = Parking(tenant_id=self.tenants[0], name='Pilot Branch', address='Valenca BA', city='Valenca', lat=-13.36, lng=-39.06, total_spots=5, available_spots=5, uncovered_spots=5, first_hour_price=7, uncovered_first_hour_price=7, additional_hour_price=2, uncovered_additional_hour_price=2)
             db.add(branch)
             await db.commit()
@@ -295,6 +298,20 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             'ends_at': suggestion['suggestions'][0]['ends_at'],
         }, expected=201)
         self.assertEqual(created['parking_id'], self.branch_parking)
+        await self.request(f'/partners/operators/{self.second_operator.id}/parkings', {
+            'parking_ids': [self.branch_parking],
+        }, method='PUT')
+        payload = {
+            'operator_id': self.operator.id,
+            'starts_at': suggestion['suggestions'][0]['starts_at'],
+            'ends_at': suggestion['suggestions'][0]['ends_at'],
+        }
+        await self.request(f'/partners/shifts/{created["id"]}', payload, method='PUT', expected=409)
+        payload['operator_id'] = self.second_operator.id
+        updated = await self.request(f'/partners/shifts/{created["id"]}', payload, method='PUT')
+        self.assertEqual(updated['operator_id'], self.second_operator.id)
+        loaded_shifts = await self.request('/partners/shifts')
+        self.assertIn(updated['id'], [item['id'] for item in loaded_shifts])
 
     async def asyncTearDown(self):
         async with self.session() as db:
@@ -302,6 +319,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             await db.execute(delete(PartnerFeeSettlement).where(PartnerFeeSettlement.debt_id.in_(debt_ids)))
             for model in [PartnerFeeDebt, PaymentTransaction]:
                 await db.execute(delete(model).where(model.tenant_id.in_(self.tenants)))
+            await db.execute(delete(OperatorScheduleHistory).where(OperatorScheduleHistory.parking_id.in_(self.parkings)))
             await db.execute(delete(OperatorWorkShift).where(OperatorWorkShift.parking_id.in_(self.parkings)))
             await db.execute(delete(OperatorParkingAssignment).where(OperatorParkingAssignment.parking_id.in_(self.parkings)))
             await db.execute(delete(Reservation).where(Reservation.parking_id.in_(self.parkings)))
@@ -309,7 +327,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             await db.execute(delete(ParkingPlatformFee).where(ParkingPlatformFee.parking_id.in_(self.parkings)))
             await db.execute(delete(Parking).where(Parking.id.in_(self.parkings)))
             await db.execute(delete(Vehicle).where(Vehicle.user_id == self.customer.id))
-            await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id])))
+            await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id, self.second_operator.id])))
             await db.execute(delete(PartnerProfile).where(PartnerProfile.tenant_id.in_(self.tenants)))
             await db.execute(delete(Tenant).where(Tenant.id.in_(self.tenants)))
             await db.commit()

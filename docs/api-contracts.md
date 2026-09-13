@@ -746,6 +746,15 @@ limpeza do endpoint.
   fechados e limita o turno ao fechamento configurado.
 - `DELETE /partners/shifts/{shift_id}` cancela um turno e grava a alteração no
   histórico de auditoria.
+- `PUT /partners/shifts/{shift_id}` atribui/troca o operador e permite ajustar
+  início e fim. Body: `operator_id` (UUID ou `null` para deixar o turno aberto),
+  `starts_at`, `ends_at`. O operador precisa estar ativo e associado à unidade;
+  sobreposição de horário em qualquer unidade retorna `409 Conflict`. A resposta
+  mantém `id`, `operator_id`, `parking_id`, `starts_at` e `ends_at`; a mudança é
+  registrada em `GET /partners/schedule-history`.
+- `GET /partners/shifts` continua retornando todos os turnos futuros e passados
+  da empresa para o gestor, inclusive turnos sem responsável (`operator_id: null`);
+  para operador, limita aos próprios turnos.
 
 ## Operadores adicionais (parceiro e administrador)
 

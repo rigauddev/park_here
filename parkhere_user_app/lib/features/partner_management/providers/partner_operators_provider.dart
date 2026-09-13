@@ -151,4 +151,19 @@ class PartnerOperatorsNotifier
     if (token == null) throw Exception('Sessão expirada.');
     await _api.deleteAuthorized('/partners/shifts/$shiftId', token);
   }
+
+  Future<void> updateShift({
+    required String shiftId,
+    required String? operatorId,
+    required DateTime startsAt,
+    required DateTime endsAt,
+  }) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) throw Exception('Sessão expirada.');
+    await _api.putAuthorized('/partners/shifts/$shiftId', {
+      'operator_id': operatorId,
+      'starts_at': _localIso(startsAt),
+      'ends_at': _localIso(endsAt),
+    }, token);
+  }
 }
