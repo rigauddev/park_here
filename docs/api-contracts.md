@@ -42,6 +42,18 @@ alvará e RG/CNH são aceitos; para CPF, RG/CNH; seguro usa
 Os arquivos ficam no volume local do backend e o cadastro passa para
 `documents_submitted`.
 
+## Aprovação de parceiros
+
+- `GET /admin/platform-fees/partners` inclui `approval_status` e `documents`
+  (`id`, `document_type`, `file_name` e `download_path`).
+- `PATCH /admin/platform-fees/partners/{tenant_id}/approval` recebe
+  `{ "stage": "documents"|"inspection", "decision": "approve"|"reject" }`.
+  A aprovação documental avança para `waiting_inspection`; a aprovação da
+  vistoria muda para `approved` e ativa o tenant. A reprovação suspende o
+  tenant.
+- `GET /admin/platform-fees/partners/{tenant_id}/documents/{document_id}`
+  devolve o arquivo enviado para análise, somente para administradores.
+
 ## Afiliação de guia a estacionamento
 
 - `GET /partners/guide/parkings` lista estacionamentos ativos e o status da
