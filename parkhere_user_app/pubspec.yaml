@@ -76,6 +76,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    # Local development only; release builds inject API_URL via --dart-define.
+    - .env
     - assets/branding/logo_rigaud_tech.png
     - assets/branding/logo_rigaud_tech_clean.png
     - assets/branding/logo_park_here_transparent.png
