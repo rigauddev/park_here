@@ -2424,13 +2424,12 @@ class _PdfDocumentPreview extends StatelessWidget {
   const _PdfDocumentPreview({required this.bytes});
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.picture_as_pdf, size: 56, color: Colors.redAccent),
-          const SizedBox(height: 12),
-          const Text('PDF recebido para análise.'),
-          const SizedBox(height: 8),
-          Text('${bytes.length} bytes', style: Theme.of(context).textTheme.bodySmall),
-        ]),
+  Widget build(BuildContext context) => PdfPreview(
+        build: (_) async => bytes,
+        canChangeOrientation: false,
+        canChangePageFormat: false,
+        canDebug: false,
+        allowPrinting: false,
+        allowSharing: false,
       );
 }
