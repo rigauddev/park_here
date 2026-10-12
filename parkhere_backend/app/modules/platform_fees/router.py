@@ -26,6 +26,7 @@ from app.modules.parkings.models import Parking, ParkingService
 from app.modules.users.models.user_model import User
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.document_models import PartnerDocument
 from app.modules.partners.guide_service_models import GuideService
 from app.core.email_service import EmailService
 
@@ -75,6 +76,11 @@ class ParkingUnitUpdateRequest(BaseModel):
     city: str | None = Field(default=None, min_length=2, max_length=120)
     lat: float | None = Field(default=None, ge=-90, le=90)
     lng: float | None = Field(default=None, ge=-180, le=180)
+
+
+class PartnerApprovalRequest(BaseModel):
+    stage: str = Field(pattern='^(documents|inspection)$')
+    decision: str = Field(pattern='^(approve|reject)$')
 
 
 def _ensure_admin(user: User) -> None:
@@ -138,6 +144,10 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
     _ensure_admin(current_user)
     tenants = (await db.scalars(select(Tenant).order_by(Tenant.created_at.desc()))).all()
     profiles = (await db.scalars(select(PartnerProfile))).all()
+    documents = (await db.scalars(select(PartnerDocument))).all()
+    documents_by_tenant: dict[str, list[PartnerDocument]] = {}
+    for document in documents:
+        documents_by_tenant.setdefault(document.tenant_id, []).append(document)
     profile_by_tenant = {profile.tenant_id: profile for profile in profiles}
     result = []
     for tenant in tenants:
@@ -196,6 +206,16 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
             'tenant_status': tenant.status.value,
             'service_type': profile.service_type if profile else 'other',
             'approval_status': profile.approval_status if profile else 'profile_missing',
+            'documents': [
+                {
+                    'id': document.id,
+                    'document_type': document.document_type,
+                    'file_name': document.file_name,
+                    'download_path': f'/admin/platform-fees/partners/{tenant.id}/documents/{document.id}',
+                    'created_at': document.created_at.isoformat() + 'Z',
+                }
+                for document in documents_by_tenant.get(tenant.id, [])
+            ],
             'users': [{'id': user.id, 'name': user.name, 'email': user.email, 'role': user.role.value, 'is_active': user.is_active} for user in users],
             'parkings': [{'id': parking.id, 'name': parking.name, 'address': parking.address,
                 'city': parking.city, 'lat': parking.lat, 'lng': parking.lng,
@@ -210,6 +230,70 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
             'global_service_fee_count': await db.scalar(select(func.count(PlatformFee.id)).where(PlatformFee.is_active.is_(True))) or 0,
         })
     return result
+
+
+@router.patch('/partners/{tenant_id}/approval')
+async def review_partner_approval(
+    tenant_id: str,
+    data: PartnerApprovalRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Analisa o parceiro em duas etapas: documentos e vistoria do local."""
+    _ensure_admin(current_user)
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == tenant_id))
+    tenant = await db.get(Tenant, tenant_id)
+    if profile is None or tenant is None:
+        raise HTTPException(status_code=404, detail='Parceiro não encontrado')
+
+    previous = profile.approval_status
+    if data.decision == 'reject':
+        profile.approval_status = 'rejected'
+        tenant.status = TenantStatusEnum.SUSPENDED
+    elif data.stage == 'documents':
+        profile.approval_status = 'waiting_inspection'
+    else:
+        profile.approval_status = 'approved'
+        tenant.status = TenantStatusEnum.ACTIVE
+
+    _audit(
+        db,
+        current_user,
+        f'partner.approval.{data.stage}.{data.decision}',
+        'partner_profile',
+        profile.id,
+        tenant_id,
+        {'before': previous, 'after': profile.approval_status},
+    )
+    await db.commit()
+    return {
+        'tenant_id': tenant_id,
+        'approval_status': profile.approval_status,
+        'tenant_status': tenant.status.value,
+    }
+
+
+@router.get('/partners/{tenant_id}/documents/{document_id}')
+async def download_partner_document(
+    tenant_id: str,
+    document_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    document = await db.scalar(
+        select(PartnerDocument).where(
+            PartnerDocument.id == document_id,
+            PartnerDocument.tenant_id == tenant_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail='Documento não encontrado')
+    path = Path(document.storage_path).resolve()
+    root = Path('/app/storage/partner_documents').resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail='Documento não encontrado')
+    return FileResponse(path, filename=document.file_name)
 
 
 @router.get('/partners/{tenant_id}/fees')

@@ -289,11 +289,24 @@ class AuthService:
                 )
             )
             if profile is None or profile.approval_status != "approved":
+                if profile is None or profile.approval_status in {
+                    "waiting_documents",
+                    "documents_submitted",
+                    "pending",
+                }:
+                    detail = (
+                        "Documentação em análise. Envie ou aguarde a validação "
+                        "do alvará, documento do responsável, comprovante do "
+                        "endereço e seguro quando informado."
+                    )
+                else:
+                    detail = (
+                        "Documentação aprovada. Vistoria das imagens do local "
+                        "ou videochamada ainda está em andamento."
+                    )
                 raise HTTPException(
                     status_code=403,
-                    detail=(
-                        "Acesso aguardando aprovação da equipe de gestão e validação dos documentos."
-                    ),
+                    detail=detail,
                 )
 
         methods = []

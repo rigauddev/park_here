@@ -322,6 +322,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           ..._operatorRequestCards(),
           const SizedBox(height: 20),
           const Text(
+            'Aprovação de parceiros',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ..._partnerApprovalCards(),
+          const SizedBox(height: 20),
+          const Text(
             'Solicitações de funcionalidades e capacidade',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
@@ -567,6 +574,110 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
             ),
           ),
         ];
+    }
+  }
+
+  List<Widget> _partnerApprovalCards() {
+    final pending = _partners
+        .where((partner) => partner['approval_status'] != 'approved')
+        .toList();
+    if (pending.isEmpty) {
+      return [const Card(child: ListTile(title: Text('Nenhum parceiro pendente.')))];
+    }
+    return [
+      for (final partner in pending)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                partner['company_name'] as String? ?? 'Parceiro',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 4),
+              Text('Status: ${partner['approval_status'] ?? 'pendente'}'),
+              const SizedBox(height: 8),
+              ...((partner['documents'] as List?) ?? const []).map(
+                (item) => ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.description_outlined),
+                  title: Text(item['file_name'] as String? ?? 'Documento'),
+                  subtitle: Text(item['document_type'] as String? ?? ''),
+                  trailing: const Icon(Icons.visibility_outlined),
+                  onTap: () => _showPartnerDocument(item),
+                ),
+              ),
+              Wrap(spacing: 8, children: [
+                if (partner['approval_status'] == 'documents_submitted' ||
+                    partner['approval_status'] == 'waiting_documents')
+                  FilledButton.tonal(
+                    onPressed: () => _reviewPartnerApproval(
+                      partner, 'documents', 'approve',
+                    ),
+                    child: const Text('Aprovar documentação'),
+                  ),
+                if (partner['approval_status'] == 'waiting_inspection')
+                  FilledButton(
+                    onPressed: () => _reviewPartnerApproval(
+                      partner, 'inspection', 'approve',
+                    ),
+                    child: const Text('Aprovar vistoria'),
+                  ),
+                OutlinedButton(
+                  onPressed: () => _reviewPartnerApproval(
+                    partner,
+                    partner['approval_status'] == 'waiting_inspection'
+                        ? 'inspection'
+                        : 'documents',
+                    'reject',
+                  ),
+                  child: const Text('Reprovar'),
+                ),
+              ]),
+            ]),
+          ),
+        ),
+    ];
+  }
+
+  void _showPartnerDocument(Map<String, dynamic> document) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(document['file_name'] as String? ?? 'Documento'),
+        content: Text(
+          'Documento ${document['document_type'] ?? ''} recebido e disponível no armazenamento da análise administrativa.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _reviewPartnerApproval(
+    Map<String, dynamic> partner,
+    String stage,
+    String decision,
+  ) async {
+    final token = ref.read(authProvider).accessToken;
+    final tenantId = partner['tenant_id'] as String?;
+    if (token == null || tenantId == null) return;
+    try {
+      await _api.patchAuthorized(
+        '/admin/platform-fees/partners/$tenantId/approval',
+        {'stage': stage, 'decision': decision},
+        token,
+      );
+      await _load();
+      if (mounted) {
+        await ApiFeedback.show(context, decision == 'approve'
+            ? 'Etapa aprovada.'
+            : 'Parceiro reprovado.');
+      }
+    } catch (error) {
+      if (mounted) await ApiFeedback.show(context, '$error');
     }
   }
 

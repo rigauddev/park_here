@@ -99,7 +99,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } on ApiConnectionException {
       state = state.copyWith(status: AuthStatus.unauthenticated);
       throw Exception("Não foi possível conectar com a API");
-    } catch (_) {
+    } catch (error) {
+      final message = error.toString().replaceFirst('Exception: ', '');
+      if (accountType == AuthAccountType.partner &&
+          (message.toLowerCase().contains('aprovação') ||
+              message.toLowerCase().contains('documentação') ||
+              message.toLowerCase().contains('vistoria'))) {
+        state = state.copyWith(
+          status: AuthStatus.partnerPending,
+          approvalStatus: message.toLowerCase().contains('vistoria')
+              ? 'waiting_inspection'
+              : 'waiting_documents',
+          approvalMessage: message,
+        );
+        return;
+      }
       state = state.copyWith(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
     }

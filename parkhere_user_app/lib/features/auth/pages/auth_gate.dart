@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import 'login_page.dart';
 import '../../../core/widgets/app_loading.dart';
 import 'admin_login_page.dart';
+import 'partner_pending_page.dart';
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -31,6 +32,10 @@ class AuthGate extends ConsumerWidget {
 
     if (auth.status == AuthStatus.authenticated) {
       return const MainNavigation();
+    }
+
+    if (auth.status == AuthStatus.partnerPending) {
+      return const PartnerPendingPage();
     }
 
     return const LoginPage();
