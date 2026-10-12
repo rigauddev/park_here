@@ -9,6 +9,9 @@ class Reservation(BaseModel):
 
     parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    # Staff-created reservations keep the creator separate from the customer
+    # so the customer can be linked later by plate/phone.
+    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     walk_in_plate = Column(String(7), nullable=True)
     walk_in_phone = Column(String(20), nullable=True)
     vehicle_id = Column(String(36), ForeignKey("vehicles.id"), nullable=True)

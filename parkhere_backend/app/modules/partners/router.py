@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import re
 from uuid import uuid4
@@ -15,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.core.database import get_db
+from app.core.email_service import EmailService
 from app.core.security import hash_password
 from app.modules.auth.auth_service import AuthService
 from app.modules.auth.schemas import PartnerSignupRequest
@@ -47,7 +50,7 @@ from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
 router = APIRouter(prefix="/partners", tags=["Partners"])
 
-PARTNER_DOCUMENT_TYPES = {'alvara', 'rg', 'cnh'}
+PARTNER_DOCUMENT_TYPES = {'alvara', 'rg', 'cnh', 'insurance_policy'}
 
 FREE_OPERATOR_LIMIT = 2
 OPERATOR_PERMISSION_LABELS = {
@@ -185,12 +188,47 @@ async def partner_signup(
         responsible_name=data.responsible_name,
         has_insurance=data.has_insurance,
         insurance_provider=data.insurance_provider,
-        instagram=data.instagram,
         website=data.website,
-        social_links=data.social_links,
     )
     db.add(profile)
+    expected_documents = {'alvara'} if data.document_type == 'cnpj' else set()
+    uploaded_types: set[str] = set()
+    target_dir = Path('/app/storage/partner_documents') / user.tenant_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for item in data.documents:
+        if item.document_type not in PARTNER_DOCUMENT_TYPES:
+            raise HTTPException(status_code=422, detail='Tipo de documento inválido')
+        if item.document_type == 'insurance_policy' and not data.has_insurance:
+            raise HTTPException(status_code=422, detail='Documento de seguro sem seguro informado')
+        try:
+            content = base64.b64decode(item.content_base64, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise HTTPException(status_code=422, detail='Arquivo de documento inválido') from exc
+        if not content or len(content) > 30 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail='Cada documento deve ter até 30 MB')
+        safe_name = Path(item.file_name).name
+        target = target_dir / safe_name
+        target.write_bytes(content)
+        db.add(PartnerDocument(
+            tenant_id=user.tenant_id,
+            document_type=item.document_type,
+            file_name=safe_name,
+            storage_path=str(target),
+        ))
+        uploaded_types.add(item.document_type)
+    personal_document_present = bool({'rg', 'cnh'} & uploaded_types)
+    if not expected_documents.issubset(uploaded_types) or not personal_document_present:
+        raise HTTPException(
+            status_code=422,
+            detail='Envie o alvará e RG/CNH para CNPJ, ou RG/CNH para CPF.',
+        )
+    if data.has_insurance and 'insurance_policy' not in uploaded_types:
+        raise HTTPException(status_code=422, detail='Anexe o documento do seguro informado.')
+    profile.approval_status = 'documents_submitted'
     await db.commit()
+    await EmailService.send_template(
+        db, user.email, 'welcome', 'pt_BR', {'name': user.name}
+    )
 
     return {
         "message": "Partner registered. Documents and inspection are required before publishing.",
@@ -229,9 +267,24 @@ async def get_my_partner_profile(
     total_parking_count = await db.scalar(select(func.count(Parking.id)).where(
         Parking.tenant_id == current_user.tenant_id
     )) or 0
+    active_service_count = await db.scalar(select(func.count(ParkingService.id)).join(
+        Parking, Parking.id == ParkingService.parking_id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    units_with_services = await db.scalar(select(func.count(func.distinct(Parking.id))).join(
+        ParkingService, ParkingService.parking_id == Parking.id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    operator_slots = int(active_service_count) + max(0, int(parking_count) - int(units_with_services))
     base_operator_limit = (
         tenant.operator_limit_override if tenant and tenant.operator_limit_override is not None
-        else max(FREE_OPERATOR_LIMIT, int(parking_count or 1) * FREE_OPERATOR_LIMIT)
+        else max(FREE_OPERATOR_LIMIT, operator_slots * FREE_OPERATOR_LIMIT)
     )
     entitlements = (await db.scalars(select(PartnerFeatureEntitlement).where(
         PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
@@ -302,6 +355,12 @@ async def get_my_partner_profile(
     elif service_addon.get('is_enabled') is False:
         service_limit = service_count
 
+    operator_count = int(await db.scalar(select(func.count(User.id)).where(
+        User.tenant_id == current_user.tenant_id,
+        User.role == UserRoleEnum.OPERATOR,
+        User.deleted_at.is_(None),
+    )) or 0)
+
     return {
         "tenant_id": current_user.tenant_id,
         "role": current_user.role.value,
@@ -316,6 +375,7 @@ async def get_my_partner_profile(
         if profile
         else "missing_profile",
         "operator_limit": int(base_operator_limit) + int(approved_extra),
+        "operator_count": operator_count,
         "unit_count": unit_count,
         "unit_limit": unit_limit,
         "service_count": service_count,
@@ -458,7 +518,7 @@ async def upload_partner_feature_receipt(
     ))
     if item is None:
         raise HTTPException(status_code=404, detail='Solicitação não encontrada')
-    if item.status != 'pending_payment':
+    if item.status != 'payment_received':
         raise HTTPException(status_code=409, detail='Esta solicitação não aguarda comprovante')
     if file.content_type not in {'application/pdf', 'image/jpeg', 'image/png'}:
         raise HTTPException(status_code=422, detail='Anexe comprovante em PDF, JPG ou PNG')
@@ -474,6 +534,32 @@ async def upload_partner_feature_receipt(
     item.status = 'pending_review'
     await db.commit()
     return {'id': item.id, 'status': item.status, 'has_receipt': True}
+
+
+@router.post('/feature-requests/{request_id}/pay')
+async def pay_partner_feature_request(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Register local payment simulation before proof submission."""
+    _ensure_partner_user(current_user)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail='Somente o gestor pode pagar esta funcionalidade')
+    item = await db.scalar(select(PartnerFeatureRequest).where(
+        PartnerFeatureRequest.id == request_id,
+        PartnerFeatureRequest.tenant_id == current_user.tenant_id,
+    ))
+    if item is None:
+        raise HTTPException(status_code=404, detail='Solicitação não encontrada')
+    if item.status == 'payment_received':
+        return {'id': item.id, 'status': item.status, 'is_simulated': True}
+    if item.status != 'pending_payment':
+        raise HTTPException(status_code=409, detail='Esta solicitação não aguarda pagamento')
+    item.status = 'payment_received'
+    item.notes = ((item.notes + ' | ') if item.notes else '') + 'Pagamento simulado registrado; comprovante pendente.'
+    await db.commit()
+    return {'id': item.id, 'status': item.status, 'is_simulated': True, 'amount': item.total_price, 'method': item.payment_method}
 
 
 def _feature_prices(item: PartnerFeatureEntitlement | None) -> dict[str, float]:
@@ -507,8 +593,8 @@ async def upload_partner_document(
     )
     if not profile:
         raise HTTPException(status_code=404, detail='Partner profile not found')
-    expected = {'cnpj': {'alvara'}, 'cpf': {'rg', 'cnh'}}.get(profile.document_type)
-    if expected and document_type not in expected:
+    expected = {'cnpj': {'alvara'}, 'cpf': set()}.get(profile.document_type)
+    if expected and document_type not in expected and document_type not in {'rg', 'cnh'}:
         raise HTTPException(status_code=422, detail='Document type does not match the partner document')
 
     safe_name = Path(file.filename or 'document').name
@@ -929,7 +1015,8 @@ async def list_partner_reservations(
         ('parking_operations', 'cash_management_basic', 'dashboard', 'financial_management'),
     )
     cancellation_actor = aliased(User)
-    reservation_query = select(Reservation, Parking, User, Vehicle, cancellation_actor.name).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).outerjoin(cancellation_actor, cancellation_actor.id == Reservation.cancelled_by_user_id).where(Parking.tenant_id == current_user.tenant_id)
+    creator = aliased(User)
+    reservation_query = select(Reservation, Parking, User, Vehicle, cancellation_actor.name, creator).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).outerjoin(cancellation_actor, cancellation_actor.id == Reservation.cancelled_by_user_id).outerjoin(creator, creator.id == Reservation.created_by_user_id).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
         now = _now_schedule_local()
         assigned_ids = (await db.scalars(select(OperatorWorkShift.parking_id).where(
@@ -943,12 +1030,15 @@ async def list_partner_reservations(
     )
 
     payload = []
-    for reservation, parking, customer, vehicle, cancelled_by_name in result.all():
+    for reservation, parking, customer, vehicle, cancelled_by_name, created_by in result.all():
         excess_minutes, excess_amount = calculate_checkout_excess(reservation, parking)
         payload.append({
             "id": reservation.id,
             "parking_name": parking.name,
-            "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),
+            "customer_name": customer.name if customer else ("Cliente avulso" if reservation.walk_in_plate else "Cliente nao informado"),
+            "customer_phone": reservation.walk_in_phone or (customer.phone if customer else None),
+            "created_by_name": created_by.name if created_by else None,
+            "created_by_phone": created_by.phone if created_by else None,
             "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "status": reservation.status,
@@ -999,6 +1089,7 @@ async def list_partner_operators(
         select(User)
         .where(User.tenant_id == current_user.tenant_id)
         .where(User.role == UserRoleEnum.OPERATOR)
+        .where(User.deleted_at.is_(None))
         .order_by(User.created_at.desc())
     )
     return [_operator_response(user) for user in result.scalars().all()]
@@ -1045,6 +1136,7 @@ async def create_partner_operator(
         select(func.count(User.id))
         .where(User.tenant_id == current_user.tenant_id)
         .where(User.role == UserRoleEnum.OPERATOR)
+        .where(User.deleted_at.is_(None))
     )
     operator_count = count_result.scalar_one()
     parking_count = await db.scalar(select(func.count(Parking.id)).where(Parking.tenant_id == current_user.tenant_id, Parking.is_active.is_(True)))
@@ -1053,9 +1145,24 @@ async def create_partner_operator(
         OperatorPackageRequest.status == "approved",
     )) or 0
     tenant = await db.get(Tenant, current_user.tenant_id)
+    active_service_count = await db.scalar(select(func.count(ParkingService.id)).join(
+        Parking, Parking.id == ParkingService.parking_id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    units_with_services = await db.scalar(select(func.count(func.distinct(Parking.id))).join(
+        ParkingService, ParkingService.parking_id == Parking.id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    operator_slots = int(active_service_count) + max(0, int(parking_count or 0) - int(units_with_services))
     base_limit = (
         tenant.operator_limit_override if tenant and tenant.operator_limit_override is not None
-        else max(FREE_OPERATOR_LIMIT, int(parking_count or 1) * FREE_OPERATOR_LIMIT)
+        else max(FREE_OPERATOR_LIMIT, operator_slots * FREE_OPERATOR_LIMIT)
     )
     operator_limit = int(base_limit) + int(approved_extra)
     if operator_count >= operator_limit:
@@ -1204,7 +1311,7 @@ async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user:
     await _ensure_parking_staff(db, current_user)
     if current_user.role != UserRoleEnum.OPERATOR:
         await _ensure_partner_feature(db, current_user, 'team_management')
-    query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id)
+    query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id, User.deleted_at.is_(None))
     if current_user.role == UserRoleEnum.OPERATOR:
         query = query.where(OperatorWorkShift.operator_id == current_user.id)
     rows = (await db.scalars(query.order_by(OperatorWorkShift.starts_at.desc()))).all()

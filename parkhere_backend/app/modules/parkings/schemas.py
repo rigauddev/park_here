@@ -4,10 +4,11 @@ from pydantic import BaseModel, Field, field_validator
 class ParkingServiceInput(BaseModel):
     code: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
     price: float = Field(ge=0, allow_inf_nan=False)
     is_active: bool = True
 
-    @field_validator("code", "name", mode="before")
+    @field_validator("code", "name", "description", mode="before")
     @classmethod
     def strip_text(cls, value):
         return value.strip() if isinstance(value, str) else value
@@ -41,6 +42,10 @@ class ParkingManagementRequest(BaseModel):
     arrival_tolerance_minutes: int = Field(default=15, ge=1, le=120)
     name: str
     address: str
+    street: str | None = None
+    number: str | None = None
+    neighborhood: str | None = None
+    postal_code: str | None = None
     city: str = "Valenca"
     lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
     lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
@@ -56,7 +61,7 @@ class ParkingManagementRequest(BaseModel):
     has_vip_spots: bool = False
     has_24h_gate: bool = False
     work_regime: str = "commercial"
-    operating_hours: dict[str, dict[str, str] | None] = Field(default_factory=dict)
+    operating_hours: dict[str, dict[str, object] | None] = Field(default_factory=dict)
     has_security_system: bool = False
     wants_automatic_access: bool = False
     has_automatic_access: bool = False
@@ -90,6 +95,10 @@ class ParkingManagementResponse(BaseModel):
     tenant_id: str
     name: str
     address: str
+    street: str | None = None
+    number: str | None = None
+    neighborhood: str | None = None
+    postal_code: str | None = None
     city: str
     lat: float
     lng: float
@@ -150,3 +159,5 @@ class ParkingResponse(BaseModel):
     carWashPrice: float
     tourGuidePrice: float
     transportPrice: float
+    isOpen: bool = True
+    operating_hours: dict[str, dict[str, str] | None] = Field(default_factory=dict)

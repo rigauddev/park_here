@@ -1,0 +1,1 @@
+"""Aggregated partner dashboard endpoints."""

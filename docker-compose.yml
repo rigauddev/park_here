@@ -45,6 +45,10 @@ services:
     platform: linux/amd64
     build:
       context: ./parkhere_user_app
+      args:
+        # Keep the SDK selectable for upgrades without changing the compose file.
+        # The current stable mirror resolves to Flutter 3.44.0 in this environment.
+        FLUTTER_IMAGE: ${FLUTTER_IMAGE:-ghcr.io/cirruslabs/flutter:stable}
     container_name: parkhere_web
     ports:
       - "8080:8080"

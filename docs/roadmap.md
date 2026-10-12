@@ -144,6 +144,8 @@ O backlog detalhado, regras de negócio e tarefas restantes estão em
 - Cadastro do estacionamento deve coletar portaria 24h, sistema de seguranca e interesse em atendimento automatico.
 - Exigir aceite dos termos de responsabilidade no cadastro de cliente, parceiro e operador.
 - Criar seed com parceiros de cada tipo.
+- Chat entre cliente e estabelecimento, com histórico por reserva e notificações
+  (V2; fora do fluxo MVP atual).
 - Testar listagem e aprovacao manual via API.
 - Separar parceiros de divulgacao e parceiros de gestao.
 - Separar interface `Minha empresa` do parceiro da futura gestao geral do admin do sistema.
@@ -289,6 +291,11 @@ Ainda pendente: cobrança/renovação automática dos módulos pagos; tela de au
 de parceiros/clientes; afiliação genérica de guias a serviços que não sejam
 estacionamentos; idioma preferido de e-mail por usuário; módulos operacionais
 de hotel, lava-jato, restaurante, turismo e transporte.
+## Próximos itens V2
+
+- Enviar automaticamente o termo de responsabilidade da reserva criada por operador ou gestor por e-mail ou WhatsApp, registrando canal e versão do documento.
+- Exibir consulta ampliada das fotos de check-in/checkout e reconhecimento de veículo somente após consentimento LGPD, retenção definida e fallback manual.
+
 # Marketing, termos e privacidade — bloco atual
 
 - [x] Preparar copy bilíngue e esqueleto responsivo para a subpágina ParkHere na Wix; distinguir módulos ativos de roadmap.
@@ -299,3 +306,9 @@ de hotel, lava-jato, restaurante, turismo e transporte.
 - [ ] Revisão de advogado brasileiro das minutas por categoria, contratos de intermediação e política de privacidade.
 - [ ] Definir controladores/operadores, retenção e base legal para cada integração de anúncios; implementar tela separada de preferências e revogação antes de publicidade personalizada.
 - [ ] Ligar botões, políticas, suporte, URLs de download e logos finais na Wix após publicação/aprovação editorial.
+## Agendamento em unidade fechada
+
+O MVP permite escolher data e hora futuras quando a unidade está fechada e envia
+`arrival_estimate_at` para validação no servidor. Os lembretes push de 1 hora e
+30 minutos antes, com confirmação da pré-reserva, dependem da integração de
+notificações (FCM/APNs) e permanecem no próximo bloco de homologação.

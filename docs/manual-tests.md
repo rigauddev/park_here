@@ -3,21 +3,22 @@
 Use este roteiro para validar busca, reserva, caixa, check-in, checkout, tenant e
 compensacao de taxas do ParkHere.
 
-## Preparar a homologação local sem apagar o banco
+## Preparar e reiniciar a homologação local
 
-O seed é repetível e não exige remover o volume MySQL. Após criar/recriar o
-banco, aplique migrations e carregue os cenários de teste:
+O seed é repetível e não exige remover dados. Para um reset intencional, apague
+somente o schema MySQL de desenvolvimento; isso preserva os volumes separados
+de fotos, documentos e comprovantes:
 
 ```bash
 docker compose up -d mysql api
+docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE parkfinder; CREATE DATABASE parkfinder CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"'
 docker compose exec -T api alembic upgrade head
 docker compose exec -T api python -m app.scripts.seed_mvp_data
 docker compose up -d --build web
 ```
 
-`docker compose down -v` apaga permanentemente o banco local e os arquivos
-temporários. Use somente quando quiser zerar intencionalmente o ambiente de
-desenvolvimento; ele não é necessário para atualizar o seed.
+Não use `docker compose down -v` para esse reset: ele também apaga os arquivos
+guardados nos volumes Docker, inclusive as fotos temporárias.
 
 URLs:
 
@@ -90,6 +91,9 @@ O script configura `adb reverse` e passa `API_URL=http://127.0.0.1:8000` por
 8. Repita escolhendo `Sem indicação` e confirme que a reserva não possui comissão
    de guia.
 9. Cancele uma pré-reserva não paga e confirme que a vaga volta a ficar livre.
+10. Aguarde uma pré-reserva vencer ou use o fixture `seed_expired_pre_reservation`;
+    o banco deve ter `status=cancelled` e `payment_status=expired`, a tela deve
+    exibir **Expirada**, e a vaga não deve continuar ocupada.
 
 ## Fluxo parceiro
 
@@ -185,6 +189,18 @@ docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s te
 - Na reserva operacional, o operador deve visualizar os termos do estacionamento e confirmar que o cliente os revisou antes de criar.
 - Aceite de marketing personalizado deve permanecer opcional, separado de reserva e conta, desmarcado por padrão e revogável em preferências. Esse controle ainda deve ser desenvolvido antes de qualquer segmentação de anúncios.
 
+## Central de Ajuda
+
+- No cliente, abra **Menu → Central de ajuda**; no parceiro, operador e admin,
+  abra **Ajuda** no menu. Confirme que cada perfil chega à central sem receber
+  acesso adicional a rotas operacionais.
+- Pesquise por “pré-reserva”, “cartão” e “escala”; os artigos devem filtrar e
+  expandir sem overflow em celular e tablet.
+- Troque o idioma para inglês e confirme título, busca, perguntas e respostas em
+  inglês. Volte ao português e confirme o conteúdo PT-BR.
+- Confira que a orientação de cartão descreve os registros do MVP como dados
+  mascarados de teste e recomenda não usar dados reais até a tokenização.
+
 ## Unidades, escalas e acesso do operador
 
 - Associe um operador à matriz e a uma filial. Feche e reabra os detalhes do
@@ -232,13 +248,21 @@ e horário.
   apresentar tempo excedido e valor atualizado. Confira especialmente a tarifa
   adicional da categoria da vaga.
 - Cliente pode cancelar somente pré-reserva não paga e ainda em estado
-  `pre_reserved`. Reserva confirmada/paga não pode ser cancelada por esse botão;
-  deve aguardar o módulo de pedido de reembolso.
+  `pre_reserved`, antes de `hold_expires_at`. O botão deve sumir quando expirar;
+  a API deve rejeitar uma tentativa atrasada. Reserva confirmada/paga não pode
+  ser cancelada por esse botão. O fluxo de solicitação de reembolso ainda não
+  está implementado; não mostrar indicação de que foi solicitado ou pago.
 - Confira número de exibição `PH-XXXXXXXX` nos cards/detalhes e ordenação por
   criação mais recente. O UUID continua como chave técnica.
 - A carteira de teste mostra cartões em cartões visuais empilhados e oferece
-  bandeira, titular, número e validade. Persistência atual é apenas local e
-  guarda metadados mascarados; não testar cobranças reais com cartão digitado.
+  bandeira, titular, número e validade. Após salvar, entre com a mesma conta em
+  outro dispositivo: a bandeira, titular, últimos quatro dígitos, validade e
+  cartão padrão devem ser recuperados do backend. Confirme que a requisição não
+  contém PAN completo ou CVV; cartões do MVP são apenas perfis de teste e não
+  devem ser usados para cobrança real.
+- Cartões antigos que existiam apenas no aparelho precisam ser cadastrados
+  novamente uma vez; não são importados automaticamente para evitar associar
+  dados de uma pessoa à conta de outra em aparelhos compartilhados.
 - O fluxo formal de reembolso (motivo, anexo opcional, prazo de três dias úteis,
   decisão auditada e estorno no provedor) ainda não está implementado. Não
   anunciar o valor de `cancellation_credit_amount` como dinheiro estornado.

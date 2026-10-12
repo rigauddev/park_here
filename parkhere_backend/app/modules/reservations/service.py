@@ -76,6 +76,29 @@ class ReservationService:
         await _ensure_reservation_permission(db, data, current_user, parking)
 
         await expire_parking_reservations(db, parking)
+        # The route screen can retry after a mobile timeout. If the first
+        # request was committed, return that same hold instead of creating a
+        # second reservation or showing a misleading conflict.
+        if current_user.role == UserRoleEnum.CUSTOMER:
+            active = await db.scalar(
+                select(Reservation)
+                .where(
+                    Reservation.user_id == current_user.id,
+                    Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
+                    (Reservation.status != "pre_reserved")
+                    | (Reservation.hold_expires_at > datetime.utcnow()),
+                )
+                .order_by(Reservation.created_at.desc())
+                .limit(1)
+            )
+            if active is not None:
+                if active.parking_id == parking.id:
+                    active.parking_name = parking.name
+                    return to_response(active)
+                raise HTTPException(
+                    status_code=409,
+                    detail="Finalize ou cancele sua reserva ativa antes de criar outra.",
+                )
         if parking.available_spots <= 0:
             raise HTTPException(status_code=409, detail="No available spots")
 
@@ -87,10 +110,28 @@ class ReservationService:
         )
         parking.available_spots -= 1
         arrival_estimate_at = _arrival_estimate(data)
+        _ensure_arrival_within_operating_hours(parking, arrival_estimate_at)
 
         reservation = Reservation(
             parking_id=parking.id,
-            user_id=current_user.id,
+            user_id=(
+                None
+                if data.is_manual_arrival and current_user.role in {
+                    UserRoleEnum.OPERATOR,
+                    UserRoleEnum.PARTNER_MANAGER,
+                    UserRoleEnum.PARKING_ADMIN,
+                }
+                else current_user.id
+            ),
+            created_by_user_id=(
+                current_user.id
+                if data.is_manual_arrival and current_user.role in {
+                    UserRoleEnum.OPERATOR,
+                    UserRoleEnum.PARTNER_MANAGER,
+                    UserRoleEnum.PARKING_ADMIN,
+                }
+                else None
+            ),
             vehicle_id=data.vehicle_id,
             guide_user_id=data.guide_user_id,
             guide_commission_amount=guide_commission_amount,
@@ -127,7 +168,7 @@ class ReservationService:
         db.add(reservation)
         await db.commit()
         await db.refresh(reservation)
-
+        reservation.parking_name = parking.name
         return to_response(reservation)
 
     @staticmethod
@@ -224,9 +265,14 @@ class ReservationService:
             UserRoleEnum.OPERATOR,
         } and reservation.payment_status in {"pending_checkin", "payment_pending"}
 
+        customer_pre_reservation = (
+            current_user.role == UserRoleEnum.CUSTOMER
+            and reservation.status == "pre_reserved"
+        )
         if reservation.status not in {"pre_reserved", "confirmed"} or (
             reservation.payment_status != "paid"
             and not staff_can_checkin_for_checkout_payment
+            and not customer_pre_reservation
         ):
             raise HTTPException(
                 status_code=409,
@@ -372,19 +418,6 @@ async def _ensure_reservation_permission(
         )
         if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=403, detail="Vehicle not allowed")
-        active = await db.scalar(
-            select(Reservation.id).where(
-                Reservation.user_id == current_user.id,
-                Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
-                (Reservation.status != "pre_reserved")
-                | (Reservation.hold_expires_at > datetime.utcnow()),
-            ).limit(1)
-        )
-        if active is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="Finalize ou cancele sua reserva ativa antes de criar outra.",
-            )
         return
 
     if current_user.role in {
@@ -496,6 +529,33 @@ def _arrival_estimate(data: PreCheckinReservationRequest) -> datetime:
     return now + timedelta(minutes=data.route_minutes)
 
 
+def _ensure_arrival_within_operating_hours(parking: Parking, arrival: datetime) -> None:
+    """Reject scheduled arrivals outside the unit's configured opening hours."""
+    if not parking.operating_hours:
+        return
+    try:
+        hours = json.loads(parking.operating_hours)
+    except (TypeError, json.JSONDecodeError):
+        return
+    local = arrival.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Bahia"))
+    keys = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    rule = hours.get(keys[local.weekday()])
+    if not rule or rule.get("closed") is True:
+        raise HTTPException(status_code=422, detail="O horário de chegada está fora do funcionamento do estacionamento.")
+    try:
+        opening = datetime.strptime(rule["open"], "%H:%M").time()
+        closing = datetime.strptime(rule["close"], "%H:%M").time()
+    except (KeyError, TypeError, ValueError):
+        return
+    current = local.time()
+    if opening <= closing:
+        valid = opening <= current <= closing
+    else:  # overnight operation, e.g. 18:00–06:00
+        valid = current >= opening or current <= closing
+    if not valid:
+        raise HTTPException(status_code=422, detail="O horário de chegada está fora do funcionamento do estacionamento.")
+
+
 def physical_spot_type(index, parking):
     limit = 0
     for kind, count in [("vip", parking.vip_spots), ("bus", parking.bus_spots),
@@ -514,8 +574,10 @@ async def expire_parking_reservations(db, parking):
         Reservation.payment_status != "paid",
     ).with_for_update().execution_options(populate_existing=True))).all()
     for reservation in expired:
-        reservation.status = "expired"
+        reservation.status = "cancelled"
         reservation.payment_status = "expired"
+        reservation.cancelled_at = datetime.utcnow()
+        reservation.cancellation_reason = "Pré-reserva expirada automaticamente."
     parking.available_spots = min(parking.total_spots, parking.available_spots + len(expired))
     await db.flush()
 
@@ -758,9 +820,15 @@ def to_response(reservation: Reservation) -> ReservationResponse:
 
     return ReservationResponse(
         id=reservation.id,
+        created_at=reservation.created_at.isoformat() + "Z"
+        if reservation.created_at
+        else None,
+        created_by_name=None,
+        created_by_phone=None,
         walk_in_plate=reservation.walk_in_plate,
         walk_in_phone=reservation.walk_in_phone,
         parking_id=reservation.parking_id,
+        parking_name=getattr(reservation, "parking_name", None),
         status=reservation.status,
         checked_in_at=reservation.checked_in_at.isoformat() + "Z"
         if reservation.checked_in_at

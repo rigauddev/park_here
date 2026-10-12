@@ -1,12 +1,14 @@
 from app.modules.tenants.models.tenant_model_plan_enum import PlanEnum
 from app.modules.tenants.models.tenant_model_status_enum import TenantStatusEnum
 from jose import JWTError, jwt
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
+from app.modules.partners.models import PartnerProfile
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -109,11 +111,10 @@ class AuthService:
             ),
         )
         db.add(partner_user)
-        await db.commit()
-        await db.refresh(partner_user)
-        await EmailService.send_template(
-            db, partner_user.email, "welcome", "pt_BR", {"name": partner_user.name}
-        )
+        # The partner profile and required documents are persisted by the
+        # signup router in the same transaction. Do not commit here, otherwise
+        # an incomplete document submission would leave an orphan login.
+        await db.flush()
         return partner_user
     
     @staticmethod
@@ -260,7 +261,7 @@ class AuthService:
         if not user:
             return None
 
-        if not user.is_active:
+        if not user.is_active or user.deleted_at is not None:
             return None
 
         if not verify_password(data.password, user.password_hash):
@@ -274,6 +275,26 @@ class AuthService:
             UserRoleEnum.CUSTOMER,
         }:
             return None
+
+        # A partner account is created in a pending state. It must not reach
+        # MFA or receive a session until the platform team has reviewed the
+        # registration and required documents.
+        if (
+            user.role not in {UserRoleEnum.CUSTOMER, UserRoleEnum.SUPER_ADMIN}
+            and user.tenant_id
+        ):
+            profile = await db.scalar(
+                select(PartnerProfile).where(
+                    PartnerProfile.tenant_id == user.tenant_id
+                )
+            )
+            if profile is None or profile.approval_status != "approved":
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Acesso aguardando aprovação da equipe de gestão e validação dos documentos."
+                    ),
+                )
 
         methods = []
 
@@ -310,7 +331,7 @@ class AuthService:
         if not user:
             return None
 
-        if not user.is_active:
+        if not user.is_active or user.deleted_at is not None:
             return None
 
         access_token = create_access_token({

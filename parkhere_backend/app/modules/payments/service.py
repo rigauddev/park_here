@@ -412,19 +412,27 @@ async def apply_cash_fee_ledger(db, transaction):
             raise HTTPException(status_code=422, detail="Cash received must cover the total")
         amount = Decimal(str(transaction.platform_fee_amount)).quantize(Decimal("0.01"))
         if amount > 0:
-            db.add(
-                PartnerFeeDebt(
-                    tenant_id=transaction.tenant_id,
-                    reservation_id=transaction.reservation_id,
-                    source_payment_id=transaction.id,
-                    amount=amount,
-                    remaining_amount=amount,
-                    description=(
-                        f"Taxa referente a reserva {transaction.reservation_id}, "
-                        "recebido em dinheiro"
-                    ),
+            # A cashier can retry after a timeout. Keep confirmation and its
+            # fee debit idempotent for the same transaction.
+            existing = await db.scalar(
+                select(PartnerFeeDebt).where(
+                    PartnerFeeDebt.source_payment_id == transaction.id
                 )
             )
+            if existing is None:
+                db.add(
+                    PartnerFeeDebt(
+                        tenant_id=transaction.tenant_id,
+                        reservation_id=transaction.reservation_id,
+                        source_payment_id=transaction.id,
+                        amount=amount,
+                        remaining_amount=amount,
+                        description=(
+                            f"Taxa referente a reserva {transaction.reservation_id}, "
+                            "recebido em dinheiro"
+                        ),
+                    )
+                )
         return
     available = max(Decimal(str(transaction.partner_amount)), Decimal("0")).quantize(Decimal("0.01"))
     debts = (

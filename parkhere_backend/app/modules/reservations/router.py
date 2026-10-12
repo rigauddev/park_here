@@ -14,6 +14,7 @@ from app.modules.reservations.schemas import (
 )
 from app.modules.reservations.service import ReservationService, _get_reservation_with_parking, to_response
 from app.modules.reservations.models import Reservation
+from app.modules.parkings.models import Parking
 from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
@@ -30,26 +31,40 @@ async def list_my_reservations(
 ):
     """Return the customer's complete history, including expired reservations."""
     result = await db.execute(
-        select(Reservation, User.name)
+        select(Reservation, User.name, Parking.name)
         .outerjoin(User, User.id == Reservation.cancelled_by_user_id)
+        .join(Parking, Parking.id == Reservation.parking_id)
         .where(Reservation.user_id == current_user.id)
         .order_by(Reservation.created_at.desc())
     )
     rows = list(result.all())
     reservations = [row[0] for row in rows]
+    for reservation, _, parking_name in rows:
+        # The mobile client needs the display name without a second request.
+        reservation.parking_name = parking_name
     now = datetime.utcnow()
-    changed = False
+    expired_by_parking: dict[str, int] = {}
     for reservation in reservations:
         if (
             reservation.status == "pre_reserved"
             and reservation.hold_expires_at.replace(tzinfo=None) <= now
         ):
-            reservation.status = "expired"
+            reservation.status = "cancelled"
             reservation.payment_status = "expired"
-            changed = True
-    if changed:
+            reservation.cancelled_at = now
+            reservation.cancellation_reason = "Pré-reserva expirada automaticamente."
+            expired_by_parking[reservation.parking_id] = expired_by_parking.get(reservation.parking_id, 0) + 1
+    if expired_by_parking:
+        parkings = await db.scalars(
+            select(Parking).where(Parking.id.in_(expired_by_parking.keys()))
+        )
+        for parking in parkings.all():
+            parking.available_spots = min(
+                parking.total_spots,
+                parking.available_spots + expired_by_parking.get(parking.id, 0),
+            )
         await db.commit()
-    actor_names = {reservation.id: name for reservation, name in rows}
+    actor_names = {reservation.id: name for reservation, name, _ in rows}
     return [
         to_response(reservation).model_copy(
             update={"cancelled_by_name": actor_names.get(reservation.id)}
@@ -113,6 +128,40 @@ async def upload_reservation_photo(
     target = folder / f'{kind}.{extension}'
     target.write_bytes(payload)
     return {'reservation_id': reservation_id, 'kind': kind, 'retention_days': 7, 'content_type': file.content_type}
+
+
+@router.get("/{reservation_id}/photos")
+async def list_reservation_photos(
+    reservation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List temporary inspection photos; files are retained for seven days."""
+    reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+    allowed = (
+        reservation.user_id == current_user.id
+        if current_user.role.value == 'customer'
+        else current_user.tenant_id == parking.tenant_id
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail='Reservation not allowed')
+    folder = PHOTO_ROOT / reservation_id
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    photos = []
+    if folder.exists():
+        for path in sorted(folder.iterdir()):
+            if not path.is_file():
+                continue
+            if datetime.utcfromtimestamp(path.stat().st_mtime) < cutoff:
+                path.unlink(missing_ok=True)
+                continue
+            photos.append({
+                'kind': path.stem,
+                'filename': path.name,
+                'content_type': f"image/{path.suffix.lstrip('.').lower()}",
+                'retention_days': 7,
+            })
+    return {'reservation_id': reservation_id, 'photos': photos, 'retention_days': 7}
 
 
 @router.post("/{reservation_id}/checkout", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)

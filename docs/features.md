@@ -17,6 +17,9 @@
 - Fazer check-in ao chegar.
 - Fazer checkout e receber valor final.
 - Reportar incidente em uma reserva.
+- Consultar a Central de Ajuda, com busca por perguntas sobre reservas,
+  pagamentos, check-in/checkout e operação; conteúdos disponíveis em português
+  e inglês.
 
 ## Estacionamento
 
@@ -68,6 +71,9 @@ Regras:
 - Servico adicional deve pertencer a um estacionamento.
 - Lava-jato parceiro pode se cadastrar na plataforma, mas a lavagem contratada pelo app deve ser executada no local do estacionamento.
 - Hoteis, restaurantes e turismo entram como divulgacao/ofertas locais, nao bloqueiam vaga.
+- Reserva confirmada e paga exibe a ação de rota até o local. O módulo de hotéis
+  deve reutilizar a mesma ação para reservas de hospedagem, com destino,
+  horário de chegada e confirmação dentro do fluxo de serviços.
 - Servico pode ter preco fixo ou regra propria futura.
 - Servico contratado deve ser registrado na reserva para faturamento e operacao.
 - Taxa da plataforma deve ser calculada por configuracao administrativa, nao hard-coded no app.

@@ -49,6 +49,10 @@ class ParkingManagementService:
             arrival_tolerance_minutes=data.arrival_tolerance_minutes,
             name=data.name,
             address=data.address,
+            street=data.street,
+            number=data.number,
+            neighborhood=data.neighborhood,
+            postal_code=data.postal_code,
             city=data.city,
             lat=data.lat,
             lng=data.lng,
@@ -116,6 +120,10 @@ class ParkingManagementService:
         parking.arrival_tolerance_minutes = data.arrival_tolerance_minutes
         parking.name = data.name
         parking.address = data.address
+        parking.street = data.street
+        parking.number = data.number
+        parking.neighborhood = data.neighborhood
+        parking.postal_code = data.postal_code
         parking.city = data.city
         parking.lat = data.lat
         parking.lng = data.lng
@@ -246,6 +254,7 @@ def _sync_services(
                 parking_id=parking_id,
                 code=service.code,
                 name=service.name,
+                description=service.description,
                 price=service.price,
                 is_active=service.is_active,
             )
@@ -259,6 +268,10 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
         tenant_id=parking.tenant_id,
         name=parking.name,
         address=parking.address,
+        street=parking.street,
+        number=parking.number,
+        neighborhood=parking.neighborhood,
+        postal_code=parking.postal_code,
         city=parking.city,
         lat=parking.lat,
         lng=parking.lng,
@@ -305,6 +318,7 @@ def _to_management_response(parking: Parking) -> ParkingManagementResponse:
                 id=service.id,
                 code=service.code,
                 name=service.name,
+                description=service.description,
                 price=service.price,
                 is_active=service.is_active,
             )

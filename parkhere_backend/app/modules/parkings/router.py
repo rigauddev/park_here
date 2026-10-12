@@ -1,4 +1,6 @@
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 import unicodedata
 from sqlalchemy import select
@@ -129,7 +131,33 @@ def _to_response(parking: Parking) -> ParkingResponse:
         carWashPrice=services.get("car_wash").price if "car_wash" in services else 0,
         tourGuidePrice=services.get("tour_guide").price if "tour_guide" in services else 0,
         transportPrice=services.get("transport").price if "transport" in services else 0,
+        isOpen=_is_open_now(parking),
+        operating_hours=json.loads(parking.operating_hours or '{}'),
     )
+
+
+def _is_open_now(parking: Parking) -> bool:
+    raw = json.loads(parking.operating_hours or '{}')
+    if not raw:
+        return True
+    keys = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
+    # Container clocks are commonly UTC; opening hours are configured in the
+    # parking unit's local Brazil/Bahia time.
+    now = datetime.now(ZoneInfo("America/Bahia"))
+    hours = raw.get(keys[now.weekday()])
+    if not hours or hours.get('closed') is True:
+        return False
+    opening, closing = hours.get('open'), hours.get('close')
+    if not opening or not closing or opening == closing == '00:00':
+        return False
+    try:
+        open_h, open_m = (int(part) for part in opening.split(':', 1))
+        close_h, close_m = (int(part) for part in closing.split(':', 1))
+        current = now.hour * 60 + now.minute
+        start, end = open_h * 60 + open_m, close_h * 60 + close_m
+        return current >= start or current < end if end < start else start <= current < end
+    except (TypeError, ValueError):
+        return True
 
 
 def _normalize_category_pricing(value: dict) -> dict[str, float]:

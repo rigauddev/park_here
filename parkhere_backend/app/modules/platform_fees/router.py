@@ -145,7 +145,22 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
         users = (await db.scalars(select(User).where(User.tenant_id == tenant.id).order_by(User.created_at))).all()
         parkings = (await db.scalars(select(Parking).where(Parking.tenant_id == tenant.id).order_by(Parking.created_at))).all()
         operator_count = sum(1 for user in users if user.role == UserRoleEnum.OPERATOR)
-        calculated_operator_limit = max(1, sum(1 for parking in parkings if parking.is_active)) * 2
+        active_units = [parking for parking in parkings if parking.is_active]
+        service_count_by_parking = {
+            parking.id: int(count or 0)
+            for parking, count in (await db.execute(
+                select(Parking, func.count(ParkingService.id))
+                .outerjoin(
+                    ParkingService,
+                    (ParkingService.parking_id == Parking.id)
+                    & ParkingService.is_active.is_(True),
+                )
+                .where(Parking.tenant_id == tenant.id, Parking.is_active.is_(True))
+                .group_by(Parking.id)
+            )).all()
+        }
+        service_slots = sum(max(1, service_count_by_parking.get(parking.id, 0)) for parking in active_units)
+        calculated_operator_limit = max(1, service_slots) * 2
         allowed_operators = tenant.operator_limit_override if tenant.operator_limit_override is not None else calculated_operator_limit
         extra = await db.scalar(select(func.coalesce(func.sum(OperatorPackageRequest.quantity), 0)).where(OperatorPackageRequest.tenant_id == tenant.id, OperatorPackageRequest.status == 'approved')) or 0
         parking_service_count = await db.scalar(select(func.count(ParkingService.id)).join(Parking, Parking.id == ParkingService.parking_id).where(Parking.tenant_id == tenant.id, ParkingService.is_active.is_(True))) or 0
@@ -333,6 +348,8 @@ def _unit_payload(unit: Parking) -> dict:
 @router.get('/customers')
 async def list_admin_customers(query: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     _ensure_admin(current_user)
+    # Admin keeps visibility of soft-deleted accounts so they can audit or
+    # explicitly reactivate them; partner-facing user lists filter these out.
     statement = select(User).where(User.role == UserRoleEnum.CUSTOMER)
     if query:
         needle = f"%{query.strip()}%"
@@ -351,6 +368,7 @@ async def set_admin_user_status(user_id: str, data: UserActiveRequest, db: Async
         raise HTTPException(status_code=422, detail='Informe o motivo da desativação')
     user.is_active = data.is_active
     user.deactivation_reason = None if data.is_active else data.reason.strip()
+    user.deleted_at = None if data.is_active else datetime.utcnow()
     _audit(db, current_user, 'user.status.updated', 'user', user.id, user.tenant_id,
            {'is_active': user.is_active, 'reason': user.deactivation_reason})
     await db.commit()

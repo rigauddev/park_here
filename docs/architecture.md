@@ -34,6 +34,8 @@ Stack atual:
 - MySQL.
 - JWT/MFA em evolucao.
 
+As regras e transições de reserva estão em [reservation-lifecycle.md](reservation-lifecycle.md). Os IDs de domínio são UUID técnicos; eles não autorizam acesso por si só nem devem ser trocados sem uma migration coordenada de chaves estrangeiras e contratos.
+
 Modulos recomendados para o MVP:
 
 - `parkings`: unidade, endereco, geolocalizacao, capacidade, status.
@@ -122,3 +124,7 @@ Direcao definida:
 - Cliente: `/customers/signup`, carteira, veiculos, documentos do motorista e reservas.
 - Parceiro: `/partners/signup`, perfil do estabelecimento, documentos, vistoria, servicos, taxas e divulgacao.
 - Auth: `/auth/login`, MFA e emissao de tokens.
+
+### Parceiros e unidades
+
+`parkings` permanece como o agregado de unidades de estacionamento, que é o produto principal do MVP. Os demais parceiros (guia, hotel, restaurante, lava-jato e transporte) usam `partner_profiles` e módulos de serviços; não é necessário renomear a tabela agora. A evolução deve criar agregados próprios por categoria e manter a relação com o parceiro, evitando misturar inventário de vagas com serviços de outros segmentos.

@@ -72,7 +72,11 @@ class ReservationResponse(BaseModel):
     walk_in_plate: str | None = None
     walk_in_phone: str | None = None
     id: str
+    created_at: str | None = None
+    created_by_name: str | None = None
+    created_by_phone: str | None = None
     parking_id: str
+    parking_name: str | None = None
     status: str
     checked_in_at: str | None = None
     checked_out_at: str | None = None

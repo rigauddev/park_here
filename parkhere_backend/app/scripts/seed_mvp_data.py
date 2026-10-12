@@ -59,7 +59,6 @@ async def seed():
             await ensure_platform_fees(db)
             await ensure_partner_payment_accounts(db)
             await ensure_customer_seed_assets(db)
-            await ensure_seed_reservations(db)
             print("Seed already applied.")
             print("Seed partner, parking management fields, platform fees and payment account refreshed.")
             return
@@ -526,36 +525,11 @@ async def seed():
                     method_type="credit_card",
                     label="Visa final 4242",
                     last_four="4242",
+                    card_brand="Visa",
+                    cardholder_name="Cliente Teste",
+                    expiration_month=12,
+                    expiration_year=2030,
                     is_active=True,
-                ),
-                WalletPaymentMethod(
-                    user_id=customer.id,
-                    method_type="pix",
-                    label="Pix cliente@parkhere.test",
-                    pix_key="cliente@parkhere.test",
-                    is_active=False,
-                ),
-                Reservation(
-                    parking_id=parkings[0].id,
-                    user_id=customer.id,
-                    vehicle_id=vehicle.id,
-                    route_minutes=15,
-                    hold_expires_at=datetime.utcnow() + timedelta(minutes=15),
-                    estimated_total=40,
-                    spot_type="uncovered",
-                    pricing_plan="daily",
-                    duration_hours=1,
-                    base_amount=40,
-                    services_amount=0,
-                    platform_fee_amount=0,
-                    final_total=40,
-                    selected_services_snapshot="[]",
-                    terms_accepted_at=datetime.utcnow(),
-                    terms_version=TERMS_VERSION,
-                    terms_locale="pt_BR",
-                    accepted_terms_snapshot=json.dumps(
-                        build_terms_snapshot([], "pt_BR"), ensure_ascii=False
-                    ),
                 ),
             ]
         )
@@ -565,6 +539,24 @@ async def seed():
         await ensure_seed_schedule(db, commit=False)
 
         await db.commit()
+
+        # Refresh the same complete non-transactional scenario on a clean DB.
+        await refresh_existing_seed(db)
+        await ensure_system_admin_seed_user(db)
+        await ensure_partner_seed_user(db)
+        await ensure_guide_partner_seed_user(db)
+        await ensure_partner_operator_seed_user(db)
+        await cleanup_example_seed_users(db)
+        await ensure_descriptive_seed_users(db)
+        await ensure_partner_profile(db)
+        await ensure_demo_partner_tenants(db)
+        await ensure_seed_schedule(db)
+        await ensure_platform_fees(db)
+        await ensure_partner_payment_accounts(db)
+        await ensure_customer_seed_assets(db)
+        # Reservas são criadas pelos fluxos manuais de homologação. O seed
+        # prepara apenas contas, unidades, veículos, carteira e escalas, para
+        # não poluir a fila de reservas a cada recriação do ambiente.
 
     print("Seed applied.")
     print("Customer login seed: cliente@parkhere.test / 123456")
@@ -1505,33 +1497,34 @@ async def ensure_customer_seed_assets(db, commit=True):
             WalletPaymentMethod.method_type == "credit_card",
         )
     )
-    if card_result.scalar_one_or_none() is None:
+    existing_card = card_result.scalar_one_or_none()
+    if existing_card is None:
         db.add(
             WalletPaymentMethod(
                 user_id=customer.id,
                 method_type="credit_card",
                 label="Visa final 4242",
                 last_four="4242",
+                card_brand="Visa",
+                cardholder_name="Cliente Teste",
+                expiration_month=12,
+                expiration_year=2030,
                 is_active=True,
             )
         )
+    else:
+        existing_card.card_brand = existing_card.card_brand or "Visa"
+        existing_card.cardholder_name = existing_card.cardholder_name or "Cliente Teste"
+        existing_card.expiration_month = existing_card.expiration_month or 12
+        existing_card.expiration_year = existing_card.expiration_year or 2030
 
-    pix_result = await db.execute(
-        select(WalletPaymentMethod).where(
+    # Customer Pix keys are not payout accounts; Pix is generated at checkout.
+    await db.execute(
+        delete(WalletPaymentMethod).where(
             WalletPaymentMethod.user_id == customer.id,
             WalletPaymentMethod.method_type == "pix",
         )
     )
-    if pix_result.scalar_one_or_none() is None:
-        db.add(
-            WalletPaymentMethod(
-                user_id=customer.id,
-                method_type="pix",
-                label="Pix cliente@parkhere.test",
-                pix_key="cliente@parkhere.test",
-                is_active=False,
-            )
-        )
 
     if commit:
         await db.commit()
@@ -1643,6 +1636,25 @@ async def ensure_seed_reservations(db, commit=True):
             "route_minutes": 1,
             "is_manual_arrival": True,
         },
+        {
+            "marker": "seed_expired_pre_reservation",
+            "status": "cancelled",
+            "payment_status": "expired",
+            "pricing_plan": "daily",
+            "duration_hours": 24,
+            "base_amount": 40,
+            "services_amount": 0,
+            "platform_fee_amount": 4,
+            "final_total": 44,
+            "checked_in_at": None,
+            "checked_out_at": None,
+            "services": "[]",
+            "spot_code": None,
+            "spot_type": "uncovered",
+            "route_minutes": 10,
+            "is_manual_arrival": False,
+            "expired_fixture": True,
+        },
     ]
 
     for scenario in scenarios:
@@ -1663,8 +1675,10 @@ async def ensure_seed_reservations(db, commit=True):
             db.add(reservation)
 
         reservation.route_minutes = scenario["route_minutes"]
-        reservation.arrival_estimate_at = datetime.utcnow() + timedelta(
-            minutes=scenario["route_minutes"]
+        reservation.arrival_estimate_at = (
+            datetime.utcnow() - timedelta(minutes=10)
+            if scenario.get("expired_fixture")
+            else datetime.utcnow() + timedelta(minutes=scenario["route_minutes"])
         )
         reservation.hold_expires_at = reservation.arrival_estimate_at
         reservation.estimated_total = scenario["final_total"]
@@ -1693,9 +1707,13 @@ async def ensure_seed_reservations(db, commit=True):
         reservation.payment_status = scenario["payment_status"]
         reservation.checked_in_at = scenario["checked_in_at"]
         reservation.checked_out_at = scenario["checked_out_at"]
-        reservation.cancelled_at = None
+        reservation.cancelled_at = datetime.utcnow() - timedelta(hours=1) if scenario.get("expired_fixture") else None
         reservation.cancelled_by_user_id = None
-        reservation.cancellation_reason = None
+        reservation.cancellation_reason = (
+            "Pré-reserva expirada automaticamente."
+            if scenario.get("expired_fixture")
+            else None
+        )
         reservation.cancellation_fee_amount = 0
         reservation.cancellation_credit_amount = 0
         reservation.checkout_grace_minutes = 15

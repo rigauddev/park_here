@@ -2,22 +2,43 @@
 
 Este arquivo registra os payloads que o app Flutter espera do backend. Sempre que endpoint, schema ou campo mudar, atualizar aqui junto com o codigo.
 
+## Dashboard agregado do parceiro
+
+`GET /partners/dashboard` exige um usuário parceiro autenticado e retorna os
+dados agregados da empresa, separados por matriz e filiais. Filtros opcionais:
+`start=YYYY-MM-DD`, `end=YYYY-MM-DD`, `parking_id` e `service_type` (`parking`,
+`guide`, `hotel` ou `all`). O período padrão são os últimos 30 dias.
+
+O retorno contém `summary` (reservas, faturamento pago, ticket médio, unidades e
+operadores), `units` (cada unidade com tipo `matriz`/`filial`, vagas e receita),
+`service_breakdown`, `modality_breakdown`, `monthly`, `customer_cities`,
+`additional_services` (serviços extras cadastrados dentro das unidades, com
+descrição, reservas e receita) e `staffing` (operadores, turnos e turnos sem
+responsável). A API considera
+faturamento somente de reservas com `payment_status=paid` e mantém a separação
+por `tenant_id` no servidor. A unidade ativa mais antiga é tratada como matriz
+até existir uma hierarquia explícita de unidades.
+
 ## Cadastro e validação de parceiro
 
 `POST /partners/signup` recebe `service_type` (`parking`, `car_wash`, `hotel`,
 `restaurant`, `tour_guide`, `tourism_company`, `transport` ou `other`),
-`company_name`, `document_type` (`cpf` ou `cnpj`), `document_number`, `responsible_name`, `email` e
-`password`. Também aceita `phone`, `has_insurance`, `insurance_provider`,
-`instagram`, `website` e `social_links`. O cadastro começa com
-`approval_status=waiting_documents` e o tipo escolhido define o painel de
-serviços do parceiro.
+`company_name`, `document_type` (`cpf` ou `cnpj`), `document_number`,
+`responsible_name`, `email` e `password`. Também aceita `phone`,
+`has_insurance`, `insurance_provider`, `website` e `documents`. Cada item de
+`documents` contém `document_type`, `file_name` e `content_base64`. Para CNPJ
+são exigidos alvará e RG ou CNH; para CPF é exigido RG ou CNH; seguro informado
+exige o documento da apólice. O cadastro fica pendente de análise e não libera
+login até a aprovação da equipe administrativa.
 
 Durante os testes, `POST /auth/email/request-code` gera um token e o código
 fixo `000000` é aceito por `POST /auth/email/verify-code`. Esse valor deve ser
 substituído por código aleatório enviado por e-mail antes da produção.
 
-`POST /partners/me/documents?document_type=alvara|rg|cnh` recebe multipart com
-o campo `file`. Para CNPJ, o tipo aceito é `alvara`; para CPF, `rg` ou `cnh`.
+`POST /partners/me/documents?document_type=alvara|rg|cnh|insurance_policy` recebe
+multipart com o campo `file` para complementação após o cadastro. Para CNPJ,
+alvará e RG/CNH são aceitos; para CPF, RG/CNH; seguro usa
+`insurance_policy`.
 Os arquivos ficam no volume local do backend e o cadastro passa para
 `documents_submitted`.
 
@@ -43,12 +64,25 @@ pagamento.
 
 ### Carteira no MVP
 
-Os cartões cadastrados pelo cliente e a chave Pix de repasse do parceiro são
-persistidos atualmente no dispositivo Flutter em `SharedPreferences`, no campo
-`account_wallet_methods`. Eles são recuperados ao abrir a carteira e removidos
-no logout. Nenhum número completo de cartão é enviado para a API neste MVP;
-antes da produção, a carteira deve ser migrada para tokenização do provedor de
-pagamentos e armazenamento seguro no backend.
+`GET /customer-assets/payment-methods` lista cartões mascarados do cliente
+autenticado. `POST /customer-assets/payment-methods` recebe somente
+`method_type` (`credit_card` ou `debit_card`), `brand`, `cardholder_name`,
+`last_four`, `expiration_month`, `expiration_year` e `is_default`. Número
+completo, CVV e campos extras são rejeitados. A rota só aceita papel `customer`.
+`POST /customer-assets/payment-methods/{id}/default` escolhe o cartão padrão e
+`DELETE /customer-assets/payment-methods/{id}` remove um cartão pertencente ao
+cliente autenticado. A migration `fm1b2c3d4e5f` acrescenta metadados de exibição
+à tabela `wallet_payment_methods`.
+
+Os metadados mascarados ficam no banco por conta e sincronizam entre dispositivos.
+Esse registro ainda não é um cartão utilizável para cobrança: pagamentos reais
+exigem tokenização e armazenamento do token/referência pelo provedor. Não
+armazenar PAN completo ou CVV no app ou backend. Chaves Pix de recebimento são
+exclusivas da conta de repasse do parceiro; clientes pagam por Pix gerado no
+checkout. Cartões adicionados antes deste endpoint existiam apenas no cache do
+aparelho e precisam ser cadastrados novamente uma vez; o cache antigo não é
+associado automaticamente à conta para evitar migrar metadados entre usuários
+que compartilham um dispositivo.
 
 O administrador do sistema gerencia essas regras com `GET /admin/platform-fees`
 e `PUT /admin/platform-fees/{service_type}`. Esses endpoints exigem o papel
@@ -132,8 +166,10 @@ Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
   `billing_period` (`monthly`, `annual`, `one_time`) e `payment_method`
   (`pix`, `credit_card`, `debit_card`). A solicitação registra o preço
   configurado para a modalidade e começa em `pending_payment`.
-- `POST /partners/feature-requests/{request_id}/receipt` recebe um arquivo PDF,
-  JPG ou PNG de até 30 MB, altera o status para `pending_review` e guarda o
+- `POST /partners/feature-requests/{request_id}/pay` registra o pagamento
+  simulado e muda o pedido para `payment_received`.
+- `POST /partners/feature-requests/{request_id}/receipt` só aceita pedidos em
+  `payment_received`, recebe um arquivo PDF, JPG ou PNG de até 30 MB, altera o status para `pending_review` e guarda o
   arquivo no storage local do backend. `GET /partners/feature-requests` retorna
   as solicitações e seus estados. O meio de pagamento é uma declaração para
   conciliação manual; criação de cobrança e confirmação automática do Mercado
@@ -255,6 +291,11 @@ Observacoes:
 
 `PUT /partners/parking-management/{parking_id}`
 
+O endereço de uma unidade é persistido de forma estruturada nos campos
+`street`, `number`, `neighborhood`, `city` e `postal_code`. `address` continua
+no contrato como representação legada/formatada para compatibilidade com
+clientes antigos; novos clientes devem enviar os campos separados.
+
 O request e a resposta de unidade incluem `work_regime`: `commercial`,
 `three_shifts`, `24h_on_3off` ou `administrative_8h`. Esse campo descreve a
 jornada usada pelo gerador e é separado de `has_24h_gate`, que só informa se a
@@ -273,6 +314,11 @@ tenha outro turno sobreposto em qualquer unidade (resposta `409`). Datas sem fus
 representam o horário local de Brasília; datas com fuso são convertidas para esse
 fuso antes de persistir.
 
+O limite básico de operadores é calculado por serviço operacional ativo: cada
+unidade sem serviço cadastrado garante duas vagas; cada serviço ativo da unidade
+garante mais duas vagas. Pacotes aprovados pelo administrador são somados ao
+limite e não substituem essa capacidade básica.
+
 O mapa operacional (`GET /partners/parking-map`) devolve `category_pricing` e
 as tarifas de cada categoria (`uncovered_pricing`, `covered_pricing`). Ao criar
 uma reserva operacional, o app apenas envia `spot_type` e `pricing_plan`; o
@@ -283,6 +329,10 @@ Request:
 ```json
 {
   "name": "Estacionamento Central ParkHere",
+  "street": "Rua Conselheiro Ferraz",
+  "number": "120",
+  "neighborhood": "Centro",
+  "postal_code": "45400-000",
   "address": "Rua Conselheiro Ferraz, Centro, Valenca - BA",
   "city": "Valenca",
   "lat": -13.3703,
@@ -443,6 +493,8 @@ Response:
   "walk_in_plate": null,
   "walk_in_phone": null,
   "status": "pre_reserved",
+  "created_by_name": null,
+  "created_by_phone": null,
   "payment_status": "pending",
   "spot_code": "V003",
   "route_minutes": 14,
@@ -471,6 +523,9 @@ Regras:
 - O backend persiste timestamp UTC, versão, idioma e snapshot do texto de intermediação, estacionamento e cada serviço selecionado; a resposta inclui `accepted_terms` para auditoria e consulta posterior.
 - A versão atual é `reservation-terms-2026-09-v1`. Atualizar versão quando o texto mudar materialmente e atualizar o cliente antes de exigir a nova versão.
 - Cliente deve informar `vehicle_id`; parceiro/operador deve informar `walk_in_plate` e `walk_in_phone`.
+- Reservas criadas por operador/gestor deixam `user_id` nulo e retornam no
+  endpoint operacional `created_by_name`, `created_by_phone` e `customer_phone`;
+  o cliente pode ser associado posteriormente por telefone e placa.
 - Para reserva criada por operador/parceiro, `arrival_now=true` grava o horario atual no servidor; se for agendada, `arrival_estimate_at` deve vir com timezone ou sera tratado como horario local de `America/Bahia`.
 - Expiracao da pre-reserva usa `arrival_estimate_at + arrival_tolerance_minutes`.
 - Ao nao informar `spot_code`, o backend escolhe uma vaga livre compativel com `spot_type`.
@@ -565,7 +620,21 @@ Response: `ReservationResponse` com:
 
 Cliente só pode cancelar diretamente a própria pré-reserva não paga (`status=pre_reserved` e `payment_status != paid`). Pagamento confirmado ou reserva confirmada retorna `409` e precisa de solicitação de reembolso; o endpoint atual não solicita nem executa estorno. `cancelled_by_user_id` e `cancelled_by_name` registram quem tomou a ação.
 
+O cliente também precisa cancelar antes de `hold_expires_at`; vencida, a pré-reserva já é encerrada pela API. O app oculta o botão depois do prazo e sempre depende da revalidação do endpoint. Consulte [Ciclo de vida da reserva](reservation-lifecycle.md) para a matriz de estados e permissões.
+
+`PATCH /admin/platform-fees/users/{user_id}/status` desativa ou reativa usuários de cliente e parceiro. Desativar exige motivo, define `is_active=false` e `deleted_at`; reativar limpa a data lógica. Autenticação e listagens operacionais omitem usuários com `deleted_at` preenchido. O painel administrativo mantém o registro visível para auditoria e eventual reativação; suas relações continuam no banco para preservar histórico.
+
+O cliente também precisa cancelar antes de `hold_expires_at`; vencida, a pré-reserva já é encerrada pela API. O app oculta o botão depois do prazo e sempre depende da revalidação do endpoint. Consulte [Ciclo de vida da reserva](reservation-lifecycle.md) para a matriz de estados e permissões.
+
 ## Pagamento De Reserva E Excedente
+
+### Compra de funcionalidade
+
+`POST /partners/feature-requests/{request_id}/pay` registra o pagamento
+simulado escolhido (Pix, crédito ou débito) e muda o pedido para
+`payment_received`. Somente depois disso o botão de comprovante é liberado;
+o upload muda o pedido para `pending_review`. Em produção este passo será
+substituído pelo retorno/webhook do Mercado Pago.
 
 `POST /payments/reservations/{reservation_id}/intent`
 
@@ -723,18 +792,26 @@ mensal. A migration `f1a2b3c4d5e6` cria o armazenamento desses preços.
 
 `GET /reservations` retorna o histórico do cliente autenticado, incluindo
 pré-reservas expiradas, canceladas, confirmadas, em check-in e concluídas.
-Pré-reservas vencidas são marcadas como `expired` durante a consulta.
+Quando uma pré-reserva vence, seu `status` operacional passa para `cancelled`,
+`payment_status` fica `expired`, `cancelled_at` e a razão automática são
+registrados, e a vaga volta à disponibilidade. O app usa `payment_status` para
+apresentá-la como **Expirada**, separando-a visualmente de um cancelamento pelo
+usuário.
 O retorno inclui `cancelled_by_user_id` e `cancelled_by_name`. O código exibido `PH-XXXXXXXX` é derivado do UUID e não substitui o identificador técnico. `GET /parkings` devolve `category_pricing` para que a escolha da categoria atualize os preços por hora, diária e mensal.
 
-## Carteira e fotos de inspeção — 07/09/2026
+## Carteira e fotos de inspeção — 14/09/2026
 
 Clientes cadastram somente cartões na carteira; pagamentos Pix geram o QR Code
 no Mercado Pago durante a reserva. Usuários parceiros cadastram apenas a chave
 Pix de recebimento na conta de repasse.
-No MVP, a carteira de cliente guarda localmente somente bandeira, nome do titular,
-últimos quatro dígitos e validade em SharedPreferences. Número completo e CVV não
-são armazenados nem enviados à API. A carteira é apenas visual; cartão salvo ainda
-não é tokenização para cobrança real. Isso depende da integração segura com o Mercado Pago.
+Os metadados de exibição dos cartões de clientes ficam no backend e acompanham a
+conta entre dispositivos. `SharedPreferences` é somente cache local. PAN completo
+e CVV não são armazenados nem enviados pela carteira. Cartões adicionados neste
+MVP são perfis mascarados para teste e não autorizam pagamento real; isso depende
+da integração de tokenização do Mercado Pago. Cartão salvo pelo provedor deverá
+ser cobrado por referência/token e solicitar o CVV novamente quando necessário.
+
+O endpoint `GET /reservations/{reservation_id}/photos` lista os metadados das fotos de inspeção disponíveis para o cliente ou equipe autorizada.
 
 O endpoint `POST /reservations/{reservation_id}/photos?kind=...` aceita fotos do
 check-in e checkout. O envio do checkout usa os mesmos tipos (`front`, `rear`,
@@ -786,3 +863,27 @@ limpeza do endpoint.
 - `POST /admin/platform-fees/operator-packages/requests/{id}/approve` ou `/reject`: administrador revisa a solicitação. Solicitações aprovadas ampliam o limite de operadores da empresa.
 
 Operadores só recebem dados dos estacionamentos em que possuem `operator_parking_assignments`; o mapa e as reservas operacionais aplicam esse filtro no backend.
+
+### Horário de funcionamento e acesso à reserva
+
+`GET /parkings` inclui `isOpen` e `operating_hours`. O app usa esses campos para informar quando a unidade está fechada e oferece agendamento para uma data futura. A API continua validando o horário no servidor durante a criação da pré-reserva.
+
+### Reservas: nome da unidade e expiração
+
+`GET /reservations` e `POST /reservations/pre-checkin` retornam `parking_name`
+para que o cliente identifique a unidade sem uma chamada adicional. A listagem
+também executa a expiração dos holds vencidos de forma idempotente: a reserva
+fica `cancelled`, o pagamento `expired` e a vaga é devolvida à capacidade.
+
+## Serviços extras da unidade
+
+`ParkingManagementRequest.services` usa tipos previamente cadastrados (`car_wash`,
+`insurance`, `transport` e `vip_spot`). O campo `name` é derivado pelo sistema;
+o parceiro informa apenas `description` opcional. O valor `price` é enviado como
+zero: o serviço extra não é cobrado individualmente do cliente. A taxa pela
+ativação/uso de serviços adicionais é configurada pela gestão do app e aplicada
+pela funcionalidade de serviços extras.
+
+O retorno do dashboard inclui `additional_services`, separado de
+`service_breakdown`: cada item contém `code`, `name`, `description`, quantidade
+de reservas e receita associada.
