@@ -71,6 +71,19 @@ bash scripts/run_android_usb.sh ZF524HQSZV
 O script configura `adb reverse` e passa `API_URL=http://127.0.0.1:8000` por
 `--dart-define`. Execute novamente se desconectar o cabo.
 
+## iPhone fisico na rede local
+
+No iPhone, mantenha o aparelho desbloqueado e na mesma rede Wi-Fi do Mac. Com a
+API local na porta 8000, execute:
+
+```bash
+bash scripts/run_ios_lan.sh 00008120-001874E11AC0201E
+```
+
+O script verifica a API pelo IP local do Mac e injeta esse endereço por
+`--dart-define`. Se houver mais de uma interface de rede, informe o IP
+explicitamente com `API_HOST_IP=192.168.1.7`.
+
 ## Fluxo completo cliente, guia e estacionamento
 
 1. Entre como cliente e faça login; confira que os estacionamentos próximos à
