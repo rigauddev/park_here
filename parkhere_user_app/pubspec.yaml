@@ -76,6 +76,9 @@ flutter:
   uses-material-design: true
 
   assets:
+    # Development API endpoint for physical devices. Production builds should
+    # provide API_URL through --dart-define instead of bundling a local .env.
+    - .env
     - assets/branding/logo_rigaud_tech.png
     - assets/branding/logo_rigaud_tech_clean.png
     - assets/branding/logo_park_here_transparent.png
