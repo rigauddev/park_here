@@ -174,62 +174,92 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           if (isPartner) ...[
             const SizedBox(height: 14),
             Card(
-              child: Column(children: [
-                ListTile(
-                  leading: const Icon(Icons.schedule_outlined),
-                  title: const Text('Minha escala'),
-                  subtitle: const Text('Dias e horários do meu turno'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PartnerShiftsPage())),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.directions_car_filled_outlined),
-                  title: const Text('Veículos'),
-                  subtitle: const Text('Cadastrar veículo para reservas operacionais'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VehiclesPage())),
-                ),
-              ]),
-            ),
-          ],
-          const SizedBox(height: 14),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.description_outlined),
-                  title: const Text('Completar cadastro'),
-                  subtitle: const Text('Documentos e informações pessoais'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.push(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.schedule_outlined),
+                    title: const Text('Minha escala'),
+                    subtitle: const Text('Dias e horários do meu turno'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const AccountSetupPage(),
+                        builder: (_) => const PartnerShiftsPage(),
                       ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.phone_android),
-                  title: const Text('Trocar telefone'),
-                  subtitle: const Text('Validação por SMS obrigatória'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _changePhone,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.password),
-                  title: const Text('Alterar senha'),
-                  subtitle: const Text('Use uma senha forte. Ex: Rig@ud2026'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _changePassword,
-                ),
-              ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.directions_car_filled_outlined),
+                    title: const Text('Veículos'),
+                    subtitle: const Text(
+                      'Cadastrar veículo para reservas operacionais',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const VehiclesPage()),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
+          if (isCustomer) ...[
+            const SizedBox(height: 14),
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.description_outlined),
+                    title: const Text('Completar cadastro'),
+                    subtitle: const Text('Documentos e informações pessoais'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AccountSetupPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.phone_android),
+                    title: const Text('Trocar telefone'),
+                    subtitle: const Text('Validação por SMS obrigatória'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _changePhone,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.password),
+                    title: const Text('Alterar senha'),
+                    subtitle: const Text('Use uma senha forte. Ex: Rig@ud2026'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _changePassword,
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (isPartner) ...[
+            const SizedBox(height: 14),
+            Card(
+              child: Column(
+                children: [
+                  const ListTile(
+                    leading: Icon(Icons.verified_user_outlined),
+                    title: Text('Documentos do parceiro'),
+                    subtitle: Text(
+                      'A aprovação da equipe libera o acesso operacional',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Card(
             child: Padding(

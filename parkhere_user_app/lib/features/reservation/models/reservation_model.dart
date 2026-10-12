@@ -238,10 +238,10 @@ class ReservationModel {
     );
     final status = json['status'] == 'completed'
         ? ReservationStatus.finished
-        : json['status'] == 'expired'
-        ? ReservationStatus.expired
         : json['status'] == 'cancelled'
         ? ReservationStatus.cancelled
+        : json['status'] == 'expired' || json['payment_status'] == 'expired'
+        ? ReservationStatus.expired
         : ReservationStatus.open;
     final parking = ParkingModel(
       id: json['parking_id'] as String,

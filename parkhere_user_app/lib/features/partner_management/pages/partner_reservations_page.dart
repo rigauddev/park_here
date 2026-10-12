@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/widgets/api_feedback.dart';
+import '../../../core/i18n/app_localizations.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -134,12 +136,18 @@ class _PartnerReservationCard extends ConsumerWidget {
                   alignment: WrapAlignment.end,
                   children: [
                     Chip(
-                      label: Text(_statusLabel(reservation.status)),
+                      label: Text(
+                        context.strings.reservationStatus(reservation.status),
+                      ),
                       backgroundColor: color.withValues(alpha: 0.1),
                       side: BorderSide.none,
                     ),
                     Chip(
-                      label: Text(_paymentLabel(reservation.paymentStatus)),
+                      label: Text(
+                        context.strings.paymentStatus(
+                          reservation.paymentStatus,
+                        ),
+                      ),
                       backgroundColor: AppTheme.softCyan,
                       side: BorderSide.none,
                     ),
@@ -150,6 +158,10 @@ class _PartnerReservationCard extends ConsumerWidget {
             const SizedBox(height: 12),
             _Line('Estacionamento', reservation.parkingName),
             _Line('Reserva', _displayReservationNumber(reservation.id)),
+            if (reservation.createdByName != null)
+              _Line('Criada por', reservation.createdByName!),
+            if (reservation.customerPhone != null)
+              _Line('Telefone', reservation.customerPhone!),
             _Line('Plano', _planLabel(reservation.pricingPlan)),
             _Line('Tipo de vaga', _spotTypeLabel(reservation.spotType)),
             _Line('Base', 'R\$ ${reservation.baseAmount.toStringAsFixed(2)}'),
@@ -162,6 +174,16 @@ class _PartnerReservationCard extends ConsumerWidget {
               'R\$ ${reservation.platformFeeAmount.toStringAsFixed(2)}',
             ),
             _Line('Total', 'R\$ ${reservation.finalTotal.toStringAsFixed(2)}'),
+            if (reservation.customerPhone != null &&
+                reservation.customerName != 'Cliente nao informado')
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _shareApp(reservation),
+                  icon: const Icon(Icons.share_outlined),
+                  label: const Text('Compartilhar app'),
+                ),
+              ),
             if (reservation.cancelledByName != null)
               _Line('Cancelada por', reservation.cancelledByName!),
             if (reservation.status == 'checked_in' &&
@@ -232,23 +254,14 @@ class _PartnerReservationCard extends ConsumerWidget {
     );
   }
 
-  String _statusLabel(String value) {
-    return switch (value) {
-      'pre_reserved' => 'Pre-reserva',
-      'confirmed' => 'Confirmada',
-      'checked_in' => 'Em permanencia',
-      'completed' => 'Finalizada',
-      _ => value,
-    };
-  }
-
-  String _paymentLabel(String value) {
-    return switch (value) {
-      'pending_checkin' => 'Pagamento no checkout',
-      'payment_pending' => 'Pagamento pendente',
-      'paid' => 'Pago',
-      _ => value,
-    };
+  Future<void> _shareApp(PartnerReservationSummary item) async {
+    final phone = (item.customerPhone ?? '').replaceAll(RegExp(r'\D'), '');
+    if (phone.isEmpty) return;
+    final message = Uri.encodeComponent(
+      'Olá ${item.customerName}, cadastre-se e acompanhe sua reserva, realize o pagamento e agilize seu checkout no app ParkHere: https://parkhere.app/download',
+    );
+    final uri = Uri.parse('https://wa.me/$phone?text=$message');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   String _planLabel(String value) {

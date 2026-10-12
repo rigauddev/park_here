@@ -32,6 +32,7 @@ class _PartnerFeatureAccessPageState
   late int _quantity;
   bool _submitting = false;
   bool _hasPendingRequest = false;
+  bool _paymentCompleted = false;
   String? _requestId;
   String? _message;
   String _billingPeriod = 'monthly';
@@ -68,6 +69,8 @@ class _PartnerFeatureAccessPageState
         setState(() {
           _requestId = request?['id'] as String?;
           _hasPendingRequest = request?['status'] == 'pending_review';
+          _paymentCompleted = request?['status'] == 'payment_received' ||
+              request?['status'] == 'pending_review';
           if (request != null) {
             _billingPeriod =
                 request['billing_period'] as String? ?? _billingPeriod;
@@ -209,7 +212,7 @@ class _PartnerFeatureAccessPageState
                       ),
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
-                        onPressed: _submitting ? null : _chooseReceipt,
+                        onPressed: _submitting || !_paymentCompleted ? null : _chooseReceipt,
                         icon: const Icon(Icons.attach_file),
                         label: Text(
                           _receipt?.name ??
@@ -252,11 +255,21 @@ class _PartnerFeatureAccessPageState
                 Text(_message!, textAlign: TextAlign.center),
               ],
               const SizedBox(height: 16),
+              if (!_paymentCompleted && !_hasPendingRequest)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: FilledButton.icon(
+                    onPressed: _submitting ? null : _pay,
+                    icon: const Icon(Icons.lock_open),
+                    label: Text(en ? 'Pay and continue' : 'Pagar e continuar'),
+                  ),
+                ),
               FilledButton.icon(
                 onPressed:
                     _submitting ||
                         _hasPendingRequest ||
                         _receipt == null ||
+                        !_paymentCompleted ||
                         (_requestId == null &&
                             (!paid ||
                                 price <= 0 ||
@@ -305,9 +318,9 @@ class _PartnerFeatureAccessPageState
                 ),
               const SizedBox(height: 10),
               Text(
-                en
-                    ? 'Attach proof of payment. ParkHere management reviews it and activates the feature after confirmation; card/Pix processing is not connected yet.'
-                    : 'Anexe o comprovante. A gestão ParkHere confere o pagamento e libera a funcionalidade após a confirmação; o processamento de cartão/Pix ainda será integrado.',
+                  en
+                    ? (_paymentCompleted ? 'Payment registered. Attach the proof so ParkHere management can review and activate the feature.' : 'Complete payment before attaching proof.')
+                    : (_paymentCompleted ? 'Pagamento registrado. Anexe o comprovante para a gestão ParkHere analisar e liberar a funcionalidade.' : 'Conclua o pagamento antes de anexar o comprovante.'),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -370,6 +383,31 @@ class _PartnerFeatureAccessPageState
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<void> _pay() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    setState(() { _submitting = true; _message = null; });
+    try {
+      var requestId = _requestId;
+      if (requestId == null) {
+        final response = await _api.postAuthorized('/partners/feature-requests', {
+          'feature_key': widget.featureKey,
+          'quantity': _quantity,
+          'billing_period': _billingPeriod,
+          'payment_method': _paymentMethod,
+        }, token);
+        requestId = response['id'] as String;
+        if (mounted) setState(() => _requestId = requestId);
+      }
+      await _api.postAuthorized('/partners/feature-requests/$requestId/pay', {}, token);
+      if (mounted) {
+        setState(() { _paymentCompleted = true; _message = context.strings.isEnglish ? 'Payment registered. Attach your proof.' : 'Pagamento registrado. Anexe o comprovante.'; });
+      }
+    } catch (error) {
+      if (mounted) await ApiFeedback.show(context, '$error');
+    } finally { if (mounted) setState(() => _submitting = false); }
   }
 
   Future<void> _chooseReceipt() async {

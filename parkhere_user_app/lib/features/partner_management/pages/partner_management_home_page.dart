@@ -148,13 +148,6 @@ class _PartnerManagementBody extends StatelessWidget {
             featureKey: 'cash_management_basic',
           ),
           _ManagementAction(
-            icon: Icons.design_services_outlined,
-            title: 'Servicos cadastrados',
-            description: 'Lava jato, seguro, transporte e servicos extras.',
-            onTap: () => _open(context, const ParkingManagementPage()),
-            featureKey: 'services_management',
-          ),
-          _ManagementAction(
             icon: Icons.account_balance_wallet_outlined,
             title: 'Conta de repasse',
             description: _paymentDescription(partner),
@@ -163,7 +156,8 @@ class _PartnerManagementBody extends StatelessWidget {
           _ManagementAction(
             icon: Icons.group_outlined,
             title: 'Usuarios',
-            description: 'Crie ate 2 operadores no plano atual.',
+            description:
+                'Use ${partner.operatorCount} de ${partner.operatorLimit} operadores permitidos pelos serviços ativos.',
             onTap: () => _open(context, const PartnerUsersPage()),
             featureKey: 'team_management',
           ),

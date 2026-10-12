@@ -1,1 +1,1 @@
-enum PlanType { hourly, daily, monthly }
+enum PlanType { hourly, daily, weekly, monthly }

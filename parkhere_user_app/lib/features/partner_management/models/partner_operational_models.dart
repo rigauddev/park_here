@@ -267,6 +267,9 @@ class PartnerReservationSummary {
   final int checkoutExcessMinutes;
   final double checkoutExcessAmount;
   final String? cancelledByName;
+  final String? customerPhone;
+  final String? createdByName;
+  final String? createdByPhone;
 
   const PartnerReservationSummary({
     required this.id,
@@ -288,6 +291,9 @@ class PartnerReservationSummary {
     this.checkoutExcessMinutes = 0,
     this.checkoutExcessAmount = 0,
     this.cancelledByName,
+    this.customerPhone,
+    this.createdByName,
+    this.createdByPhone,
   });
 
   factory PartnerReservationSummary.fromJson(Map<String, dynamic> json) {
@@ -316,6 +322,9 @@ class PartnerReservationSummary {
       checkoutExcessAmount:
           (json['checkout_excess_amount'] as num?)?.toDouble() ?? 0,
       cancelledByName: json['cancelled_by_name'] as String?,
+      customerPhone: json['customer_phone'] as String?,
+      createdByName: json['created_by_name'] as String?,
+      createdByPhone: json['created_by_phone'] as String?,
     );
   }
 }

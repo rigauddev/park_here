@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../checkin_checkout/pages/checkout_page.dart';
+import '../../checkin_checkout/pages/route_preview_page.dart';
 import '../../payments/pages/payment_page.dart';
 import '../models/reservation_enum.dart';
 import '../models/reservation_model.dart';
@@ -127,6 +128,23 @@ class _ReservationDetailsPageState
                     child: const Text('Pagar'),
                   ),
                 ),
+              ),
+            ),
+          if (reservation.status == ReservationStatus.open &&
+              reservation.paymentStatus == 'paid')
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: FilledButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RoutePreviewPage(
+                      preCheckin: reservation.preCheckin,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.route_outlined),
+                label: const Text('Rota até o estacionamento'),
               ),
             ),
           const SizedBox(height: 14),

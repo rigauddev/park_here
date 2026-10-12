@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
+import '../../payments/pages/payment_page.dart';
+import '../../parking_search/models/payment_plan_enum.dart';
 
 class RoutePreviewPage extends StatefulWidget {
   final PreCheckinModel preCheckin;
   final Future<void> Function()? onRouteSelected;
+  final Future<String?> Function(DateTime arrival)? onGuaranteeReservation;
 
   const RoutePreviewPage({
     super.key,
     required this.preCheckin,
     this.onRouteSelected,
+    this.onGuaranteeReservation,
   });
 
   @override
@@ -53,6 +57,18 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
             ),
 
             const Spacer(),
+            if (widget.preCheckin.plan != PlanType.hourly)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _loading || widget.onGuaranteeReservation == null
+                      ? null
+                      : _guaranteeReservation,
+                  icon: const Icon(Icons.lock_clock_outlined),
+                  label: const Text('Garantir reserva (confirmar reserva)'),
+                ),
+              ),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -65,6 +81,66 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _guaranteeReservation() async {
+    final arrival = await _pickArrival();
+    if (arrival == null || !mounted) return;
+    setState(() => _loading = true);
+    try {
+      final accepted = await _requestTermsAcceptance();
+      if (!accepted) return;
+      final reservationId = await widget.onGuaranteeReservation!(arrival);
+      if (!mounted || reservationId == null) return;
+      final paid = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaymentPage(
+            amount: widget.preCheckin.total,
+            reservationId: reservationId,
+            payNow: true,
+            onPaymentSuccess: () async {},
+          ),
+        ),
+      );
+      if (paid == true && mounted) Navigator.pop(context, true);
+    } catch (error) {
+      _showError('Não foi possível garantir a reserva: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<DateTime?> _pickArrival() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 365)),
+      initialDate: now,
+      helpText: 'Informe a data de chegada',
+    );
+    if (date == null || !mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
+      helpText: 'Informe o horário de chegada',
+    );
+    if (time == null) return null;
+    final arrival = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (!arrival.isAfter(now)) {
+      _showError(
+        'Informe um horário de chegada futuro e dentro do funcionamento.',
+      );
+      return null;
+    }
+    return arrival;
   }
 
   Future<void> _selectRoute(String appName) async {

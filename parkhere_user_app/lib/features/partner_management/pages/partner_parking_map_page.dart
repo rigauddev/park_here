@@ -10,11 +10,13 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/widgets/api_feedback.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
+import '../../reservation/pages/incident_dailog_page.dart';
 
 Future<void> _showCenteredError(BuildContext context, String message) {
   return showDialog<void>(
@@ -243,8 +245,9 @@ class _ParkingLayoutPanel extends ConsumerWidget {
             _MoneySummaryCard(
               icon: Icons.schedule,
               label: 'Pre-reservas',
-              value: layout.preReservedAmount,
+              value: 0,
               count: layout.preReservedSpots,
+              showValue: false,
               color: Colors.orange,
               tooltip:
                   'Soma das pre-reservas aguardando confirmacao ou chegada.',
@@ -686,6 +689,11 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
               const Icon(Icons.local_parking, color: AppTheme.secondary),
               const SizedBox(width: 10),
               Expanded(child: Text('Vaga ${slot.code}')),
+              IconButton(
+                tooltip: 'Fechar',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
             ],
           ),
           content: ConstrainedBox(
@@ -700,11 +708,15 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
                     runSpacing: 8,
                     children: [
                       _StatusChip(
-                        label: reservation.status,
+                        label: context.strings.reservationStatus(
+                          reservation.status,
+                        ),
                         color: AppTheme.primary,
                       ),
                       _StatusChip(
-                        label: reservation.paymentStatus,
+                        label: context.strings.paymentStatus(
+                          reservation.paymentStatus,
+                        ),
                         color: Colors.orange,
                       ),
                     ],
@@ -786,94 +798,130 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
             ),
           ),
           actions: [
-            TextButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.close),
-              label: const Text('Fechar'),
-            ),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-              onPressed: canCancel
-                  ? () {
-                      Navigator.pop(context);
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => _CancelReservationDialog(
-                          reservationId: reservation.id,
-                          checkedIn: reservation.status == 'checked_in',
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
+            SizedBox(
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                    onPressed: canCancel
+                        ? () {
+                            Navigator.pop(context);
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => _CancelReservationDialog(
+                                reservationId: reservation.id,
+                                checkedIn: reservation.status == 'checked_in',
+                                onCompleted: () {
+                                  ref.invalidate(partnerParkingMapProvider);
+                                  ref.invalidate(partnerReservationsProvider);
+                                },
+                              ),
+                            );
+                          }
+                        : null,
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text('Cancelar'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        reservation.paymentStatus == 'paid' && !hasUnpaidExcess
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => _CashierPaymentDialog(
+                                reservationId: reservation.id,
+                                amount: paymentAmount,
+                                purpose: paymentPurpose,
+                                onCompleted: () {
+                                  ref.invalidate(partnerParkingMapProvider);
+                                  ref.invalidate(partnerReservationsProvider);
+                                },
+                              ),
+                            );
                           },
-                        ),
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.cancel_outlined),
-              label: const Text('Cancelar'),
-            ),
-            OutlinedButton.icon(
-              onPressed: reservation.paymentStatus == 'paid' && !hasUnpaidExcess
-                  ? null
-                  : () {
-                      Navigator.pop(context);
-                      showDialog<void>(
+                    icon: const Icon(Icons.receipt_long_outlined),
+                    label: Text(
+                      hasUnpaidExcess && reservation.paymentStatus == 'paid'
+                          ? 'Pagar excedente'
+                          : 'Pagamento',
+                    ),
+                  ),
+                  if (reservation.status != 'checked_in')
+                    FilledButton.icon(
+                      onPressed: canCheckin
+                          ? () {
+                              Navigator.pop(context);
+                              showDialog<void>(
+                                context: context,
+                                builder: (_) => _CheckinPhotosDialog(
+                                  reservationId: reservation.id,
+                                  onCompleted: () {
+                                    ref.invalidate(partnerParkingMapProvider);
+                                    ref.invalidate(partnerReservationsProvider);
+                                  },
+                                ),
+                              );
+                            }
+                          : null,
+                      icon: const Icon(Icons.login),
+                      label: const Text('Check-in'),
+                    ),
+                  if (reservation.status == 'checked_in')
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => _InspectionPhotosDialog(
+                            reservationId: reservation.id,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Ver check-in'),
+                    ),
+                  if (canCheckout)
+                    TextButton.icon(
+                      onPressed: () => showDialog<void>(
                         context: context,
-                        builder: (_) => _CashierPaymentDialog(
-                          reservationId: reservation.id,
-                          amount: paymentAmount,
-                          purpose: paymentPurpose,
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
-                          },
-                        ),
-                      );
-                    },
-              icon: const Icon(Icons.receipt_long_outlined),
-              label: Text(
-                hasUnpaidExcess && reservation.paymentStatus == 'paid'
-                    ? 'Pagar excedente'
-                    : 'Pagamento',
+                        builder: (_) => const IncidentDialog(),
+                      ),
+                      icon: const Icon(
+                        Icons.report_problem_outlined,
+                        color: Colors.red,
+                      ),
+                      label: const Text(
+                        'Informar ocorrência',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  FilledButton.icon(
+                    onPressed: canCheckout
+                        ? () {
+                            Navigator.pop(context);
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => _CheckoutPhotosDialog(
+                                reservationId: reservation.id,
+                                onCompleted: () {
+                                  ref.invalidate(partnerParkingMapProvider);
+                                  ref.invalidate(partnerReservationsProvider);
+                                },
+                              ),
+                            );
+                          }
+                        : null,
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Checkout'),
+                  ),
+                ],
               ),
-            ),
-            FilledButton.icon(
-              onPressed: canCheckin
-                  ? () {
-                      Navigator.pop(context);
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => _CheckinPhotosDialog(
-                          reservationId: reservation.id,
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
-                          },
-                        ),
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.login),
-              label: const Text('Check-in'),
-            ),
-            FilledButton.icon(
-              onPressed: canCheckout
-                  ? () {
-                      Navigator.pop(context);
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => _CheckoutPhotosDialog(
-                          reservationId: reservation.id,
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
-                          },
-                        ),
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.logout),
-              label: const Text('Checkout'),
             ),
           ],
         );
@@ -1916,6 +1964,71 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
   }
 }
 
+class _InspectionPhotosDialog extends ConsumerWidget {
+  final String reservationId;
+
+  const _InspectionPhotosDialog({required this.reservationId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) {
+      return const AlertDialog(content: Text('Sessão expirada.'));
+    }
+    return AlertDialog(
+      title: const Text('Fotos do check-in'),
+      content: SizedBox(
+        width: 420,
+        child: FutureBuilder<dynamic>(
+          future: ApiService().getAuthorized(
+            '/reservations/$reservationId/photos',
+            token,
+          ),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 80,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return Text(
+                'Não foi possível carregar as fotos: ${snapshot.error}',
+              );
+            }
+            final payload = snapshot.data as Map<String, dynamic>? ?? {};
+            final photos = (payload['photos'] as List<dynamic>? ?? [])
+                .whereType<Map<String, dynamic>>()
+                .toList();
+            if (photos.isEmpty) return const Text('Nenhuma foto disponível.');
+            return ListView.separated(
+              shrinkWrap: true,
+              itemCount: photos.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final photo = photos[index];
+                return ListTile(
+                  leading: const Icon(Icons.photo_outlined),
+                  title: Text('${photo['kind'] ?? ''}'.toUpperCase()),
+                  subtitle: Text(
+                    '${photo['filename'] ?? ''} · retenção de 7 dias',
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fechar'),
+        ),
+      ],
+    );
+  }
+}
+
 class _CheckinPhotosDialog extends ConsumerStatefulWidget {
   final String reservationId;
   final VoidCallback onCompleted;
@@ -2201,6 +2314,7 @@ class _MoneySummaryCard extends StatelessWidget {
   final int? count;
   final Color color;
   final String tooltip;
+  final bool showValue;
 
   const _MoneySummaryCard({
     required this.icon,
@@ -2209,6 +2323,7 @@ class _MoneySummaryCard extends StatelessWidget {
     this.count,
     required this.color,
     required this.tooltip,
+    this.showValue = true,
   });
 
   @override
@@ -2251,16 +2366,17 @@ class _MoneySummaryCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  'R\$ ${value.toStringAsFixed(2)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
+                if (showValue)
+                  Text(
+                    'R\$ ${value.toStringAsFixed(2)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
                   ),
-                ),
                 if (count != null) ...[
                   const SizedBox(height: 2),
                   Text(

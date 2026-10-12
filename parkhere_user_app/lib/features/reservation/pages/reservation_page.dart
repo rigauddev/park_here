@@ -7,11 +7,13 @@ import '../../../core/services/local_storage_service.dart';
 import '../../../core/widgets/api_feedback.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/checkin_page.dart';
+import '../../checkin_checkout/pages/route_preview_page.dart';
 import '../../parking_search/models/parking_model.dart';
 import '../../parking_search/models/parking_pricing.dart';
 import '../../parking_search/models/payment_plan_enum.dart';
 import '../models/reservation_enum.dart';
 import '../models/reservation_model.dart';
+import '../services/reservation_cancellation_rules.dart';
 import '../providers/pre_reservation_provider.dart';
 import '../providers/reservation_provider.dart';
 import 'resevation_details_page.dart';
@@ -487,8 +489,26 @@ class _ReservationCard extends StatelessWidget {
                       icon: const Icon(Icons.login),
                       label: const Text('Check-in'),
                     ),
-                  if (reservation.apiStatus == 'pre_reserved' &&
-                      reservation.paymentStatus != 'paid')
+                  if (reservation.status == ReservationStatus.open &&
+                      reservation.paymentStatus == 'paid')
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RoutePreviewPage(
+                            preCheckin: reservation.preCheckin,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.route_outlined),
+                      label: const Text('Rota'),
+                    ),
+                  if (ReservationCancellationRules.canCustomerCancel(
+                    apiStatus: reservation.apiStatus,
+                    paymentStatus: reservation.paymentStatus,
+                    status: reservation.status,
+                    holdExpiresAt: reservation.validUntil,
+                  ))
                     OutlinedButton.icon(
                       onPressed: onCancel,
                       icon: const Icon(Icons.cancel_outlined),

@@ -38,6 +38,7 @@ class ManagedParkingServiceModel {
   final String? id;
   final String code;
   final String name;
+  final String? description;
   final double price;
   final bool isActive;
 
@@ -45,6 +46,7 @@ class ManagedParkingServiceModel {
     this.id,
     required this.code,
     required this.name,
+    this.description,
     required this.price,
     required this.isActive,
   });
@@ -54,13 +56,20 @@ class ManagedParkingServiceModel {
       id: json['id'] as String?,
       code: json['code'] as String,
       name: json['name'] as String,
+      description: json['description'] as String?,
       price: (json['price'] as num).toDouble(),
       isActive: json['is_active'] as bool? ?? true,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'code': code, 'name': name, 'price': price, 'is_active': isActive};
+    return {
+      'code': code,
+      'name': name,
+      'description': description,
+      'price': price,
+      'is_active': isActive,
+    };
   }
 }
 
@@ -69,6 +78,10 @@ class ManagedParkingModel {
   final String? id;
   final String name;
   final String address;
+  final String? street;
+  final String? number;
+  final String? neighborhood;
+  final String? postalCode;
   final String city;
   final double lat;
   final double lng;
@@ -99,6 +112,10 @@ class ManagedParkingModel {
     this.id,
     required this.name,
     required this.address,
+    this.street,
+    this.number,
+    this.neighborhood,
+    this.postalCode,
     required this.city,
     required this.lat,
     required this.lng,
@@ -131,6 +148,10 @@ class ManagedParkingModel {
       id: json['id'] as String?,
       name: json['name'] as String,
       address: json['address'] as String,
+      street: json['street'] as String?,
+      number: json['number'] as String?,
+      neighborhood: json['neighborhood'] as String?,
+      postalCode: json['postal_code'] as String?,
       city: json['city'] as String? ?? 'Valenca',
       lat: (json['lat'] as num).toDouble(),
       lng: (json['lng'] as num).toDouble(),
@@ -185,6 +206,10 @@ class ManagedParkingModel {
     return {
       'name': name,
       'address': address,
+      'street': street,
+      'number': number,
+      'neighborhood': neighborhood,
+      'postal_code': postalCode,
       'city': city,
       'lat': lat,
       'lng': lng,

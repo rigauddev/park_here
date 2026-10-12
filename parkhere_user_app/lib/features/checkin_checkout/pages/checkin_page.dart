@@ -33,6 +33,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   bool rightPhoto = false;
   bool backPhoto = false;
   bool hasGuideIndication = false;
+  bool _checkingIn = false;
 
   bool get allPhotosDone => frontPhoto && leftPhoto && rightPhoto && backPhoto;
 
@@ -347,15 +348,11 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
                     borderRadius: BorderRadius.circular(18),
                   ),
                 ),
-                onPressed: allPhotosDone
-                    ? () {
-                        _showServiceSummary(context);
-                      }
+                onPressed: allPhotosDone && !_checkingIn
+                    ? _completeCheckinBeforePayment
                     : null,
                 child: Text(
-                  widget.preCheckin.plan.name == "hourly"
-                      ? "Confirmar Check-in"
-                      : "Avançar para pagamento",
+                  "Avançar para pagamento",
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -368,6 +365,14 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _completeCheckinBeforePayment() async {
+    if (_checkingIn) return;
+    setState(() => _checkingIn = true);
+    final success = await _confirmBackendCheckin();
+    if (mounted) setState(() => _checkingIn = false);
+    if (success && mounted) _showServiceSummary(context);
   }
 
   Widget _photoItem(String label, bool done, VoidCallback onTap) {
@@ -419,7 +424,6 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
           reservationId: widget.preCheckin.reservationId,
           payNow: true,
           onPaymentSuccess: () async {
-            await _confirmBackendCheckin();
             _createReservation();
             ref.read(checkoutProvider.notifier).paymentSuccess();
             if (mounted) {
@@ -431,10 +435,10 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
     );
   }
 
-  Future<void> _confirmBackendCheckin() async {
+  Future<bool> _confirmBackendCheckin() async {
     final reservationId = widget.preCheckin.reservationId;
     final token = ref.read(authProvider).accessToken;
-    if (reservationId == null || token == null) return;
+    if (reservationId == null || token == null) return false;
     try {
       final position = await LocationService().getCurrentLocation();
       await ApiService().postAuthorized(
@@ -442,8 +446,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
         {},
         token,
       );
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
@@ -457,6 +462,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
           ],
         ),
       );
+      return false;
     }
   }
 }

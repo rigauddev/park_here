@@ -70,9 +70,9 @@ class AccountNotifier extends StateNotifier<AccountState> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
+    final token = (await _storage.getTokens())['access'];
+    final role = _tokenClaim(token, 'role');
     final setupDone = prefs.getBool(_setupDoneKey) ?? false;
-    final walletDone = prefs.getBool(_walletDoneKey) ?? false;
-
     final driverDocumentJson = prefs.getString(_driverDocumentKey);
     final vehiclesJson = prefs.getString(_vehiclesKey);
     final walletJson = prefs.getString(_walletMethodsKey);
@@ -105,6 +105,12 @@ class AccountNotifier extends StateNotifier<AccountState> {
       final decoded = jsonDecode(walletJson) as List<dynamic>;
       walletMethods = decoded
           .map((item) => _walletFromJson(item as Map<String, dynamic>))
+          // Customer cards are loaded from the account API. Partner payout
+          // details stay in their existing local flow and are Pix-only.
+          .where(
+            (method) =>
+                role != 'customer' && method.type == WalletMethodType.pix,
+          )
           .toList();
     }
 
@@ -133,27 +139,13 @@ class AccountNotifier extends StateNotifier<AccountState> {
       ];
     }
 
-    if (walletMethods.isEmpty && walletDone) {
-      walletMethods = const [
-        WalletMethodModel(
-          id: 'seed-card',
-          type: WalletMethodType.creditCard,
-          label: 'Visa final 4242',
-          holderName: 'Cliente Teste',
-          brand: 'Visa',
-          lastFour: '4242',
-          expiry: '12/30',
-          isActive: true,
-        ),
-      ];
-    }
-
     state = AccountState(
       driverDocument: driverDocument,
       vehicles: vehicles,
       walletMethods: walletMethods,
     );
     await syncVehicles();
+    await syncWalletMethods();
   }
 
   Future<void> syncVehicles() async {
@@ -237,6 +229,43 @@ class AccountNotifier extends StateNotifier<AccountState> {
   }
 
   Future<void> addWalletMethod(WalletMethodModel method) async {
+    if (method.type != WalletMethodType.pix) {
+      final token = (await _storage.getTokens())['access'];
+      if (token == null || token.isEmpty) {
+        throw StateError('Entre novamente para salvar o cartão na sua conta.');
+      }
+      final expiry = method.expiry?.split('/') ?? const [];
+      if (expiry.length != 2) {
+        throw StateError('Informe a validade do cartão no formato MM/AA.');
+      }
+      final year = 2000 + (int.tryParse(expiry[1]) ?? 0);
+      final saved = await _api
+          .postAuthorized('/customer-assets/payment-methods', {
+            'method_type': method.type == WalletMethodType.debitCard
+                ? 'debit_card'
+                : 'credit_card',
+            'brand': method.brand ?? 'Cartão',
+            'cardholder_name': method.holderName ?? '',
+            'last_four': method.lastFour ?? '',
+            'expiration_month': int.tryParse(expiry[0]) ?? 0,
+            'expiration_year': year,
+            'is_default': method.isActive,
+          }, token);
+      final savedMethod = _walletFromJson(saved);
+      final updated = [
+        for (final current in state.walletMethods)
+          current.copyWith(
+            isActive: savedMethod.isActive ? false : current.isActive,
+          ),
+        savedMethod,
+      ];
+      state = state.copyWith(walletMethods: updated);
+      await _persistWalletMethods();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_walletDoneKey, state.hasActivePaymentMethod);
+      return;
+    }
+
     final updated = [
       for (final current in state.walletMethods)
         current.copyWith(isActive: method.isActive ? false : current.isActive),
@@ -251,6 +280,24 @@ class AccountNotifier extends StateNotifier<AccountState> {
   }
 
   Future<void> setActiveWalletMethod(String methodId) async {
+    WalletMethodModel? method;
+    for (final item in state.walletMethods) {
+      if (item.id == methodId) {
+        method = item;
+        break;
+      }
+    }
+    if (method != null && method.type != WalletMethodType.pix) {
+      final token = (await _storage.getTokens())['access'];
+      if (token == null || token.isEmpty) {
+        throw StateError('Entre novamente para atualizar o cartão padrão.');
+      }
+      await _api.postAuthorized(
+        '/customer-assets/payment-methods/$methodId/default',
+        const {},
+        token,
+      );
+    }
     state = state.copyWith(
       walletMethods: [
         for (final method in state.walletMethods)
@@ -261,6 +308,47 @@ class AccountNotifier extends StateNotifier<AccountState> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_walletDoneKey, state.hasActivePaymentMethod);
+  }
+
+  Future<void> syncWalletMethods() async {
+    final token = (await _storage.getTokens())['access'];
+    if (token == null ||
+        token.isEmpty ||
+        _tokenClaim(token, 'role') != 'customer') {
+      return;
+    }
+    try {
+      final remote = await _api.getAuthorized(
+        '/customer-assets/payment-methods',
+        token,
+      );
+      state = state.copyWith(
+        walletMethods: remote
+            .map((item) => _walletFromJson(item as Map<String, dynamic>))
+            .toList(),
+      );
+      await _persistWalletMethods();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_walletDoneKey, state.hasActivePaymentMethod);
+    } catch (_) {
+      // Account API is the source of truth for customer cards.
+    }
+  }
+
+  String? _tokenClaim(String? token, String claim) {
+    if (token == null) return null;
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final payload =
+          jsonDecode(
+                utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+              )
+              as Map<String, dynamic>;
+      return payload[claim] as String?;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _persistDriverDocument() async {
@@ -342,16 +430,21 @@ class AccountNotifier extends StateNotifier<AccountState> {
   }
 
   WalletMethodModel _walletFromJson(Map<String, dynamic> json) {
+    final rawType = json['type'] ?? json['method_type'] ?? 'creditCard';
     return WalletMethodModel(
       id: json['id'] ?? '',
       type: WalletMethodType.values.firstWhere(
-        (value) => value.name == (json['type'] ?? 'creditCard'),
+        (value) =>
+            value.name == rawType ||
+            (rawType == 'credit_card' &&
+                value == WalletMethodType.creditCard) ||
+            (rawType == 'debit_card' && value == WalletMethodType.debitCard),
         orElse: () => WalletMethodType.creditCard,
       ),
       label: json['label'] ?? 'Metodo',
-      holderName: json['holderName'],
-      brand: json['brand'],
-      lastFour: json['lastFour'],
+      holderName: json['holderName'] ?? json['cardholder_name'],
+      brand: json['brand'] ?? json['card_brand'],
+      lastFour: json['lastFour'] ?? json['last_four'],
       expiry: json['expiry'],
       pixKey: json['pixKey'],
       isActive: json['isActive'] ?? false,

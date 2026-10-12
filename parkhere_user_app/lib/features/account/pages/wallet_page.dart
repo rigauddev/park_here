@@ -26,6 +26,14 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   bool _makeDefault = true;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(accountProvider.notifier).syncWalletMethods();
+    });
+  }
+
+  @override
   void dispose() {
     holderController.dispose();
     numberController.dispose();
@@ -56,6 +64,15 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 : 'Cadastre cartões. O Pix é gerado pelo Mercado Pago no momento do pagamento.',
             style: TextStyle(color: AppTheme.textMuted),
           ),
+          if (!isPartner) ...[
+            const SizedBox(height: 8),
+            Text(
+              context.strings.isEnglish
+                  ? 'Only masked display data is saved here. Real card payments require provider tokenization; never save a full card number or CVV.'
+                  : 'Aqui são salvos apenas dados mascarados para exibição. Pagamentos reais exigem tokenização pelo provedor; nunca salvamos o número completo nem o CVV.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           const SizedBox(height: 18),
           if (account.walletMethods.isEmpty)
             const _EmptyWallet()
@@ -67,10 +84,16 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                     account.activePaymentMethod?.id ==
                     account.walletMethods[index].id,
                 colorIndex: index,
-                onActivate: () {
-                  ref
-                      .read(accountProvider.notifier)
-                      .setActiveWalletMethod(account.walletMethods[index].id);
+                onActivate: () async {
+                  try {
+                    await ref
+                        .read(accountProvider.notifier)
+                        .setActiveWalletMethod(account.walletMethods[index].id);
+                  } catch (error) {
+                    if (context.mounted) {
+                      await ApiFeedback.show(context, error.toString());
+                    }
+                  }
                 },
               ),
           const SizedBox(height: 24),
@@ -217,21 +240,28 @@ class _WalletPageState extends ConsumerState<WalletPage> {
 
     final willBeDefault =
         ref.read(accountProvider).activePaymentMethod == null || _makeDefault;
-    await ref
-        .read(accountProvider.notifier)
-        .addWalletMethod(
-          WalletMethodModel(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            type: isPix ? WalletMethodType.pix : type,
-            label: label,
-            holderName: isPix ? null : holderController.text.trim(),
-            brand: brand,
-            lastFour: lastFour,
-            expiry: isPix ? null : expiryController.text.trim(),
-            pixKey: isPix ? pixController.text.trim() : null,
-            isActive: willBeDefault,
-          ),
-        );
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .addWalletMethod(
+            WalletMethodModel(
+              id: DateTime.now().microsecondsSinceEpoch.toString(),
+              type: isPix ? WalletMethodType.pix : type,
+              label: label,
+              holderName: isPix ? null : holderController.text.trim(),
+              brand: brand,
+              lastFour: lastFour,
+              expiry: isPix ? null : expiryController.text.trim(),
+              pixKey: isPix ? pixController.text.trim() : null,
+              isActive: willBeDefault,
+            ),
+          );
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(context, error.toString());
+      }
+      return;
+    }
 
     holderController.clear();
     numberController.clear();

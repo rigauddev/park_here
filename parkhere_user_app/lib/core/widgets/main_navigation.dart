@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/account/pages/vehicles_page.dart';
 import '../../features/account/pages/wallet_page.dart';
+import '../../features/help/pages/help_center_page.dart';
 import '../../features/auth/pages/login_page.dart';
 import '../../features/auth/pages/profile_page.dart';
 import '../../features/parking_search/pages/home_map_page.dart';
@@ -16,6 +17,7 @@ import '../../features/partner_management/pages/partner_reservations_page.dart';
 import '../../features/partner_management/pages/partner_users_page.dart';
 import '../../features/reservation/pages/reservation_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../i18n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../../features/partner_management/pages/parking_dashboard_page.dart';
 import '../../features/partner_management/pages/guide_affiliations_page.dart';
@@ -38,6 +40,7 @@ enum _MainArea {
   financial,
   dashboard,
   profile,
+  help,
 }
 
 class MainNavigation extends ConsumerStatefulWidget {
@@ -84,15 +87,20 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           .read(partnerOperatorsProvider.notifier)
           .fetchShifts();
       final now = DateTime.now();
-      final hasActiveShift = shifts.any((shift) {
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final tomorrowStart = todayStart.add(const Duration(days: 1));
+      final hasShiftToday = shifts.any((shift) {
         final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
         final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
-        return !starts.isAfter(now) && !ends.isBefore(now);
+        // A scheduled operator can use the operational menu for their whole
+        // workday, even before the shift starts. The backend still enforces
+        // authorization for each operation and unit.
+        return starts.isBefore(tomorrowStart) && ends.isAfter(todayStart);
       });
       if (!mounted) return;
       setState(() {
-        _operatorHasShiftToday = hasActiveShift;
-        if (!hasActiveShift && !_isOperatorAllowedArea(_selectedArea)) {
+        _operatorHasShiftToday = hasShiftToday;
+        if (!hasShiftToday && !_isOperatorAllowedArea(_selectedArea)) {
           _selectedArea = _MainArea.shifts;
         }
       });
@@ -100,7 +108,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       if (!mounted) return;
       setState(() {
         _operatorHasShiftToday = false;
-        _selectedArea = _MainArea.shifts;
+        if (!_isOperatorAllowedArea(_selectedArea)) {
+          _selectedArea = _MainArea.shifts;
+        }
       });
     }
   }
@@ -108,7 +118,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   bool _isOperatorAllowedArea(_MainArea area) =>
       area == _MainArea.shifts ||
       area == _MainArea.profile ||
-      area == _MainArea.wallet;
+      area == _MainArea.wallet ||
+      area == _MainArea.help;
 
   @override
   Widget build(BuildContext context) {
@@ -147,11 +158,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     );
     final topBar = AppBar(
       title: const Text('ParkHere'),
-      automaticallyImplyLeading:
-          !(!isWebLayout &&
-              !isPartner &&
-              !isAdmin &&
-              _selectedArea == _MainArea.map),
+      automaticallyImplyLeading: false,
       actions: isOperator
           ? [
               IconButton(
@@ -167,7 +174,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               icon: Icon(_menuExpanded ? Icons.menu_open : Icons.menu),
               onPressed: () => setState(() => _menuExpanded = !_menuExpanded),
             )
-          : null,
+          : Builder(
+              builder: (context) => IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onPressed: () => Scaffold.of(context).openDrawer(),
+              ),
+            ),
     );
 
     if (isWebLayout) {
@@ -285,12 +298,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 icon: Icon(Icons.extension_outlined),
                 label: 'Módulos',
               ),
-            ] else if (!isPartner)
-              const NavigationDestination(
-                icon: Icon(Icons.menu),
-                selectedIcon: Icon(Icons.menu_open),
-                label: 'Menu',
-              ),
+            ],
             if (!isAdmin && isOperator && !_operatorHasShiftToday) ...[
               const NavigationDestination(
                 icon: Icon(Icons.calendar_month_outlined),
@@ -386,6 +394,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool operatorHasShiftToday,
     int adminSection,
   ) {
+    if (area == _MainArea.help) return const HelpCenterPage();
     if (isAdmin) return AdminManagementPage(initialSection: adminSection);
     if (isOperator && !operatorHasShiftToday && !_isOperatorAllowedArea(area)) {
       return const PartnerShiftsPage();
@@ -433,6 +442,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             : const PartnerParkingMapPage();
       case _MainArea.profile:
         return const ProfilePage();
+      case _MainArea.help:
+        return const HelpCenterPage();
     }
   }
 
@@ -455,6 +466,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           return 1;
         case _MainArea.wallet:
           return 2;
+        case _MainArea.help:
+          return 1;
         default:
           return 0;
       }
@@ -469,6 +482,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         case _MainArea.wallet:
         case _MainArea.profile:
           return 2;
+        case _MainArea.help:
+          return 2;
         default:
           return 0;
       }
@@ -478,25 +493,27 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.menu:
         return isPartner ? 0 : 0;
       case _MainArea.map:
-        return isPartner ? 1 : 2;
-      case _MainArea.services:
         return isPartner ? 1 : 1;
+      case _MainArea.services:
+        return isPartner ? 1 : 0;
       case _MainArea.vehicles:
       case _MainArea.wallet:
-        return isPartner ? 4 : 2;
+        return isPartner ? 4 : 3;
       case _MainArea.management:
-        return isPartner ? 0 : 2;
+        return isPartner ? 0 : 3;
       case _MainArea.users:
       case _MainArea.shifts:
-        return isPartner ? 0 : 2;
+        return isPartner ? 0 : 3;
       case _MainArea.financial:
-        return isPartner ? 3 : 2;
+        return isPartner ? 3 : 3;
       case _MainArea.dashboard:
-        return isPartner ? 0 : 2;
+        return isPartner ? 0 : 3;
       case _MainArea.profile:
-        return isPartner ? 4 : 4;
+        return isPartner ? 4 : 3;
+      case _MainArea.help:
+        return isPartner ? 4 : 3;
       case _MainArea.reservations:
-        return isPartner ? 2 : 3;
+        return isPartner ? 2 : 2;
     }
   }
 
@@ -542,13 +559,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 
     switch (index) {
       case 0:
-        return isPartner ? _MainArea.management : _MainArea.menu;
+        return isPartner ? _MainArea.management : _MainArea.services;
       case 1:
-        return isPartner ? _MainArea.map : _MainArea.services;
+        return isPartner ? _MainArea.map : _MainArea.map;
       case 2:
-        return isPartner ? _MainArea.reservations : _MainArea.map;
+        return isPartner ? _MainArea.reservations : _MainArea.reservations;
       case 3:
-        return isPartner ? _MainArea.financial : _MainArea.reservations;
+        return isPartner ? _MainArea.financial : _MainArea.profile;
       case 4:
         return _MainArea.profile;
       default:
@@ -788,6 +805,21 @@ class _WebMenu extends ConsumerWidget {
                 selectedArea: selectedArea,
                 onSelected: onSelected,
               ),
+            _MenuCategory(
+              expanded: expanded,
+              title: context.strings.isEnglish ? 'Support' : 'Ajuda',
+              items: [
+                _MenuItem(
+                  Icons.help_outline,
+                  context.strings.isEnglish
+                      ? 'Help center'
+                      : 'Central de ajuda',
+                  _MainArea.help,
+                ),
+              ],
+              selectedArea: selectedArea,
+              onSelected: onSelected,
+            ),
             if (!expanded)
               IconButton(
                 tooltip: 'Sair',
@@ -987,6 +1019,13 @@ class _MobileDrawer extends StatelessWidget {
                 ],
               ),
             ],
+            ListTile(
+              leading: const Icon(Icons.help_outline),
+              title: Text(
+                context.strings.isEnglish ? 'Help center' : 'Central de ajuda',
+              ),
+              onTap: () => onSelected(_MainArea.help),
+            ),
           ],
         ),
       ),
@@ -1070,7 +1109,7 @@ class _MenuHubPage extends StatelessWidget {
       appBar: AppBar(title: const Text('Menu')),
       body: ListView(
         padding: const EdgeInsets.all(20),
-        children: const [
+        children: [
           _MenuActionCard(
             icon: Icons.directions_car_outlined,
             title: 'Veículos',
@@ -1088,6 +1127,16 @@ class _MenuHubPage extends StatelessWidget {
             title: 'Reservas',
             subtitle: 'Acompanhe reservas ativas e histórico',
             page: ReservationPage(),
+          ),
+          _MenuActionCard(
+            icon: Icons.help_outline,
+            title: context.strings.isEnglish
+                ? 'Help center'
+                : 'Central de ajuda',
+            subtitle: context.strings.isEnglish
+                ? 'Answers and guidance for using the app'
+                : 'Respostas e orientações para usar o app',
+            page: const HelpCenterPage(),
           ),
         ],
       ),
@@ -1189,6 +1238,12 @@ class _ParkingServiceCard extends StatelessWidget {
             const Icon(Icons.star, color: Colors.amber, size: 18),
             Text(parking.rating.toStringAsFixed(1)),
           ],
+        ),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HomeMapPage(initialParkingId: parking.id),
+          ),
         ),
       ),
     );

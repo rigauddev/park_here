@@ -74,10 +74,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String password, {
     AuthAccountType accountType = AuthAccountType.customer,
   }) async {
-    state = state.copyWith(
-      status: AuthStatus.loading,
-      accountType: accountType,
-    );
+    // Discard the previous identity before beginning a new MFA challenge.
+    // This prevents account switching from reusing stale tokens or role data.
+    state = AuthState(status: AuthStatus.loading, accountType: accountType);
 
     final normalizedEmail = email.toLowerCase();
     final accountTypeName = accountType == AuthAccountType.customer
@@ -191,9 +190,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String? phone,
     required bool hasInsurance,
     String? insuranceProvider,
-    String? instagram,
     String? website,
-    String? socialLinks,
+    List<Map<String, dynamic>> documents = const [],
   }) {
     return _api.post('/partners/signup', {
       'service_type': serviceType,
@@ -208,11 +206,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       'insurance_provider': insuranceProvider?.trim().isEmpty == true
           ? null
           : insuranceProvider?.trim(),
-      'instagram': instagram?.trim().isEmpty == true ? null : instagram?.trim(),
       'website': website?.trim().isEmpty == true ? null : website?.trim(),
-      'social_links': socialLinks?.trim().isEmpty == true
-          ? null
-          : socialLinks?.trim(),
+      'documents': documents,
     });
   }
 

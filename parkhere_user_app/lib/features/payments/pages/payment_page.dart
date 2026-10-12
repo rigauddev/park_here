@@ -196,6 +196,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 if (_requiresCvv(activeMethod))
                   TextField(
                     controller: cvvController,
+                    onChanged: (_) => setState(() {}),
                     keyboardType: TextInputType.number,
                     obscureText: true,
                     inputFormatters: [
@@ -339,12 +340,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isLoading || !account.hasActivePaymentMethod
+                  onPressed:
+                      _isLoading ||
+                          activeMethod == null ||
+                          !account.hasActivePaymentMethod ||
+                          (_requiresCvv(activeMethod) &&
+                              cvvController.text.trim().length < 3)
                       ? null
                       : _processPayment,
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("Confirmar Pagamento"),
+                      : const Text("Realizar pagamento"),
                 ),
               ),
             ],

@@ -31,6 +31,7 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
   DateTime _selectedDay = DateTime.now();
   String? _parkingFilter;
   String? _operatorFilter;
+  Future<List<PartnerOperatorModel>>? _eligibleOperatorsFuture;
   bool _weekView = false;
 
   String _text(String pt, String en) => context.strings.isEnglish ? en : pt;
@@ -258,17 +259,49 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
           ),
         ),
       ],
-      onChanged: (value) => setState(() => _parkingFilter = value),
+      onChanged: (value) => setState(() {
+        _parkingFilter = value;
+        _operatorFilter = null;
+        _eligibleOperatorsFuture = value == null
+            ? null
+            : _operatorsForParking(
+                value,
+                ref.read(partnerOperatorsProvider).value ?? const [],
+              );
+      }),
     ),
   );
 
-  Widget _operatorDropdown(List<PartnerOperatorModel> operators) => Padding(
+  Widget _operatorDropdown(List<PartnerOperatorModel> operators) {
+    if (_parkingFilter == null) return _operatorDropdownField(operators);
+    _eligibleOperatorsFuture ??= _operatorsForParking(
+      _parkingFilter!,
+      operators,
+    );
+    return FutureBuilder<List<PartnerOperatorModel>>(
+      future: _eligibleOperatorsFuture,
+      builder: (context, snapshot) => _operatorDropdownField(
+        snapshot.data ?? const [],
+        loading: snapshot.connectionState == ConnectionState.waiting,
+      ),
+    );
+  }
+
+  Widget _operatorDropdownField(
+    List<PartnerOperatorModel> operators, {
+    bool loading = false,
+  }) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: DropdownButtonFormField<String?>(
       initialValue: _operatorFilter,
       isExpanded: true,
       decoration: InputDecoration(
-        labelText: _text('Operador', 'Operator'),
+        labelText: loading
+            ? _text(
+                'Carregando operadores habilitados…',
+                'Loading enabled operators…',
+              )
+            : _text('Operador', 'Operator'),
         border: OutlineInputBorder(),
       ),
       items: [
@@ -283,7 +316,9 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
           ),
         ),
       ],
-      onChanged: (value) => setState(() => _operatorFilter = value),
+      onChanged: loading
+          ? null
+          : (value) => setState(() => _operatorFilter = value),
     ),
   );
 
@@ -713,6 +748,30 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
       8,
     );
     var endsAt = startsAt.add(const Duration(hours: 8));
+    String? coverageHint;
+    try {
+      final shifts = await _shiftsFuture;
+      final dayShifts = shifts.where((shift) {
+        if (shift['parking_id'] != parkingId) return false;
+        final start = DateTime.parse(shift['starts_at'] as String).toLocal();
+        return start.year == startsAt.year &&
+            start.month == startsAt.month &&
+            start.day == startsAt.day;
+      }).toList();
+      if (dayShifts.isNotEmpty) {
+        dayShifts.sort(
+          (a, b) => (a['ends_at'] as String).compareTo(b['ends_at'] as String),
+        );
+        final lastEnd = DateTime.parse(dayShifts.last['ends_at'] as String)
+            .toLocal();
+        if (lastEnd.isAfter(startsAt)) {
+          startsAt = lastEnd;
+          endsAt = startsAt.add(const Duration(hours: 8));
+          coverageHint =
+              'Já existe turno nesta unidade. Sugestão: iniciar às ${_time(startsAt)} para cobrir a sequência; também é possível manter operadores no mesmo turno.';
+        }
+      }
+    } catch (_) {}
     List<PartnerOperatorModel> eligible = [];
     try {
       eligible = await _operatorsForParking(parkingId, operators);
@@ -754,6 +813,17 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
                     }
                   },
                 ),
+                if (coverageHint != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        coverageHint,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ),
                 DropdownButtonFormField<String?>(
                   key: ValueKey('shift-operator-$parkingId'),
                   initialValue: operatorId[parkingId],

@@ -21,6 +21,25 @@ class AppLocalizations {
   String get partner => isEnglish ? 'Partner' : 'Parceiro';
   String get bookParking => isEnglish ? 'Book parking' : 'Reservar vaga';
   String get manageServices => isEnglish ? 'Manage services' : 'Gerir serviços';
+
+  String reservationStatus(String value) => switch (value) {
+    'pre_reserved' => isEnglish ? 'Pre-reserved' : 'Pré-reserva',
+    'confirmed' => isEnglish ? 'Confirmed' : 'Confirmada',
+    'checked_in' => isEnglish ? 'Checked in' : 'Em permanência',
+    'completed' => isEnglish ? 'Completed' : 'Finalizada',
+    'cancelled' => isEnglish ? 'Cancelled' : 'Cancelada',
+    'expired' => isEnglish ? 'Expired' : 'Expirada',
+    _ => value,
+  };
+
+  String paymentStatus(String value) => switch (value) {
+    'paid' => isEnglish ? 'Paid' : 'Pago',
+    'pending_checkin' =>
+      isEnglish ? 'Pay at check-in' : 'Pagamento no check-in',
+    'pending' || 'payment_pending' => isEnglish ? 'Pending' : 'Pendente',
+    'failed' => isEnglish ? 'Failed' : 'Falhou',
+    _ => value,
+  };
 }
 
 class _AppLocalizationsDelegate
