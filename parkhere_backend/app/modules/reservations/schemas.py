@@ -68,6 +68,10 @@ class CancelReservationRequest(BaseModel):
     reason: str | None = None
 
 
+class ArrivalApprovalRequest(BaseModel):
+    decision: str = Field(pattern="^(approve|reject)$")
+
+
 class ReservationResponse(BaseModel):
     walk_in_plate: str | None = None
     walk_in_phone: str | None = None

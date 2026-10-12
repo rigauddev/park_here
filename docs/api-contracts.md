@@ -54,6 +54,19 @@ Os arquivos ficam no volume local do backend e o cadastro passa para
 - `GET /admin/platform-fees/partners/{tenant_id}/documents/{document_id}`
   devolve o arquivo enviado para análise, somente para administradores.
 
+## Entrada fora do horário
+
+Uma chegada agendada fora do horário configurado não bloqueia a criação da
+solicitação. A reserva é criada com `status=pending_operator_approval` e
+`notification_status=awaiting_operating_hours_approval`; a vaga fica ocupada
+para aquele horário. O pagamento, quando iniciado, permanece em
+`paid_pending_approval` até a decisão do estacionamento.
+
+- `POST /reservations/{reservation_id}/arrival-approval` recebe
+  `{ "decision": "approve"|"reject" }` e pode ser usado por gestor, operador
+  ou administrador do estacionamento. Aprovar confirma a reserva; rejeitar
+  cancela a solicitação e libera a vaga.
+
 ## Afiliação de guia a estacionamento
 
 - `GET /partners/guide/parkings` lista estacionamentos ativos e o status da

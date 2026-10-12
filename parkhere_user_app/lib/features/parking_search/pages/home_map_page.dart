@@ -1522,6 +1522,14 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
         },
         token,
       );
+      if (response['notification_status'] ==
+          'awaiting_operating_hours_approval') {
+        if (!mounted) return null;
+        ApiFeedback.show(
+          context,
+          'O horário está fora do expediente. O pagamento ficará retido até o estacionamento aceitar a entrada.',
+        );
+      }
       final reservationId = response['id'] as String?;
       preCheckin.reservationId = reservationId;
       await ref

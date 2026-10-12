@@ -110,10 +110,17 @@ class ReservationService:
         )
         parking.available_spots -= 1
         arrival_estimate_at = _arrival_estimate(data)
-        _ensure_arrival_within_operating_hours(parking, arrival_estimate_at)
+        outside_operating_hours = not _arrival_within_operating_hours(
+            parking, arrival_estimate_at
+        )
 
         reservation = Reservation(
             parking_id=parking.id,
+            status=(
+                "pending_operator_approval"
+                if outside_operating_hours
+                else "pre_reserved"
+            ),
             user_id=(
                 None
                 if data.is_manual_arrival and current_user.role in {
@@ -152,6 +159,11 @@ class ReservationService:
             services_amount=pricing.services_amount,
             platform_fee_amount=pricing.platform_fee_amount,
             final_total=pricing.final_total,
+            notification_status=(
+                "awaiting_operating_hours_approval"
+                if outside_operating_hours
+                else "sent_to_parking"
+            ),
             selected_services_snapshot=json.dumps(
                 [service.model_dump() for service in pricing.services_snapshot]
             ),
@@ -228,6 +240,44 @@ class ReservationService:
         await db.refresh(reservation)
         response = to_response(reservation)
         return response.model_copy(update={"cancelled_by_name": current_user.name})
+
+    @staticmethod
+    async def approve_arrival(
+        db: AsyncSession,
+        reservation_id: str,
+        decision: str,
+        current_user: User,
+    ) -> ReservationResponse:
+        reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+        if current_user.role not in {
+            UserRoleEnum.OPERATOR,
+            UserRoleEnum.PARTNER_MANAGER,
+            UserRoleEnum.PARKING_ADMIN,
+        } or current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        if reservation.status != "pending_operator_approval":
+            raise HTTPException(status_code=409, detail="Reservation is not awaiting approval")
+        if decision == "approve":
+            reservation.status = "confirmed" if reservation.payment_status in {
+                "paid_pending_approval", "paid"
+            } else "pre_reserved"
+            reservation.payment_status = (
+                "paid" if reservation.payment_status == "paid_pending_approval"
+                else reservation.payment_status
+            )
+            reservation.notification_status = "approved_by_parking"
+        else:
+            reservation.status = "cancelled"
+            reservation.payment_status = "refunded_pending" if reservation.payment_status in {
+                "paid_pending_approval", "paid"
+            } else "cancelled"
+            reservation.cancelled_at = datetime.utcnow()
+            reservation.cancellation_reason = "Entrada fora do horário recusada pelo estacionamento."
+            parking.available_spots = min(parking.total_spots, parking.available_spots + 1)
+            reservation.notification_status = "arrival_rejected"
+        await db.commit()
+        await db.refresh(reservation)
+        return to_response(reservation)
 
     @staticmethod
     async def checkin(
@@ -529,31 +579,29 @@ def _arrival_estimate(data: PreCheckinReservationRequest) -> datetime:
     return now + timedelta(minutes=data.route_minutes)
 
 
-def _ensure_arrival_within_operating_hours(parking: Parking, arrival: datetime) -> None:
-    """Reject scheduled arrivals outside the unit's configured opening hours."""
+def _arrival_within_operating_hours(parking: Parking, arrival: datetime) -> bool:
+    """Return whether the requested arrival is inside configured hours."""
     if not parking.operating_hours:
-        return
+        return True
     try:
         hours = json.loads(parking.operating_hours)
     except (TypeError, json.JSONDecodeError):
-        return
+        return True
     local = arrival.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Bahia"))
     keys = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
     rule = hours.get(keys[local.weekday()])
     if not rule or rule.get("closed") is True:
-        raise HTTPException(status_code=422, detail="O horário de chegada está fora do funcionamento do estacionamento.")
+        return False
     try:
         opening = datetime.strptime(rule["open"], "%H:%M").time()
         closing = datetime.strptime(rule["close"], "%H:%M").time()
     except (KeyError, TypeError, ValueError):
-        return
+        return True
     current = local.time()
     if opening <= closing:
-        valid = opening <= current <= closing
-    else:  # overnight operation, e.g. 18:00–06:00
-        valid = current >= opening or current <= closing
-    if not valid:
-        raise HTTPException(status_code=422, detail="O horário de chegada está fora do funcionamento do estacionamento.")
+        return opening <= current <= closing
+    # overnight operation, e.g. 18:00–06:00
+    return current >= opening or current <= closing
 
 
 def physical_spot_type(index, parking):
@@ -569,7 +617,8 @@ def physical_spot_type(index, parking):
 
 async def expire_parking_reservations(db, parking):
     expired = (await db.scalars(select(Reservation).where(
-        Reservation.parking_id == parking.id, Reservation.status == "pre_reserved",
+        Reservation.parking_id == parking.id,
+        Reservation.status.in_(["pre_reserved", "pending_operator_approval"]),
         Reservation.hold_expires_at <= datetime.utcnow(),
         Reservation.payment_status != "paid",
     ).with_for_update().execution_options(populate_existing=True))).all()

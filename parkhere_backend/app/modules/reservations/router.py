@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.reservations.schemas import (
     CancelReservationRequest,
+    ArrivalApprovalRequest,
     PreCheckinReservationRequest,
     ReservationResponse,
 )
@@ -181,3 +182,15 @@ async def cancel_reservation(
     current_user: User = Depends(get_current_user),
 ):
     return await ReservationService.cancel(db, reservation_id, data, current_user)
+
+
+@router.post("/{reservation_id}/arrival-approval", response_model=ReservationResponse, response_model_exclude=_PRIVATE_GUIDE_FIELDS)
+async def approve_arrival(
+    reservation_id: str,
+    data: ArrivalApprovalRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await ReservationService.approve_arrival(
+        db, reservation_id, data.decision, current_user
+    )

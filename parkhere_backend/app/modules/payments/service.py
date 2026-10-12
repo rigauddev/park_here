@@ -247,7 +247,10 @@ class PaymentService:
                 reservation.checkout_excess_paid_at = datetime.utcnow()
             reservation.payment_status = "paid"
         if transaction.payment_purpose == "reservation" and reservation.status != "checked_in":
-            reservation.status = "confirmed"
+            if reservation.notification_status == "awaiting_operating_hours_approval":
+                reservation.payment_status = "paid_pending_approval"
+            else:
+                reservation.status = "confirmed"
         await db.commit()
         await db.refresh(transaction)
         return to_response(transaction)
@@ -323,7 +326,12 @@ def _ensure_payment_permission(
 
 
 def _ensure_payable_reservation(reservation: Reservation) -> None:
-    if reservation.status not in {"pre_reserved", "confirmed", "checked_in"}:
+    if reservation.status not in {
+        "pre_reserved",
+        "pending_operator_approval",
+        "confirmed",
+        "checked_in",
+    }:
         raise HTTPException(status_code=409, detail="Reservation cannot be paid in this status")
     if (reservation.status == "pre_reserved" and reservation.hold_expires_at
             and reservation.hold_expires_at <= datetime.utcnow()):

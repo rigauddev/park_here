@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../payments/pages/payment_page.dart';
@@ -30,16 +32,67 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Rota até o estacionamento")),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               "Destino: ${parking.name}",
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 220,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: LatLng(
+                      (widget.preCheckin.userLocationLat + parking.lat) / 2,
+                      (widget.preCheckin.userLocationLng + parking.lng) / 2,
+                    ),
+                    initialZoom: 13,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.all,
+                    ),
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      subdomains: const ['a', 'b', 'c'],
+                      userAgentPackageName: 'br.com.rptech.parkhere_user_app',
+                    ),
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: [
+                            LatLng(widget.preCheckin.userLocationLat, widget.preCheckin.userLocationLng),
+                            LatLng(parking.lat, parking.lng),
+                          ],
+                          color: const Color(0xFF169FC4),
+                          strokeWidth: 5,
+                        ),
+                      ],
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(widget.preCheckin.userLocationLat, widget.preCheckin.userLocationLng),
+                          child: const Icon(Icons.my_location, color: Color(0xFF169FC4)),
+                        ),
+                        Marker(
+                          point: LatLng(parking.lat, parking.lng),
+                          child: const Icon(Icons.local_parking, color: Color(0xFF102657)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
 
             Card(
               child: ListTile(
@@ -56,7 +109,6 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
               textAlign: TextAlign.center,
             ),
 
-            const Spacer(),
             if (widget.preCheckin.plan != PlanType.hourly)
               SizedBox(
                 width: double.infinity,
@@ -65,7 +117,7 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
                       ? null
                       : _guaranteeReservation,
                   icon: const Icon(Icons.lock_clock_outlined),
-                  label: const Text('Garantir reserva (confirmar reserva)'),
+                label: const Text('Confirmar reserva'),
                 ),
               ),
             const SizedBox(height: 10),
@@ -74,7 +126,7 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
               child: FilledButton.icon(
                 onPressed: _loading ? null : _openMapChooser,
                 icon: const Icon(Icons.navigation_outlined),
-                label: const Text('Iniciar rota'),
+                label: const Text('Avançar'),
               ),
             ),
           ],
