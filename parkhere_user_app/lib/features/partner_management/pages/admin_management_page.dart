@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -641,19 +643,34 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     ];
   }
 
-  void _showPartnerDocument(Map<String, dynamic> document) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(document['file_name'] as String? ?? 'Documento'),
-        content: Text(
-          'Documento ${document['document_type'] ?? ''} recebido e disponível no armazenamento da análise administrativa.',
+  Future<void> _showPartnerDocument(Map<String, dynamic> document) async {
+    final token = ref.read(authProvider).accessToken;
+    final path = document['download_path'] as String?;
+    if (token == null || path == null) return;
+    try {
+      final bytes = await _api.getAuthorizedBytes(path, token);
+      if (!mounted) return;
+      final fileName = document['file_name'] as String? ?? 'Documento';
+      final extension = fileName.toLowerCase().split('.').last;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(fileName),
+          content: SizedBox(
+            width: 560,
+            height: 480,
+            child: extension == 'png' || extension == 'jpg' || extension == 'jpeg'
+                ? InteractiveViewer(child: Image.memory(bytes, fit: BoxFit.contain))
+                : _PdfDocumentPreview(bytes: bytes),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
-        ],
-      ),
-    );
+      );
+    } catch (error) {
+      if (mounted) await ApiFeedback.show(context, '$error');
+    }
   }
 
   Future<void> _reviewPartnerApproval(
@@ -2400,4 +2417,20 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     }, token);
     await _load();
   }
+}
+
+class _PdfDocumentPreview extends StatelessWidget {
+  final Uint8List bytes;
+  const _PdfDocumentPreview({required this.bytes});
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.picture_as_pdf, size: 56, color: Colors.redAccent),
+          const SizedBox(height: 12),
+          const Text('PDF recebido para análise.'),
+          const SizedBox(height: 8),
+          Text('${bytes.length} bytes', style: Theme.of(context).textTheme.bodySmall),
+        ]),
+      );
 }
