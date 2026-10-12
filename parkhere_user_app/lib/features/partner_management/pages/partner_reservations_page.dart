@@ -219,6 +219,26 @@ class _PartnerReservationCard extends ConsumerWidget {
                 ],
               ),
             ],
+            if (reservation.status == 'pending_operator_approval') ...[
+              const SizedBox(height: 12),
+              Text(
+                'Entrada fora do horário: confirme se o estacionamento aceitará esta chegada.',
+                style: TextStyle(color: Colors.orange.shade800),
+              ),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, children: [
+                FilledButton.icon(
+                  onPressed: () => _reviewArrival(context, ref, 'approve'),
+                  icon: const Icon(Icons.check),
+                  label: const Text('Aceitar entrada'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _reviewArrival(context, ref, 'reject'),
+                  icon: const Icon(Icons.close),
+                  label: const Text('Recusar'),
+                ),
+              ]),
+            ],
             if (reservation.status != 'completed' &&
                 reservation.status != 'cancelled' &&
                 reservation.status != 'checked_in' &&
@@ -252,6 +272,35 @@ class _PartnerReservationCard extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  Future<void> _reviewArrival(
+    BuildContext context,
+    WidgetRef ref,
+    String decision,
+  ) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      await reviewArrivalApproval(
+        token: token,
+        reservationId: reservation.id,
+        decision: decision,
+      );
+      ref.invalidate(partnerReservationsProvider);
+      ref.invalidate(partnerParkingMapProvider);
+      if (context.mounted) {
+        await ApiFeedback.show(
+          context,
+          decision == 'approve'
+              ? 'Entrada aceita e reserva confirmada.'
+              : 'Solicitação recusada e vaga liberada.',
+          isError: false,
+        );
+      }
+    } catch (error) {
+      if (context.mounted) await ApiFeedback.show(context, '$error');
+    }
   }
 
   Future<void> _shareApp(PartnerReservationSummary item) async {

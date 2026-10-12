@@ -94,6 +94,18 @@ Future<void> cancelOperationalReservation({
   }, token);
 }
 
+Future<void> reviewArrivalApproval({
+  required String token,
+  required String reservationId,
+  required String decision,
+}) async {
+  await ApiService().postAuthorized(
+    '/reservations/$reservationId/arrival-approval',
+    {'decision': decision},
+    token,
+  );
+}
+
 Future<void> toggleParkingSlotBlock({
   required String token,
   required String parkingId,
