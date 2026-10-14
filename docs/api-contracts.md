@@ -912,3 +912,9 @@ pela funcionalidade de serviços extras.
 O retorno do dashboard inclui `additional_services`, separado de
 `service_breakdown`: cada item contém `code`, `name`, `description`, quantidade
 de reservas e receita associada.
+# Customer assets — tipos de veículo
+
+`POST /customer-assets/vehicles` aceita `vehicle_type` (`car`, `motorcycle` ou
+`bicycle`) e `bicycle_parts` opcional. Para bicicleta, `plate` representa o
+número de identificação e `vehicle_document` mantém o nome do comprovante PDF.
+Clientes antigos que não enviam o campo continuam sendo tratados como `car`.

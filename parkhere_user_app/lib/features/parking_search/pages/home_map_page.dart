@@ -1695,14 +1695,12 @@ class _ParkingMarker extends StatelessWidget {
               ),
             ],
           ),
-          child: const Center(
-            child: Text(
-              'P',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
+          child: Center(
+            child: Image.asset(
+              'assets/branding/icon_padrao_transparent.png',
+              width: 30,
+              height: 30,
+              fit: BoxFit.contain,
             ),
           ),
         ),

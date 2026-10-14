@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../reservation/models/reservation_enum.dart';
@@ -10,6 +11,7 @@ import '../providers/checkout_privider.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/widgets/api_feedback.dart';
 
 class CheckinPage extends ConsumerStatefulWidget {
   final PreCheckinModel preCheckin;
@@ -38,39 +40,42 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   bool get allPhotosDone => frontPhoto && leftPhoto && rightPhoto && backPhoto;
 
   Future<void> _capture(String kind, VoidCallback markDone) async {
-    final photo = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 85,
-    );
-    if (photo == null) return;
-    _captured[kind] = photo;
-    markDone();
-    final token = ref.read(authProvider).accessToken;
-    final reservationId = widget.preCheckin.reservationId;
-    if (token != null && reservationId != null) {
-      try {
+    try {
+      final photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 80,
+      );
+      if (photo == null || !mounted) return;
+      final bytes = await photo.readAsBytes();
+      if (!mounted) return;
+      if (bytes.length > 30 * 1024 * 1024) {
+        await ApiFeedback.show(context, 'A foto deve ter no máximo 30 MB.');
+        return;
+      }
+      final token = ref.read(authProvider).accessToken;
+      final reservationId = widget.preCheckin.reservationId;
+      if (token != null && reservationId != null) {
         await ApiService().uploadAuthorizedFile(
           '/reservations/$reservationId/photos?kind=$kind',
           token,
           photo.name,
-          await photo.readAsBytes(),
+          bytes,
         );
-      } catch (error) {
-        if (mounted) {
-          await showDialog<void>(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text('Foto não enviada'),
-              content: Text('$error', textAlign: TextAlign.center),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        }
+      }
+      _captured[kind] = photo;
+      markDone();
+    } on PlatformException catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(
+          context,
+          'Não foi possível abrir a câmera. Verifique a permissão do iPhone e tente novamente. ${error.message ?? ''}',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(context, 'Não foi possível registrar a foto: $error');
       }
     }
   }

@@ -175,6 +175,8 @@ class AccountNotifier extends StateNotifier<AccountState> {
           'vehicle_document': vehicle.documentFileName ?? 'document.pdf',
           'ownership_type': vehicle.ownershipType.name,
           'is_active': vehicle.isActive,
+          'vehicle_type': vehicle.vehicleType.name,
+          'bicycle_parts': vehicle.bicycleParts,
         }, token);
       }
     } catch (_) {
@@ -395,6 +397,8 @@ class AccountNotifier extends StateNotifier<AccountState> {
       'documentFileName': vehicle.documentFileName,
       'ownershipType': vehicle.ownershipType.name,
       'isActive': vehicle.isActive,
+      'vehicleType': vehicle.vehicleType.name,
+      'bicycleParts': vehicle.bicycleParts,
     };
   }
 
@@ -412,6 +416,11 @@ class AccountNotifier extends StateNotifier<AccountState> {
         orElse: () => VehicleOwnershipType.owner,
       ),
       isActive: json['isActive'] ?? false,
+      vehicleType: VehicleType.values.firstWhere(
+        (value) => value.name == (json['vehicleType'] ?? 'car'),
+        orElse: () => VehicleType.car,
+      ),
+      bicycleParts: json['bicycleParts'],
     );
   }
 

@@ -31,7 +31,7 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     final parking = widget.preCheckin.parking;
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Rota até o estacionamento")),
+      appBar: AppBar(title: const Text("Resumo de reserva")),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -84,7 +84,11 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
                         ),
                         Marker(
                           point: LatLng(parking.lat, parking.lng),
-                          child: const Icon(Icons.local_parking, color: Color(0xFF102657)),
+                          child: Image.asset(
+                            'assets/branding/icon_padrao_transparent.png',
+                            width: 36,
+                            height: 36,
+                          ),
                         ),
                       ],
                     ),
@@ -170,7 +174,7 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: now.add(const Duration(days: 365)),
       initialDate: now,
-      helpText: 'Informe a data de chegada',
+      helpText: 'Informe data e hora de chegada',
     );
     if (date == null || !mounted) return null;
     final time = await showTimePicker(
@@ -188,11 +192,59 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     );
     if (!arrival.isAfter(now)) {
       _showError(
-        'Informe um horário de chegada futuro e dentro do funcionamento.',
+        'Informe uma data e hora de chegada futuras.',
       );
       return null;
     }
+    if (_isOutsideOperatingHours(arrival)) {
+      await _showOutsideHoursNotice();
+    }
     return arrival;
+  }
+
+  bool _isOutsideOperatingHours(DateTime arrival) {
+    if (!widget.preCheckin.parking.isOpen) return true;
+    final hours = widget.preCheckin.parking.operatingHours;
+    if (hours.isEmpty) return false;
+    final names = const ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    final raw = hours[names[arrival.weekday - 1]] ?? hours['${arrival.weekday}'];
+    if (raw is! Map) return false;
+    final open = _parseMinutes(raw['open'] ?? raw['opening']);
+    final close = _parseMinutes(raw['close'] ?? raw['closing']);
+    if (open == null || close == null || (open == 0 && close == 0)) return true;
+    final minute = arrival.hour * 60 + arrival.minute;
+    return minute < open || minute > close;
+  }
+
+  int? _parseMinutes(Object? value) {
+    if (value is num) return value.toInt();
+    if (value is! String) return null;
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return hour * 60 + minute;
+  }
+
+  Future<void> _showOutsideHoursNotice() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Chegada fora do expediente'),
+        content: const Text(
+          'O estacionamento receberá uma solicitação. O pagamento ficará agendado e só será processado após a confirmação do estabelecimento.',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendi'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _selectRoute(String appName) async {

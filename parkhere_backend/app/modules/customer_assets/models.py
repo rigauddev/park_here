@@ -25,6 +25,8 @@ class Vehicle(BaseModel):
     vehicle_document = Column(String(80), nullable=False)
     ownership_type = Column(String(20), nullable=False)
     is_active = Column(Boolean, default=False)
+    vehicle_type = Column(String(20), nullable=False, default="car", server_default="car")
+    bicycle_parts = Column(String(500), nullable=True)
 
 
 class WalletPaymentMethod(BaseModel):

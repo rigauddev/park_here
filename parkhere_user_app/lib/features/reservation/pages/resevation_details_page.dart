@@ -144,7 +144,7 @@ class _ReservationDetailsPageState
                   ),
                 ),
                 icon: const Icon(Icons.route_outlined),
-                label: const Text('Rota até o estacionamento'),
+                label: const Text('Resumo de reserva'),
               ),
             ),
           const SizedBox(height: 14),

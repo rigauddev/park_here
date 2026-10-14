@@ -16,6 +16,7 @@ router = APIRouter(prefix="/customer-assets", tags=["Customer assets"])
 
 
 class VehicleRequest(BaseModel):
+    vehicle_type: str = Field(default="car", pattern=r"^(car|motorcycle|bicycle)$")
     nickname: str
     plate: str
     brand: str
@@ -24,6 +25,7 @@ class VehicleRequest(BaseModel):
     vehicle_document: str
     ownership_type: str = "owner"
     is_active: bool = True
+    bicycle_parts: str | None = Field(default=None, max_length=500)
 
 
 class SavedCardRequest(BaseModel):
@@ -216,4 +218,6 @@ def _vehicle_payload(vehicle: Vehicle) -> dict:
         "documentFileName": vehicle.vehicle_document,
         "ownershipType": vehicle.ownership_type,
         "isActive": vehicle.is_active,
+        "vehicleType": vehicle.vehicle_type,
+        "bicycleParts": vehicle.bicycle_parts,
     }
