@@ -43,6 +43,9 @@ class PaymentService {
         transactionId: confirmed["id"] as String,
         checkoutUrl: confirmed["checkout_url"] as String?,
         qrCode: confirmed["qr_code"] as String?,
+        method: confirmed["method"] as String? ?? _methodName(method),
+        purpose: confirmed["purpose"] as String? ?? purpose,
+        amount: (confirmed["gross_amount"] as num?)?.toDouble() ?? amount,
       );
     }
 

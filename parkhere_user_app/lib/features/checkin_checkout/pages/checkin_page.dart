@@ -431,9 +431,6 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
           onPaymentSuccess: () async {
             _createReservation();
             ref.read(checkoutProvider.notifier).paymentSuccess();
-            if (mounted) {
-              Navigator.popUntil(context, (route) => route.isFirst);
-            }
           },
         ),
       ),

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
@@ -11,6 +13,7 @@ import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/widgets/api_feedback.dart';
 import '../model/payment_method_enum.dart';
+import '../model/payment_result.dart';
 import '../services/payment_service.dart';
 
 class PaymentPage extends ConsumerStatefulWidget {
@@ -106,18 +109,18 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
       if (result.success) {
         if (!mounted) return;
-        await ApiFeedback.show(
-          context,
-          result.isSimulated
-              ? 'Pagamento simulado. Nenhuma cobrança foi realizada.'
-              : 'Pagamento confirmado.',
-          isError: false,
-        );
         await widget.onPaymentSuccess();
-
-        if (mounted) {
-          Navigator.pop(context, true);
-        }
+        if (!mounted) return;
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentReceiptPage(
+              result: result,
+              reservationId: widget.reservationId,
+            ),
+          ),
+        );
+        if (mounted) Navigator.pop(context, true);
       } else {
         throw Exception("Pagamento recusado");
       }
@@ -389,4 +392,115 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
   String _money(dynamic value) =>
       ((value as num?)?.toDouble() ?? widget.amount).toStringAsFixed(2);
+}
+
+class PaymentReceiptPage extends StatelessWidget {
+  final PaymentResult result;
+  final String? reservationId;
+
+  const PaymentReceiptPage({
+    super.key,
+    required this.result,
+    required this.reservationId,
+  });
+
+  String get _methodLabel => switch (result.method) {
+        'pix' => 'Pix',
+        'credit_card' => 'Cartão de crédito',
+        'debit_card' => 'Cartão de débito',
+        'cash' => 'Dinheiro',
+        _ => result.method,
+      };
+
+  Future<List<int>> _pdfBytes() async {
+    final document = pw.Document();
+    document.addPage(
+      pw.Page(
+        build: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text('ParkHere — Comprovante de pagamento', style: pw.TextStyle(fontSize: 18)),
+            pw.SizedBox(height: 18),
+            pw.Text('Transação: ${result.transactionId}'),
+            pw.Text('Reserva: ${reservationId ?? 'não informada'}'),
+            pw.Text('Método: $_methodLabel'),
+            pw.Text('Valor: R\$ ${result.amount.toStringAsFixed(2)}'),
+            pw.Text('Status: Pagamento confirmado'),
+          ],
+        ),
+      ),
+    );
+    return document.save();
+  }
+
+  Future<void> _share() async {
+    await Printing.sharePdf(
+      bytes: Uint8List.fromList(await _pdfBytes()),
+      filename: 'comprovante-parkhere-${result.transactionId}.pdf',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Comprovante de pagamento')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 58),
+                  const SizedBox(height: 12),
+                  const Text('Pagamento confirmado', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 18),
+                  _ReceiptRow(label: 'Valor', value: 'R\$ ${result.amount.toStringAsFixed(2)}'),
+                  _ReceiptRow(label: 'Método', value: _methodLabel),
+                  _ReceiptRow(label: 'Reserva', value: reservationId ?? '—'),
+                  _ReceiptRow(label: 'Transação', value: result.transactionId),
+                  if (result.isSimulated)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 14),
+                      child: Text('Pagamento simulado para homologação.', textAlign: TextAlign.center),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: _share,
+            icon: const Icon(Icons.ios_share),
+            label: const Text('Exportar ou compartilhar PDF'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Concluir'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReceiptRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ReceiptRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label),
+            Flexible(child: Text(value, textAlign: TextAlign.right)),
+          ],
+        ),
+      );
 }

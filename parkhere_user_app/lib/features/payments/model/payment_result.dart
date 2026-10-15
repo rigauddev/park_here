@@ -4,6 +4,9 @@ class PaymentResult {
   final String transactionId;
   final String? checkoutUrl;
   final String? qrCode;
+  final String method;
+  final String purpose;
+  final double amount;
 
   PaymentResult({
     required this.success,
@@ -11,5 +14,8 @@ class PaymentResult {
     required this.transactionId,
     this.checkoutUrl,
     this.qrCode,
+    required this.method,
+    required this.purpose,
+    required this.amount,
   });
 }
