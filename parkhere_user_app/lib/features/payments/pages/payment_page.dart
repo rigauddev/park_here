@@ -11,6 +11,7 @@ import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
 import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/services/location_service.dart';
 import '../../../core/widgets/api_feedback.dart';
 import '../model/payment_method_enum.dart';
 import '../model/payment_result.dart';
@@ -22,6 +23,7 @@ class PaymentPage extends ConsumerStatefulWidget {
   final String paymentPurpose;
   final bool checkoutPayment;
   final bool payNow;
+  final bool requireParkingLocation;
   final FutureOr<void> Function() onPaymentSuccess;
 
   const PaymentPage({
@@ -31,6 +33,7 @@ class PaymentPage extends ConsumerStatefulWidget {
     this.paymentPurpose = 'reservation',
     this.checkoutPayment = false,
     required this.payNow,
+    this.requireParkingLocation = false,
     required this.onPaymentSuccess,
   });
 
@@ -99,12 +102,21 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         throw Exception("Sessao expirada. Entre novamente.");
       }
 
+      double? latitude;
+      double? longitude;
+      if (widget.requireParkingLocation) {
+        final position = await LocationService().getCurrentLocation();
+        latitude = position.latitude;
+        longitude = position.longitude;
+      }
       final result = await PaymentService().processPayment(
         amount: widget.amount,
         method: paymentMethod,
         accessToken: accessToken,
         reservationId: widget.reservationId,
         purpose: widget.paymentPurpose,
+        latitude: latitude,
+        longitude: longitude,
       );
 
       if (result.success) {

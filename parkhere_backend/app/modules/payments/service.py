@@ -21,7 +21,7 @@ from app.modules.payments.schemas import (
     PaymentSplitResponse,
 )
 from app.modules.reservations.models import Reservation
-from app.modules.reservations.service import calculate_checkout_excess
+from app.modules.reservations.service import calculate_checkout_excess, _distance_meters
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.platform_fees.service import PlatformFeeService
@@ -59,6 +59,17 @@ class PaymentService:
         parking = await _get_parking(db, reservation.parking_id)
         _ensure_payment_permission(current_user, reservation, parking)
         _ensure_payable_reservation(reservation)
+        if current_user.role == UserRoleEnum.CUSTOMER and reservation.pricing_plan == "hourly":
+            if data.latitude is None or data.longitude is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Informe sua localização para pagar uma reserva por hora.",
+                )
+            if _distance_meters(data.latitude, data.longitude, parking.lat, parking.lng) > 50:
+                raise HTTPException(
+                    status_code=403,
+                    detail="O pagamento por hora só pode ser realizado dentro de 50 metros do estacionamento.",
+                )
         if settings.PAYMENT_PROVIDER != "mock":
             raise HTTPException(
                 status_code=503,

@@ -438,8 +438,8 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
     ref.read(reservationsProvider.notifier).createReservation(reservation);
   }
 
-  void _openPaymentAndConfirmCheckin() {
-    Navigator.push(
+  Future<void> _openPaymentAndConfirmCheckin() async {
+    final paid = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => PaymentPage(
@@ -453,6 +453,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
         ),
       ),
     );
+    if (paid == true && mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   Future<bool> _confirmBackendCheckin() async {

@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/i18n/app_localizations.dart';
+import '../../auth/providers/auth_provider.dart';
 
-class HelpCenterPage extends StatefulWidget {
+class HelpCenterPage extends ConsumerStatefulWidget {
   const HelpCenterPage({super.key});
 
   @override
-  State<HelpCenterPage> createState() => _HelpCenterPageState();
+  ConsumerState<HelpCenterPage> createState() => _HelpCenterPageState();
 }
 
-class _HelpCenterPageState extends State<HelpCenterPage> {
+class _HelpCenterPageState extends ConsumerState<HelpCenterPage> {
   final _searchController = TextEditingController();
   String _query = '';
-  String _audience = 'all';
 
   @override
   void dispose() {
@@ -23,13 +24,18 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
   @override
   Widget build(BuildContext context) {
     final en = context.strings.isEnglish;
+    final auth = ref.watch(authProvider);
+    // A help center opened from a signed-in session must not expose another
+    // account's operational guidance. Admins and partner staff use the
+    // partner articles; customers see only customer and shared articles.
+    final audience = auth.isPartnerSession ? 'partner' : 'customer';
     final entries = _entries(en)
         .where(
           (entry) =>
-              _audience == 'all' ||
-              (_audience == 'customer'
+              (audience == 'customer'
                   ? entry.audience.contains(en ? 'Customer' : 'Cliente')
-                  : entry.audience.contains(en ? 'Partner' : 'Parceiro')),
+                  : entry.audience.contains(en ? 'Partner' : 'Parceiro')) ||
+              entry.audience.contains(en ? 'Everyone' : 'Todos'),
         )
         .where(
           (entry) =>
@@ -94,28 +100,22 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SegmentedButton<String>(
-                        segments: [
-                          ButtonSegment(
-                            value: 'all',
-                            label: Text(en ? 'Everyone' : 'Todos'),
-                            icon: const Icon(Icons.groups_outlined),
-                          ),
-                          ButtonSegment(
-                            value: 'customer',
-                            label: Text(en ? 'Customer' : 'Cliente'),
-                            icon: const Icon(Icons.directions_car_outlined),
-                          ),
-                          ButtonSegment(
-                            value: 'partner',
-                            label: Text(en ? 'Partner' : 'Parceiro'),
-                            icon: const Icon(Icons.business_outlined),
-                          ),
-                        ],
-                        selected: {_audience},
-                        onSelectionChanged: (selection) =>
-                            setState(() => _audience = selection.first),
-                        showSelectedIcon: false,
+                      Chip(
+                        avatar: Icon(
+                          audience == 'partner'
+                              ? Icons.business_outlined
+                              : Icons.directions_car_outlined,
+                          size: 18,
+                        ),
+                        label: Text(
+                          audience == 'partner'
+                              ? (en
+                                    ? 'Help for partners'
+                                    : 'Ajuda para parceiros')
+                              : (en
+                                    ? 'Help for customers'
+                                    : 'Ajuda para clientes'),
+                        ),
                       ),
                     ],
                   ),

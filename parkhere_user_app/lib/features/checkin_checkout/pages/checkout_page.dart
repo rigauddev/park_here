@@ -197,6 +197,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
               paymentPurpose: alreadyPaid ? 'checkout_excess' : 'reservation',
               checkoutPayment: true,
               payNow: false,
+              requireParkingLocation: true,
               onPaymentSuccess: () {},
             ),
           ),

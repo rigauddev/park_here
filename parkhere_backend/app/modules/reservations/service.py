@@ -84,7 +84,12 @@ class ReservationService:
                 select(Reservation)
                 .where(
                     Reservation.user_id == current_user.id,
-                    Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
+                    Reservation.status.in_([
+                        "pre_reserved",
+                        "pending_operator_approval",
+                        "confirmed",
+                        "checked_in",
+                    ]),
                     (Reservation.status != "pre_reserved")
                     | (Reservation.hold_expires_at > datetime.utcnow()),
                 )
@@ -445,6 +450,9 @@ async def _get_reservation_with_parking(
         raise HTTPException(status_code=404, detail="Reservation not found")
     parking = await db.scalar(select(Parking).where(Parking.id == parking_id).with_for_update().execution_options(populate_existing=True))
     reservation = await db.scalar(select(Reservation).where(Reservation.id == reservation_id).with_for_update().execution_options(populate_existing=True))
+    reservation.parking_lat = parking.lat
+    reservation.parking_lng = parking.lng
+    reservation.parking_city = parking.city
     return reservation, parking
 
 
@@ -881,6 +889,9 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         walk_in_phone=reservation.walk_in_phone,
         parking_id=reservation.parking_id,
         parking_name=getattr(reservation, "parking_name", None),
+        parking_lat=getattr(reservation, "parking_lat", None),
+        parking_lng=getattr(reservation, "parking_lng", None),
+        parking_city=getattr(reservation, "parking_city", None),
         status=reservation.status,
         checked_in_at=reservation.checked_in_at.isoformat() + "Z"
         if reservation.checked_in_at

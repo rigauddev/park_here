@@ -81,6 +81,9 @@ class ReservationResponse(BaseModel):
     created_by_phone: str | None = None
     parking_id: str
     parking_name: str | None = None
+    parking_lat: float | None = None
+    parking_lng: float | None = None
+    parking_city: str | None = None
     status: str
     checked_in_at: str | None = None
     checked_out_at: str | None = None

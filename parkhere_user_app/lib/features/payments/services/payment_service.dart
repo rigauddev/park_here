@@ -21,11 +21,18 @@ class PaymentService {
     required String accessToken,
     String? reservationId,
     String purpose = 'reservation',
+    double? latitude,
+    double? longitude,
   }) async {
     if (reservationId != null) {
       final intent = await _api.postAuthorized(
         "/payments/reservations/$reservationId/intent",
-        {"method": _methodName(method), "purpose": purpose},
+        {
+          "method": _methodName(method),
+          "purpose": purpose,
+          if (latitude != null) "latitude": latitude,
+          if (longitude != null) "longitude": longitude,
+        },
         accessToken,
       );
       if (intent["is_simulated"] != true) {

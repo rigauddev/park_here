@@ -7,6 +7,8 @@ class CreatePaymentIntentRequest(BaseModel):
     method: Literal["pix", "credit_card", "debit_card", "cash"] = "pix"
     cash_received: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     purpose: Literal["reservation", "checkout_excess"] = "reservation"
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
 class PaymentSplitResponse(BaseModel):

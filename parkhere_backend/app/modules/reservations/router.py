@@ -43,6 +43,13 @@ async def list_my_reservations(
     for reservation, _, parking_name in rows:
         # The mobile client needs the display name without a second request.
         reservation.parking_name = parking_name
+        # Include coordinates in the reservation payload for proximity-gated
+        # hourly payments and map details.
+        parking = await db.scalar(select(Parking).where(Parking.id == reservation.parking_id))
+        if parking is not None:
+            reservation.parking_lat = parking.lat
+            reservation.parking_lng = parking.lng
+            reservation.parking_city = parking.city
     now = datetime.utcnow()
     expired_by_parking: dict[str, int] = {}
     for reservation in reservations:

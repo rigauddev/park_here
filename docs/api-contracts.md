@@ -918,3 +918,10 @@ de reservas e receita associada.
 `bicycle`) e `bicycle_parts` opcional. Para bicicleta, `plate` representa o
 número de identificação e `vehicle_document` mantém o nome do comprovante PDF.
 Clientes antigos que não enviam o campo continuam sendo tratados como `car`.
+# Pagamento de reservas horárias
+
+`POST /payments/reservations/{reservation_id}/intent` aceita `latitude` e
+`longitude` opcionais. Para clientes pagando uma reserva horária ou excedente
+de checkout, os dois campos são obrigatórios e a API exige distância máxima de
+50 metros do estacionamento. Reservas diárias, semanais e mensais não usam
+essa validação no pagamento do check-in.

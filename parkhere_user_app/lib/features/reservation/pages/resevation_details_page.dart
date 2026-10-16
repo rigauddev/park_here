@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../checkin_checkout/pages/checkout_page.dart';
 import '../../checkin_checkout/pages/route_preview_page.dart';
 import '../../payments/pages/payment_page.dart';
+import '../../parking_search/models/payment_plan_enum.dart';
 import '../models/reservation_enum.dart';
 import '../models/reservation_model.dart';
 import '../providers/reservation_provider.dart';
@@ -99,7 +100,8 @@ class _ReservationDetailsPageState
               ),
             ],
           ),
-          if (reservation.status == ReservationStatus.open &&
+          if (reservation.plan == PlanType.hourly &&
+              reservation.checkedIn &&
               reservation.paymentStatus != 'paid' &&
               reservation.id.isNotEmpty)
             Padding(
@@ -107,24 +109,12 @@ class _ReservationDetailsPageState
               child: Card(
                 child: ListTile(
                   leading: const Icon(Icons.lock_outline),
-                  title: const Text('Garantir reserva antecipadamente'),
+                  title: const Text('Realizar pagamento da permanência'),
                   subtitle: Text(
-                    'Pague agora R\$ ${reservation.estimatedValue.toStringAsFixed(2)}',
+                    'Disponível até 50 m do estacionamento. O excedente será calculado no checkout.',
                   ),
                   trailing: FilledButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PaymentPage(
-                          amount: reservation.estimatedValue,
-                          reservationId: reservation.id,
-                          payNow: true,
-                          onPaymentSuccess: () async {
-                            ref.invalidate(reservationsProvider);
-                          },
-                        ),
-                      ),
-                    ),
+                    onPressed: () => _payHourlyReservation(reservation),
                     child: const Text('Pagar'),
                   ),
                 ),
@@ -220,6 +210,23 @@ class _ReservationDetailsPageState
               ),
             )
           : null,
+    );
+  }
+
+  Future<void> _payHourlyReservation(ReservationModel reservation) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentPage(
+          amount: reservation.estimatedValue,
+          reservationId: reservation.id,
+          payNow: false,
+          requireParkingLocation: true,
+          onPaymentSuccess: () async {
+            ref.invalidate(reservationsProvider);
+          },
+        ),
+      ),
     );
   }
 
