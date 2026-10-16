@@ -1002,7 +1002,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                 children: [
                   TileLayer(
                     urlTemplate:
-                        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                     subdomains: const ['a', 'b', 'c', 'd'],
                     userAgentPackageName: 'br.com.rptech.parkhere_user_app',
                   ),
@@ -1677,6 +1677,7 @@ class _ParkingMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isEnglish = context.strings.isEnglish;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1696,11 +1697,13 @@ class _ParkingMarker extends StatelessWidget {
             ],
           ),
           child: Center(
-            child: Image.asset(
-              'assets/branding/icon_padrao_transparent.png',
-              width: 30,
-              height: 30,
-              fit: BoxFit.contain,
+            child: Text(
+              isEnglish ? 'P' : 'E',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ),
@@ -1724,7 +1727,11 @@ class _UserLocationMarker extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 3),
         boxShadow: const [BoxShadow(color: Color(0x33102657), blurRadius: 10)],
       ),
-      child: const Icon(Icons.navigation, color: Colors.white, size: 14),
+      child: const Icon(
+        Icons.directions_car_filled,
+        color: Colors.white,
+        size: 16,
+      ),
     );
   }
 }

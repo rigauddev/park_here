@@ -36,6 +36,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   bool backPhoto = false;
   bool hasGuideIndication = false;
   bool _checkingIn = false;
+  final Set<String> _uploadedPhotoKinds = {};
 
   bool get allPhotosDone => frontPhoto && leftPhoto && rightPhoto && backPhoto;
 
@@ -57,12 +58,20 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       final token = ref.read(authProvider).accessToken;
       final reservationId = widget.preCheckin.reservationId;
       if (token != null && reservationId != null) {
-        await ApiService().uploadAuthorizedFile(
-          '/reservations/$reservationId/photos?kind=$kind',
-          token,
-          photo.name,
-          bytes,
-        );
+        try {
+          await _uploadPhoto(kind, photo, bytes, token, reservationId);
+          _uploadedPhotoKinds.add(kind);
+        } catch (error) {
+          // Keep the camera result in the current session and retry before
+          // check-in. A transient upload failure must not look like a dead
+          // capture button.
+          if (mounted) {
+            await ApiFeedback.show(
+              context,
+              'Foto salva localmente. Vamos tentar enviar novamente ao concluir o check-in.',
+            );
+          }
+        }
       }
       _captured[kind] = photo;
       markDone();
@@ -407,9 +416,56 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       return;
     }
     setState(() => _checkingIn = true);
+    if (!await _uploadPendingPhotos()) {
+      if (mounted) setState(() => _checkingIn = false);
+      return;
+    }
     final success = await _confirmBackendCheckin();
     if (mounted) setState(() => _checkingIn = false);
     if (success && mounted) await _showServiceSummary(context);
+  }
+
+  Future<void> _uploadPhoto(
+    String kind,
+    XFile photo,
+    List<int> bytes,
+    String token,
+    String reservationId,
+  ) {
+    return ApiService().uploadAuthorizedFile(
+      '/reservations/$reservationId/photos?kind=$kind',
+      token,
+      photo.name,
+      bytes,
+    );
+  }
+
+  Future<bool> _uploadPendingPhotos() async {
+    final token = ref.read(authProvider).accessToken;
+    final reservationId = widget.preCheckin.reservationId;
+    if (token == null || reservationId == null) {
+      await ApiFeedback.show(context, 'Sessão expirada. Entre novamente.');
+      return false;
+    }
+    for (final entry in _captured.entries) {
+      if (_uploadedPhotoKinds.contains(entry.key) || entry.value == null) {
+        continue;
+      }
+      try {
+        final photo = entry.value!;
+        final bytes = await photo.readAsBytes();
+        await _uploadPhoto(entry.key, photo, bytes, token, reservationId);
+        _uploadedPhotoKinds.add(entry.key);
+      } catch (error) {
+        if (!mounted) return false;
+        await ApiFeedback.show(
+          context,
+          'Não foi possível enviar a foto ${entry.key}. Verifique a conexão e tente novamente.',
+        );
+        return false;
+      }
+    }
+    return true;
   }
 
   Widget _photoItem(String label, bool done, VoidCallback onTap) {

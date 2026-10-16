@@ -169,7 +169,9 @@ class ApiService {
         contentType: _imageMediaType(fileName),
       ),
     );
-    final response = await http.Response.fromStream(await request.send());
+    final response = await http.Response.fromStream(
+      await request.send().timeout(_timeout),
+    );
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
