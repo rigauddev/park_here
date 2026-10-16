@@ -9,6 +9,7 @@ from app.modules.partners.router import router as partners_router
 from app.modules.payments.router import router as payments_router
 from app.modules.platform_fees.router import router as platform_fees_router
 from app.modules.dashboard.router import router as dashboard_router
+from app.modules.parkings.convenience_router import router as convenience_router
 from app.modules.reservations.router import router as reservations_router
 from app.modules.users.user_router import router as user_router
 
@@ -35,6 +36,7 @@ app.include_router(reservations_router)
 app.include_router(payments_router)
 app.include_router(platform_fees_router)
 app.include_router(dashboard_router)
+app.include_router(convenience_router)
 
 
 @app.get("/health")

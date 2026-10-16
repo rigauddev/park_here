@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.parkings.models import Parking, ParkingService
+from app.modules.parkings.convenience_models import ParkingConvenienceProduct
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.operator_assignment_models import OperatorWorkShift
 from app.modules.platform_fees.feature_catalog import feature_by_key
@@ -94,6 +95,15 @@ async def partner_dashboard(
         parking_query = parking_query.where(Parking.id == parking_id)
     parkings = list((await db.scalars(parking_query)).all())
     allowed_ids = {parking.id for parking in parkings}
+    convenience_rows = list((await db.scalars(
+        select(ParkingConvenienceProduct).where(
+            ParkingConvenienceProduct.parking_id.in_(allowed_ids or {"__none__"}),
+            ParkingConvenienceProduct.is_active.is_(True),
+        )
+    )).all())
+    convenience_categories: dict[str, int] = defaultdict(int)
+    for product in convenience_rows:
+        convenience_categories[product.category] += 1
 
     reservation_query = (
         select(Reservation, Parking, User)
@@ -230,10 +240,18 @@ async def partner_dashboard(
             "average_ticket": round(total_paid / total_reservations, 2) if total_reservations else 0.0,
             "active_units": len(parkings),
             "operators": len(operator_rows),
+            "active_convenience_products": len(convenience_rows),
         },
         "units": list(by_unit.values()),
         "service_breakdown": service_breakdown,
         "additional_services": list(extra_services.values()),
+        "convenience": {
+            "products": len(convenience_rows),
+            "categories": [
+                {"category": category, "products": count}
+                for category, count in sorted(convenience_categories.items())
+            ],
+        },
         "modality_breakdown": dict(modality),
         "monthly": [
             {"month": key, **value} for key, value in sorted(monthly.items())

@@ -925,3 +925,16 @@ Clientes antigos que não enviam o campo continuam sendo tratados como `car`.
 de checkout, os dois campos são obrigatórios e a API exige distância máxima de
 50 metros do estacionamento. Reservas diárias, semanais e mensais não usam
 essa validação no pagamento do check-in.
+# Conveniências da unidade de estacionamento
+
+Gestores de uma unidade podem cadastrar produtos vendidos no local, separados
+dos serviços extras da reserva:
+
+- `GET /partners/parking-management/{parking_id}/conveniences`
+- `POST /partners/parking-management/{parking_id}/conveniences`
+- `PUT /partners/parking-management/{parking_id}/conveniences/{product_id}`
+- `DELETE /partners/parking-management/{parking_id}/conveniences/{product_id}`
+
+O payload usa `category`, `subcategory`, `name`, `description`, `price` e
+`is_active`. A exclusão é lógica. O acesso é limitado ao tenant da unidade;
+operadores podem consultar, mas somente gestor/admin pode alterar.

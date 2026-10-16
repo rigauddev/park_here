@@ -36,6 +36,9 @@
 - Configurar servicos adicionais.
 - Cadastrar taxas repassadas pela plataforma por tipo de servico.
 - Controlar vagas disponiveis.
+- Cadastrar produtos de conveniência por unidade, com categoria,
+  subcategoria, descrição e preço. Esses produtos são separados dos serviços
+  extras contratados na reserva.
 - Validar check-in e checkout manualmente na portaria.
 - Consultar reservas ativas, expiradas, canceladas e finalizadas.
 - Ver no mapa operacional a previsao de chegada das pre-reservas recebidas.

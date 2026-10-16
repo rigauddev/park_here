@@ -148,6 +148,10 @@ class _DashboardBody extends StatelessWidget {
     final summary = _map('summary');
     final units = _list('units');
     final services = _list('additional_services');
+    final convenience = _map('convenience');
+    final convenienceCategories = convenience['categories'] is List
+        ? (convenience['categories'] as List).whereType<Map>().toList()
+        : const <Map>[];
     final modalities = _map('modality_breakdown');
     final monthly = _list('monthly');
     final cities = _list('customer_cities');
@@ -291,6 +295,29 @@ class _DashboardBody extends StatelessWidget {
                   money: _money,
                   isEnglish: isEnglish,
                 ),
+              ),
+              _Panel(
+                title: isEnglish ? 'Convenience products' : 'Conveniências',
+                icon: Icons.shopping_bag_outlined,
+                child: convenienceCategories.isEmpty
+                    ? _EmptyText(
+                        isEnglish
+                            ? 'No convenience products registered.'
+                            : 'Nenhum produto de conveniência cadastrado.',
+                      )
+                    : Column(
+                        children: convenienceCategories
+                            .map(
+                              (item) => ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text('${item['category'] ?? ''}'),
+                                trailing: Text(
+                                  '${item['products'] ?? 0} ${isEnglish ? 'products' : 'produtos'}',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
               ),
               _Panel(
                 title: isEnglish ? 'Customer cities' : 'Cidades dos clientes',

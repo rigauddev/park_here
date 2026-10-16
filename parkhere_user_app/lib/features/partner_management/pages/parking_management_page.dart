@@ -13,6 +13,7 @@ import '../providers/partner_parking_provider.dart';
 import '../models/partner_profile_model.dart';
 import '../providers/partner_profile_provider.dart';
 import 'partner_feature_access_page.dart';
+import 'parking_convenience_page.dart';
 
 class CepInputFormatter extends TextInputFormatter {
   @override
@@ -91,6 +92,15 @@ class ParkingManagementPage extends ConsumerWidget {
                 parking: items[index],
                 onEdit: () =>
                     _openForm(context, parking: items[index], partner: partner),
+                onConveniences: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ParkingConveniencePage(
+                      parkingId: items[index].id!,
+                      parkingName: items[index].name,
+                    ),
+                  ),
+                ),
               );
             },
           );
@@ -211,8 +221,13 @@ class _OperatingHoursEditor extends StatelessWidget {
 class _ManagedParkingCard extends StatelessWidget {
   final ManagedParkingModel parking;
   final VoidCallback onEdit;
+  final VoidCallback onConveniences;
 
-  const _ManagedParkingCard({required this.parking, required this.onEdit});
+  const _ManagedParkingCard({
+    required this.parking,
+    required this.onEdit,
+    required this.onConveniences,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -257,6 +272,14 @@ class _ManagedParkingCard extends StatelessWidget {
                   icon: const Icon(Icons.edit_outlined),
                 ),
               ],
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: onConveniences,
+                icon: const Icon(Icons.shopping_bag_outlined),
+                label: const Text('Conveniência'),
+              ),
             ),
             const SizedBox(height: 14),
             Wrap(

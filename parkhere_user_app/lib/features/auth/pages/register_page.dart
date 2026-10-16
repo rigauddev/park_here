@@ -138,23 +138,16 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    SegmentedButton<RegisterAccountType>(
-                      segments: const [
-                        ButtonSegment(
-                          value: RegisterAccountType.customer,
-                          label: Text("Cliente"),
-                          icon: Icon(Icons.person),
-                        ),
-                        ButtonSegment(
-                          value: RegisterAccountType.partner,
-                          label: Text("Parceiro"),
-                          icon: Icon(Icons.storefront),
-                        ),
-                      ],
-                      selected: {accountType},
-                      onSelectionChanged: (value) {
-                        setState(() => accountType = value.first);
-                      },
+                    Chip(
+                      avatar: Icon(
+                        isPartner ? Icons.storefront : Icons.person,
+                        size: 18,
+                      ),
+                      label: Text(
+                        isPartner
+                            ? 'Cadastro de parceiro'
+                            : 'Cadastro de cliente',
+                      ),
                     ),
                     const SizedBox(height: 22),
                     _emailValidationStep(),

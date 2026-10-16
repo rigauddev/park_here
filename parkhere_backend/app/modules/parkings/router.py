@@ -90,6 +90,9 @@ def _to_response(parking: Parking) -> ParkingResponse:
         for key, value in json.loads(parking.category_pricing or '{}').items()
     }
 
+    def category_price(category: str, key: str) -> float:
+        return float(category_pricing.get(category, {}).get(key, 0) or 0)
+
     return ParkingResponse(
         id=parking.id,
         name=parking.name,
@@ -124,10 +127,10 @@ def _to_response(parking: Parking) -> ParkingResponse:
         motoHomeSpots=getattr(parking, 'moto_home_spots', 0),
         coveredDailyPrice=parking.covered_daily_price,
         uncoveredDailyPrice=parking.uncovered_daily_price,
-        vipDailyPrice=parking.covered_daily_price,
-        largeDailyPrice=parking.uncovered_daily_price,
-        busDailyPrice=parking.uncovered_daily_price,
-        pickupDailyPrice=parking.uncovered_daily_price,
+        vipDailyPrice=category_price("vip", "daily_price"),
+        largeDailyPrice=category_price("large", "daily_price"),
+        busDailyPrice=category_price("bus", "daily_price"),
+        pickupDailyPrice=category_price("pickup", "daily_price"),
         carWashPrice=services.get("car_wash").price if "car_wash" in services else 0,
         tourGuidePrice=services.get("tour_guide").price if "tour_guide" in services else 0,
         transportPrice=services.get("transport").price if "transport" in services else 0,
