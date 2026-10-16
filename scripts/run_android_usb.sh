@@ -19,4 +19,8 @@ curl --fail --silent --output /dev/null http://127.0.0.1:8000/docs || {
 }
 "$adb_bin" -s "$device_id" reverse tcp:8000 tcp:8000
 cd "$repo_root/parkhere_user_app"
-exec flutter run -d "$device_id" --dart-define=API_URL=http://127.0.0.1:8000
+# Dependencies are already resolved in the checkout. Skipping pub avoids a
+# network/package scan on every physical-device launch and keeps hot reload
+# responsive.
+exec flutter run -d "$device_id" --no-pub --device-timeout=30 \
+  --dart-define=API_URL=http://127.0.0.1:8000

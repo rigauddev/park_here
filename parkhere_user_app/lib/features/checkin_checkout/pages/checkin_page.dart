@@ -282,7 +282,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
 
     if (!mounted) return;
     if (shouldOpenPayment == true) {
-      _openPaymentAndConfirmCheckin();
+      await _openPaymentAndConfirmCheckin();
       return;
     }
 
@@ -369,19 +369,26 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
                     borderRadius: BorderRadius.circular(18),
                   ),
                 ),
-                onPressed: allPhotosDone && !_checkingIn
-                    ? _completeCheckinBeforePayment
-                    : null,
-                child: Text(
-                  widget.preCheckin.plan.name == 'hourly'
-                      ? "Concluir check-in"
-                      : "Avançar para pagamento",
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
+                onPressed: _checkingIn ? null : _completeCheckinBeforePayment,
+                child: _checkingIn
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        widget.preCheckin.plan.name == 'hourly'
+                            ? "Concluir check-in"
+                            : "Avançar para pagamento",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
               ),
             ),
           ],
@@ -392,6 +399,13 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
 
   Future<void> _completeCheckinBeforePayment() async {
     if (_checkingIn) return;
+    if (!allPhotosDone) {
+      await ApiFeedback.show(
+        context,
+        'Conclua as quatro fotos do veículo antes de finalizar o check-in.',
+      );
+      return;
+    }
     setState(() => _checkingIn = true);
     final success = await _confirmBackendCheckin();
     if (mounted) setState(() => _checkingIn = false);

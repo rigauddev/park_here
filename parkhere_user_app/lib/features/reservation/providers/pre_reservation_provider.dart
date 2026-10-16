@@ -116,13 +116,15 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('parkhere_pre_reservation', jsonEncode(pre.toJson()));
 
-    _startExpirationTimer(routeMinutes + 5);
+    _startExpirationTimer((routeMinutes + 5) * 60);
   }
 
-  void _startExpirationTimer(int minutes) {
+  void _startExpirationTimer(int seconds) {
     _timer?.cancel();
 
-    _timer = Timer(Duration(minutes: minutes), () {
+    // API hydration uses seconds for the remaining server hold.
+    final duration = Duration(seconds: seconds.clamp(0, 365 * 24 * 60 * 60));
+    _timer = Timer(duration, () {
       final current = state.value;
 
       if (current != null) {
