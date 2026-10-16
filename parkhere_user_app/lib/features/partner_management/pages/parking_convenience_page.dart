@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/api_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import 'convenience_pos_page.dart';
 
 class ParkingConveniencePage extends StatefulWidget {
   final String parkingId;
@@ -20,6 +21,7 @@ class ParkingConveniencePage extends StatefulWidget {
 class _ParkingConveniencePageState extends State<ParkingConveniencePage> {
   final _api = ApiService();
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _categories = [];
   bool _loading = true;
 
   @override
@@ -36,9 +38,14 @@ class _ParkingConveniencePageState extends State<ParkingConveniencePage> {
         '/partners/parking-management/${widget.parkingId}/conveniences',
         token,
       );
+      final categories = await _api.getAuthorized(
+        '/partners/parking-management/${widget.parkingId}/convenience-categories',
+        token,
+      );
       if (!mounted) return;
       setState(() {
         _items = result.whereType<Map<String, dynamic>>().toList();
+        _categories = categories.whereType<Map<String, dynamic>>().toList();
         _loading = false;
       });
     } catch (error) {
@@ -55,12 +62,20 @@ class _ParkingConveniencePageState extends State<ParkingConveniencePage> {
   Future<void> _add() async {
     final data = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => const _ConvenienceDialog(),
+      builder: (_) => _ConvenienceDialog(categories: _categories),
     );
     if (data == null) return;
     try {
       final token = (await LocalStorageService().getTokens())['access'];
       if (token == null) throw Exception('Sessão expirada.');
+      if (data['category_id'] == null) {
+        final category = await _api.postAuthorized(
+          '/partners/parking-management/${widget.parkingId}/convenience-categories',
+          {'name': data['category'], 'subcategory': data['subcategory']},
+          token,
+        );
+        data['category_id'] = category['id'];
+      }
       await _api.postAuthorized(
         '/partners/parking-management/${widget.parkingId}/conveniences',
         data,
@@ -78,7 +93,24 @@ class _ParkingConveniencePageState extends State<ParkingConveniencePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Conveniência · ${widget.parkingName}')),
+      appBar: AppBar(
+        title: Text('Conveniência · ${widget.parkingName}'),
+        actions: [
+          IconButton(
+            tooltip: 'Caixa / ponto de venda',
+            icon: const Icon(Icons.point_of_sale_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ConveniencePosPage(
+                  parkingId: widget.parkingId,
+                  parkingName: widget.parkingName,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add),
@@ -115,7 +147,8 @@ class _ParkingConveniencePageState extends State<ParkingConveniencePage> {
 }
 
 class _ConvenienceDialog extends StatefulWidget {
-  const _ConvenienceDialog();
+  final List<Map<String, dynamic>> categories;
+  const _ConvenienceDialog({required this.categories});
 
   @override
   State<_ConvenienceDialog> createState() => _ConvenienceDialogState();
@@ -127,6 +160,8 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
   final name = TextEditingController();
   final description = TextEditingController();
   final price = TextEditingController(text: '0');
+  final barcode = TextEditingController();
+  String? categoryId;
 
   @override
   void dispose() {
@@ -136,6 +171,7 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
       name,
       description,
       price,
+      barcode,
     ]) {
       controller.dispose();
     }
@@ -150,11 +186,41 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (widget.categories.isNotEmpty)
+              DropdownButtonFormField<String>(
+                initialValue: categoryId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Categoria existente',
+                ),
+                items: widget.categories.map((item) {
+                  final label =
+                      '${item['name']}${item['subcategory'] == null ? '' : ' · ${item['subcategory']}'}';
+                  return DropdownMenuItem(
+                    value: item['id'] as String,
+                    child: Text(label, overflow: TextOverflow.ellipsis),
+                  );
+                }).toList(),
+                onChanged: (value) => setState(() {
+                  categoryId = value;
+                  final selected = widget.categories.firstWhere(
+                    (item) => item['id'] == value,
+                    orElse: () => const <String, dynamic>{},
+                  );
+                  category.text = selected['name'] as String? ?? '';
+                  subcategory.text = selected['subcategory'] as String? ?? '';
+                }),
+              ),
             _field(category, 'Categoria'),
             _field(subcategory, 'Subcategoria (opcional)'),
             _field(name, 'Nome do produto'),
             _field(description, 'Descrição (opcional)'),
             _field(price, 'Preço', keyboard: TextInputType.number),
+            _field(
+              barcode,
+              'Código de barras (opcional)',
+              keyboard: TextInputType.number,
+            ),
           ],
         ),
       ),
@@ -166,14 +232,23 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
         FilledButton(
           onPressed: () {
             final value = double.tryParse(price.text.replaceAll(',', '.'));
-            if (category.text.trim().isEmpty ||
+            if (category.text.trim().isEmpty && categoryId == null ||
                 name.text.trim().isEmpty ||
                 value == null ||
                 value < 0) {
               return;
             }
+            final categoryName = category.text.trim().isNotEmpty
+                ? category.text.trim()
+                : (widget.categories.firstWhere(
+                            (item) => item['id'] == categoryId,
+                            orElse: () => const <String, dynamic>{},
+                          )['name']
+                          as String? ??
+                      '');
             Navigator.pop(context, {
-              'category': category.text.trim(),
+              'category': categoryName,
+              'category_id': categoryId,
               'subcategory': subcategory.text.trim().isEmpty
                   ? null
                   : subcategory.text.trim(),
@@ -182,6 +257,9 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
                   ? null
                   : description.text.trim(),
               'price': value,
+              'barcode': barcode.text.trim().isEmpty
+                  ? null
+                  : barcode.text.trim(),
               'is_active': true,
             });
           },

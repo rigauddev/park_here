@@ -695,6 +695,12 @@ class _WebMenu extends ConsumerWidget {
                       'Minha empresa',
                       _MainArea.management,
                     ),
+                  if (isPartner && isPartnerOwner && !isGuide)
+                    _MenuItem(
+                      Icons.storefront_outlined,
+                      'Conveniências e caixa',
+                      _MainArea.management,
+                    ),
                   if (isPartner && !isGuide)
                     _MenuItem(
                       Icons.schedule_outlined,
@@ -916,6 +922,12 @@ class _MobileDrawer extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.business_center_outlined),
                   title: const Text('Minha empresa'),
+                  onTap: () => onSelected(_MainArea.management),
+                ),
+              if (isPartner && isPartnerOwner && !isGuide)
+                ListTile(
+                  leading: const Icon(Icons.storefront_outlined),
+                  title: const Text('Conveniências e caixa'),
                   onTap: () => onSelected(_MainArea.management),
                 ),
               if (isPartner && isOperator)

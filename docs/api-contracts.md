@@ -935,7 +935,16 @@ dos serviços extras da reserva:
 - `PUT /partners/parking-management/{parking_id}/conveniences/{product_id}`
 - `DELETE /partners/parking-management/{parking_id}/conveniences/{product_id}`
 
-O payload usa `category`, `subcategory`, `name`, `description`, `price` e
+- `GET /partners/parking-management/{parking_id}/convenience-categories` lista
+  categorias e subcategorias reutilizáveis do tenant.
+- `POST /partners/parking-management/{parking_id}/convenience-categories` cria
+  uma categoria nova; duplicatas ativas são reutilizadas.
+- `POST /partners/parking-management/{parking_id}/convenience-sales` registra
+  uma venda no caixa com produtos, quantidades, forma de pagamento e valor
+  recebido. O retorno contém total e troco.
+
+O payload usa `category_id`, `category`, `subcategory`, `name`, `description`, `price`,
+`barcode` e
 `is_active`. A exclusão é lógica. O acesso é limitado ao tenant da unidade;
 operadores podem consultar, mas somente gestor/admin pode alterar.
 Enquanto `convenience_management` não estiver liberado, as rotas retornam

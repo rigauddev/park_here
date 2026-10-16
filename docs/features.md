@@ -42,6 +42,9 @@
   O módulo é um add-on pago (`convenience_management`) e fica bloqueado até a
   contratação/liberação pela gestão do app; somente gestores podem alterar os
   produtos.
+- O catálogo mantém categorias e subcategorias reutilizáveis por tenant. Cada
+  produto pode ter código de barras, que o operador pesquisa no caixa; o caixa
+  registra venda, forma de pagamento, valor recebido e troco.
 - Validar check-in e checkout manualmente na portaria.
 - Consultar reservas ativas, expiradas, canceladas e finalizadas.
 - Ver no mapa operacional a previsao de chegada das pre-reservas recebidas.
