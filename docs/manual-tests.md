@@ -80,6 +80,13 @@ API local na porta 8000, execute:
 bash scripts/run_ios_lan.sh 00008120-001874E11AC0201E
 ```
 
+O script usa `--no-pub` e não reinstala dependências a cada execução. Faça
+`flutter pub get` apenas quando `pubspec.yaml` mudar. Para melhor velocidade,
+use o iPhone por cabo e desative temporariamente o modo sem fio; no Android,
+selecione o ID USB (`adb devices`) e desconecte endpoints `adb-..._tls` que
+apareçam duplicados. Depois do primeiro build, mantenha o processo aberto e
+use hot reload (`r`) em vez de executar `flutter run` novamente.
+
 O script verifica a API pelo IP local do Mac e injeta esse endereço por
 `--dart-define`. Se houver mais de uma interface de rede, informe o IP
 explicitamente com `API_HOST_IP=192.168.1.7`.

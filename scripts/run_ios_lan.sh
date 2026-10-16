@@ -16,4 +16,7 @@ curl --fail --silent --output /dev/null "http://${host_ip}:8000/docs" || {
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root/parkhere_user_app"
-exec flutter run -d "$device_id" --dart-define="API_URL=http://${host_ip}:8000"
+# Dependencies are resolved once with `flutter pub get`; skipping pub here
+# avoids an unnecessary package/network check on every physical-device run.
+exec flutter run -d "$device_id" --no-pub --device-timeout=30 \
+  --dart-define="API_URL=http://${host_ip}:8000"
