@@ -328,7 +328,7 @@ async def get_my_partner_profile(
         ) or 0)
     approved_requests = (await db.scalars(select(PartnerFeatureRequest).where(
         PartnerFeatureRequest.tenant_id == current_user.tenant_id,
-        PartnerFeatureRequest.status == 'approved',
+        PartnerFeatureRequest.status.in_(['approved', 'payment_received']),
         PartnerFeatureRequest.feature_key.in_(['additional_units', 'additional_services']),
     ))).all()
     approved_capacities = {
@@ -557,6 +557,24 @@ async def pay_partner_feature_request(
     if item.status != 'pending_payment':
         raise HTTPException(status_code=409, detail='Esta solicitação não aguarda pagamento')
     item.status = 'payment_received'
+    if item.feature_key == 'additional_units':
+        current_capacity = int(await db.scalar(select(func.count(Parking.id)).where(
+            Parking.tenant_id == item.tenant_id,
+        )) or 0)
+    else:
+        current_capacity = int(await db.scalar(
+            select(func.count(ParkingService.id))
+            .join(Parking, Parking.id == ParkingService.parking_id)
+            .where(Parking.tenant_id == item.tenant_id)
+        ) or 0)
+    item.capacity_after = max(current_capacity, 1) + int(item.quantity)
+    if item.feature_key not in {'additional_units', 'additional_services'}:
+        entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+            PartnerFeatureEntitlement.tenant_id == item.tenant_id,
+            PartnerFeatureEntitlement.feature_key == item.feature_key,
+        ))
+        if entitlement is not None:
+            entitlement.is_enabled = True
     item.notes = ((item.notes + ' | ') if item.notes else '') + 'Pagamento simulado registrado; comprovante pendente.'
     await db.commit()
     return {'id': item.id, 'status': item.status, 'is_simulated': True, 'amount': item.total_price, 'method': item.payment_method}
@@ -1690,7 +1708,7 @@ async def _feature_request_price(
 async def _ensure_service_capacity(db: AsyncSession, tenant_id: str, requested_total: int):
     approved_capacity = int(await db.scalar(select(func.max(PartnerFeatureRequest.capacity_after)).where(
         PartnerFeatureRequest.tenant_id == tenant_id, PartnerFeatureRequest.feature_key == 'additional_services',
-        PartnerFeatureRequest.status == 'approved',
+        PartnerFeatureRequest.status.in_(['approved', 'payment_received']),
     )) or 1)
     current_count = int(await db.scalar(
         select(func.count(ParkingService.id))
@@ -1711,7 +1729,7 @@ async def _ensure_unit_capacity(db: AsyncSession, tenant_id: str):
     total = int(await db.scalar(select(func.count(Parking.id)).where(Parking.tenant_id == tenant_id)) or 0)
     approved_capacity = int(await db.scalar(select(func.max(PartnerFeatureRequest.capacity_after)).where(
         PartnerFeatureRequest.tenant_id == tenant_id, PartnerFeatureRequest.feature_key == 'additional_units',
-        PartnerFeatureRequest.status == 'approved',
+        PartnerFeatureRequest.status.in_(['approved', 'payment_received']),
     )) or 1)
     paid, price, enabled = await _feature_request_price(db, tenant_id, 'additional_units')
     capacity = (max(total, approved_capacity) if enabled else max(total, 1)) if paid else 1_000_000

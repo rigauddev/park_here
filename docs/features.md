@@ -39,6 +39,9 @@
 - Cadastrar produtos de conveniência por unidade, com categoria,
   subcategoria, descrição e preço. Esses produtos são separados dos serviços
   extras contratados na reserva.
+  O módulo é um add-on pago (`convenience_management`) e fica bloqueado até a
+  contratação/liberação pela gestão do app; somente gestores podem alterar os
+  produtos.
 - Validar check-in e checkout manualmente na portaria.
 - Consultar reservas ativas, expiradas, canceladas e finalizadas.
 - Ver no mapa operacional a previsao de chegada das pre-reservas recebidas.

@@ -9,6 +9,9 @@ from app.modules.parkings.convenience_models import ParkingConvenienceProduct
 from app.modules.parkings.models import Parking
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
+from app.modules.partners.models import PartnerProfile
+from app.modules.platform_fees.models import PartnerFeatureEntitlement
+from app.modules.platform_fees.feature_catalog import feature_by_key
 
 router = APIRouter(prefix="/partners/parking-management", tags=["Parking conveniences"])
 
@@ -55,6 +58,24 @@ async def _unit(db: AsyncSession, parking_id: str, user: User) -> Parking:
     return parking
 
 
+async def _ensure_access(db: AsyncSession, user: User, *, mutate: bool = False) -> None:
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == user.tenant_id))
+    feature = feature_by_key(profile.service_type if profile else None, 'convenience_management')
+    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == user.tenant_id,
+        PartnerFeatureEntitlement.feature_key == 'convenience_management',
+    ))
+    enabled = entitlement.is_enabled if entitlement else (feature or {}).get('default_is_enabled', False)
+    if not enabled:
+        raise HTTPException(status_code=403, detail={
+            'code': 'feature_locked',
+            'feature_key': 'convenience_management',
+            'message': 'O módulo de conveniências precisa ser contratado e liberado.',
+        })
+    if mutate and user.role == UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail='Somente o gestor pode alterar conveniências')
+
+
 @router.get("/{parking_id}/conveniences")
 async def list_conveniences(
     parking_id: str,
@@ -62,6 +83,7 @@ async def list_conveniences(
     current_user: User = Depends(get_current_user),
 ):
     await _unit(db, parking_id, current_user)
+    await _ensure_access(db, current_user)
     items = await db.scalars(
         select(ParkingConvenienceProduct)
         .where(ParkingConvenienceProduct.parking_id == parking_id)
@@ -78,8 +100,7 @@ async def create_convenience(
     current_user: User = Depends(get_current_user),
 ):
     await _unit(db, parking_id, current_user)
-    if current_user.role == UserRoleEnum.OPERATOR:
-        raise HTTPException(status_code=403, detail="Somente o gestor pode cadastrar produtos")
+    await _ensure_access(db, current_user, mutate=True)
     item = ParkingConvenienceProduct(parking_id=parking_id, **data.model_dump())
     db.add(item)
     await db.commit()
@@ -96,8 +117,7 @@ async def update_convenience(
     current_user: User = Depends(get_current_user),
 ):
     await _unit(db, parking_id, current_user)
-    if current_user.role == UserRoleEnum.OPERATOR:
-        raise HTTPException(status_code=403, detail="Somente o gestor pode editar produtos")
+    await _ensure_access(db, current_user, mutate=True)
     item = await db.scalar(
         select(ParkingConvenienceProduct).where(
             ParkingConvenienceProduct.id == product_id,
@@ -121,8 +141,7 @@ async def deactivate_convenience(
     current_user: User = Depends(get_current_user),
 ):
     await _unit(db, parking_id, current_user)
-    if current_user.role == UserRoleEnum.OPERATOR:
-        raise HTTPException(status_code=403, detail="Somente o gestor pode desativar produtos")
+    await _ensure_access(db, current_user, mutate=True)
     item = await db.scalar(
         select(ParkingConvenienceProduct).where(
             ParkingConvenienceProduct.id == product_id,

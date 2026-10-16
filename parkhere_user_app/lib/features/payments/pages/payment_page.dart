@@ -20,6 +20,7 @@ import '../services/payment_service.dart';
 class PaymentPage extends ConsumerStatefulWidget {
   final double amount;
   final String? reservationId;
+  final String? featureRequestId;
   final String paymentPurpose;
   final bool checkoutPayment;
   final bool payNow;
@@ -30,6 +31,7 @@ class PaymentPage extends ConsumerStatefulWidget {
     super.key,
     required this.amount,
     this.reservationId,
+    this.featureRequestId,
     this.paymentPurpose = 'reservation',
     this.checkoutPayment = false,
     required this.payNow,
@@ -109,15 +111,22 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         latitude = position.latitude;
         longitude = position.longitude;
       }
-      final result = await PaymentService().processPayment(
-        amount: widget.amount,
-        method: paymentMethod,
-        accessToken: accessToken,
-        reservationId: widget.reservationId,
-        purpose: widget.paymentPurpose,
-        latitude: latitude,
-        longitude: longitude,
-      );
+      final result = widget.featureRequestId != null
+          ? await PaymentService().processFeaturePayment(
+              requestId: widget.featureRequestId!,
+              amount: widget.amount,
+              method: paymentMethod,
+              accessToken: accessToken,
+            )
+          : await PaymentService().processPayment(
+              amount: widget.amount,
+              method: paymentMethod,
+              accessToken: accessToken,
+              reservationId: widget.reservationId,
+              purpose: widget.paymentPurpose,
+              latitude: latitude,
+              longitude: longitude,
+            );
 
       if (result.success) {
         if (!mounted) return;
@@ -417,12 +426,12 @@ class PaymentReceiptPage extends StatelessWidget {
   });
 
   String get _methodLabel => switch (result.method) {
-        'pix' => 'Pix',
-        'credit_card' => 'Cartão de crédito',
-        'debit_card' => 'Cartão de débito',
-        'cash' => 'Dinheiro',
-        _ => result.method,
-      };
+    'pix' => 'Pix',
+    'credit_card' => 'Cartão de crédito',
+    'debit_card' => 'Cartão de débito',
+    'cash' => 'Dinheiro',
+    _ => result.method,
+  };
 
   Future<List<int>> _pdfBytes() async {
     final document = pw.Document();
@@ -431,7 +440,10 @@ class PaymentReceiptPage extends StatelessWidget {
         build: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text('ParkHere — Comprovante de pagamento', style: pw.TextStyle(fontSize: 18)),
+            pw.Text(
+              'ParkHere — Comprovante de pagamento',
+              style: pw.TextStyle(fontSize: 18),
+            ),
             pw.SizedBox(height: 18),
             pw.Text('Transação: ${result.transactionId}'),
             pw.Text('Reserva: ${reservationId ?? 'não informada'}'),
@@ -466,16 +478,25 @@ class PaymentReceiptPage extends StatelessWidget {
                 children: [
                   const Icon(Icons.check_circle, color: Colors.green, size: 58),
                   const SizedBox(height: 12),
-                  const Text('Pagamento confirmado', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Pagamento confirmado',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 18),
-                  _ReceiptRow(label: 'Valor', value: 'R\$ ${result.amount.toStringAsFixed(2)}'),
+                  _ReceiptRow(
+                    label: 'Valor',
+                    value: 'R\$ ${result.amount.toStringAsFixed(2)}',
+                  ),
                   _ReceiptRow(label: 'Método', value: _methodLabel),
                   _ReceiptRow(label: 'Reserva', value: reservationId ?? '—'),
                   _ReceiptRow(label: 'Transação', value: result.transactionId),
                   if (result.isSimulated)
                     const Padding(
                       padding: EdgeInsets.only(top: 14),
-                      child: Text('Pagamento simulado para homologação.', textAlign: TextAlign.center),
+                      child: Text(
+                        'Pagamento simulado para homologação.',
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                 ],
               ),
@@ -506,13 +527,13 @@ class _ReceiptRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label),
-            Flexible(child: Text(value, textAlign: TextAlign.right)),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label),
+        Flexible(child: Text(value, textAlign: TextAlign.right)),
+      ],
+    ),
+  );
 }

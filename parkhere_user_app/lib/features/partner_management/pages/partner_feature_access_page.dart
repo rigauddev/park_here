@@ -8,6 +8,7 @@ import '../../../core/widgets/api_feedback.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_profile_model.dart';
 import '../providers/partner_profile_provider.dart';
+import '../../payments/pages/payment_page.dart';
 
 class PartnerFeatureAccessPage extends ConsumerStatefulWidget {
   final PartnerProfileModel partner;
@@ -423,24 +424,53 @@ class _PartnerFeatureAccessPageState
         requestId = response['id'] as String;
         if (mounted) setState(() => _requestId = requestId);
       }
-      await _api.postAuthorized(
-        '/partners/feature-requests/$requestId/pay',
-        {},
-        token,
+      if (!mounted) return;
+      final amount = _requestAmount();
+      final paid = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaymentPage(
+            amount: amount,
+            featureRequestId: requestId,
+            paymentPurpose: 'feature_purchase',
+            payNow: true,
+            onPaymentSuccess: () async {
+              if (!mounted) return;
+              setState(() {
+                _paymentCompleted = true;
+                _message = context.strings.isEnglish
+                    ? 'Payment completed. The requested capacity is available.'
+                    : 'Pagamento concluído. A capacidade solicitada está disponível.';
+              });
+              ref.invalidate(partnerProfileProvider);
+            },
+          ),
+        ),
       );
-      if (mounted) {
-        setState(() {
-          _paymentCompleted = true;
-          _message = context.strings.isEnglish
-              ? 'Payment registered. Attach your proof.'
-              : 'Pagamento registrado. Anexe o comprovante.';
-        });
+      if (paid == true && mounted) {
+        setState(() => _paymentCompleted = true);
+        await ApiFeedback.show(
+          context,
+          context.strings.isEnglish
+              ? 'Payment approved. You can continue.'
+              : 'Pagamento aprovado. Você pode continuar.',
+          isError: false,
+        );
+        if (mounted) Navigator.pop(context, true);
       }
     } catch (error) {
       if (mounted) await ApiFeedback.show(context, '$error');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  double _requestAmount() {
+    final feature = widget.partner.featureDetails(widget.featureKey) ?? {};
+    final prices = (feature['billing_prices'] as Map<String, dynamic>?) ?? {};
+    final legacy = (feature['price'] as num?)?.toDouble() ?? 0;
+    final unit = (prices[_billingPeriod] as num?)?.toDouble() ?? legacy;
+    return unit * (feature['quantity_based'] == true ? _quantity : 1);
   }
 
   Future<void> _chooseReceipt() async {

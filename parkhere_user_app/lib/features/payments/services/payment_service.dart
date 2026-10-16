@@ -25,16 +25,13 @@ class PaymentService {
     double? longitude,
   }) async {
     if (reservationId != null) {
-      final intent = await _api.postAuthorized(
-        "/payments/reservations/$reservationId/intent",
-        {
-          "method": _methodName(method),
-          "purpose": purpose,
-          if (latitude != null) "latitude": latitude,
-          if (longitude != null) "longitude": longitude,
-        },
-        accessToken,
-      );
+      final intent = await _api
+          .postAuthorized("/payments/reservations/$reservationId/intent", {
+            "method": _methodName(method),
+            "purpose": purpose,
+            if (latitude != null) "latitude": latitude,
+            if (longitude != null) "longitude": longitude,
+          }, accessToken);
       if (intent["is_simulated"] != true) {
         throw Exception('Pagamento aguardando confirmação do provedor.');
       }
@@ -57,6 +54,30 @@ class PaymentService {
     }
 
     throw Exception('Uma reserva é necessária para iniciar o pagamento.');
+  }
+
+  Future<PaymentResult> processFeaturePayment({
+    required String requestId,
+    required PaymentMethod method,
+    required String accessToken,
+    required double amount,
+    String purpose = 'feature_purchase',
+  }) async {
+    final response = await _api.postAuthorized(
+      '/partners/feature-requests/$requestId/pay',
+      {'method': _methodName(method)},
+      accessToken,
+    );
+    return PaymentResult(
+      success: response['status'] == 'payment_received',
+      isSimulated: response['is_simulated'] == true,
+      transactionId: response['id'] as String? ?? requestId,
+      checkoutUrl: null,
+      qrCode: null,
+      method: response['method'] as String? ?? _methodName(method),
+      purpose: purpose,
+      amount: (response['amount'] as num?)?.toDouble() ?? amount,
+    );
   }
 
   String _methodName(PaymentMethod method) {

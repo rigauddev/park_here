@@ -53,9 +53,9 @@ class ParkingManagementPage extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
+        onPressed: () async {
           if (partner != null && partner.unitCount >= partner.unitLimit) {
-            Navigator.push(
+            final unlocked = await Navigator.push<bool>(
               context,
               MaterialPageRoute(
                 builder: (_) => PartnerFeatureAccessPage(
@@ -64,6 +64,10 @@ class ParkingManagementPage extends ConsumerWidget {
                 ),
               ),
             );
+            if (unlocked == true) {
+              ref.invalidate(partnerProfileProvider);
+              ref.invalidate(partnerParkingProvider);
+            }
             return;
           }
           _openForm(context, partner: partner);
@@ -92,21 +96,46 @@ class ParkingManagementPage extends ConsumerWidget {
                 parking: items[index],
                 onEdit: () =>
                     _openForm(context, parking: items[index], partner: partner),
-                onConveniences: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ParkingConveniencePage(
-                      parkingId: items[index].id!,
-                      parkingName: items[index].name,
-                    ),
-                  ),
-                ),
+                onConveniences: () =>
+                    _openConveniences(context, partner, items[index]),
               );
             },
           );
         },
       ),
     );
+  }
+
+  Future<void> _openConveniences(
+    BuildContext context,
+    PartnerProfileModel? partner,
+    ManagedParkingModel parking,
+  ) async {
+    if (partner == null || parking.id == null) return;
+    final feature = partner.featureDetails('convenience_management');
+    if (feature?['is_enabled'] != true) {
+      await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'convenience_management',
+          ),
+        ),
+      );
+      return;
+    }
+    if (context.mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ParkingConveniencePage(
+            parkingId: parking.id!,
+            parkingName: parking.name,
+          ),
+        ),
+      );
+    }
   }
 
   void _openForm(

@@ -132,6 +132,21 @@ class _PartnerManagementBody extends StatelessWidget {
             featureKey: 'parking_management',
           ),
           _ManagementAction(
+            icon: Icons.shopping_bag_outlined,
+            title: 'Conveniências',
+            description: 'Produtos e serviços extras de cada unidade.',
+            onTap: () => _open(context, const ParkingManagementPage()),
+            featureKey: 'convenience_management',
+          ),
+          _ManagementAction(
+            icon: Icons.miscellaneous_services_outlined,
+            title: 'Serviços cadastrados',
+            description:
+                'Serviços extras, preços e disponibilidade por unidade.',
+            onTap: () => _open(context, const ParkingManagementPage()),
+            featureKey: 'services_management',
+          ),
+          _ManagementAction(
             icon: Icons.map_outlined,
             title: 'Mapa de vagas',
             description:

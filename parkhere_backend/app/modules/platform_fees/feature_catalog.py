@@ -53,6 +53,18 @@ PARTNER_FEATURE_CATALOG = (
         'requestable': True,
     },
     {
+        'key': 'convenience_management',
+        'name': 'Conveniências',
+        'name_en': 'Convenience products',
+        'description': 'Cadastro de produtos e serviços extras da unidade.',
+        'description_en': 'Register products and extra services for each unit.',
+        'service_types': ('parking',),
+        'default_is_enabled': False,
+        'default_is_paid': True,
+        'default_billing_period': 'monthly',
+        'requestable': True,
+    },
+    {
         'key': 'additional_services',
         'name': 'Serviços adicionais',
         'name_en': 'Additional services',

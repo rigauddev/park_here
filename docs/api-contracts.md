@@ -938,3 +938,6 @@ dos serviços extras da reserva:
 O payload usa `category`, `subcategory`, `name`, `description`, `price` e
 `is_active`. A exclusão é lógica. O acesso é limitado ao tenant da unidade;
 operadores podem consultar, mas somente gestor/admin pode alterar.
+Enquanto `convenience_management` não estiver liberado, as rotas retornam
+`403` com `code=feature_locked`. O pagamento de uma solicitação reserva a
+capacidade imediatamente; a gestão administrativa ainda pode revisar o pedido.
