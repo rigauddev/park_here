@@ -256,11 +256,22 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
                     ),
                     onPressed: () {
                       Navigator.pop(context); // fecha bottomsheet
-                      _openPaymentAndConfirmCheckin();
+                      if (pre.plan.name == 'hourly') {
+                        // Horários são cobrados no checkout. O check-in já foi
+                        // confirmado pela API, então persistimos a sessão local
+                        // sem abrir a tela de pagamento.
+                        _createReservation();
+                        ref.read(checkoutProvider.notifier).paymentSuccess();
+                        if (mounted) Navigator.pop(context, true);
+                      } else {
+                        _openPaymentAndConfirmCheckin();
+                      }
                     },
 
-                    child: const Text(
-                      "Pagar e confirmar check-in",
+                    child: Text(
+                      pre.plan.name == 'hourly'
+                          ? "Confirmar check-in"
+                          : "Pagar e confirmar check-in",
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -357,7 +368,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
                     ? _completeCheckinBeforePayment
                     : null,
                 child: Text(
-                  "Avançar para pagamento",
+                  widget.preCheckin.plan.name == 'hourly'
+                      ? "Concluir check-in"
+                      : "Avançar para pagamento",
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
