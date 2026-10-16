@@ -80,16 +80,16 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
     }
   }
 
-  void _showServiceSummary(BuildContext context) {
+  Future<void> _showServiceSummary(BuildContext context) async {
     final pre = widget.preCheckin;
 
-    showModalBottomSheet(
+    final shouldOpenPayment = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) {
+      builder: (sheetContext) {
         return SafeArea(
           child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
@@ -254,19 +254,10 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
                         borderRadius: BorderRadius.circular(18),
                       ),
                     ),
-                    onPressed: () {
-                      Navigator.pop(context); // fecha bottomsheet
-                      if (pre.plan.name == 'hourly') {
-                        // Horários são cobrados no checkout. O check-in já foi
-                        // confirmado pela API, então persistimos a sessão local
-                        // sem abrir a tela de pagamento.
-                        _createReservation();
-                        ref.read(checkoutProvider.notifier).paymentSuccess();
-                        if (mounted) Navigator.pop(context, true);
-                      } else {
-                        _openPaymentAndConfirmCheckin();
-                      }
-                    },
+                    onPressed: () => Navigator.pop(
+                      sheetContext,
+                      pre.plan.name != 'hourly',
+                    ),
 
                     child: Text(
                       pre.plan.name == 'hourly'
@@ -288,6 +279,20 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
         );
       },
     );
+
+    if (!mounted) return;
+    if (shouldOpenPayment == true) {
+      _openPaymentAndConfirmCheckin();
+      return;
+    }
+
+    // Horários são cobrados no checkout. O check-in já foi confirmado pela
+    // API, então persistimos a sessão local sem abrir pagamento.
+    if (pre.plan.name == 'hourly') {
+      _createReservation();
+      ref.read(checkoutProvider.notifier).paymentSuccess();
+      if (context.mounted) Navigator.pop(context, true);
+    }
   }
 
   Widget _serviceItem(String label) {
@@ -390,7 +395,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
     setState(() => _checkingIn = true);
     final success = await _confirmBackendCheckin();
     if (mounted) setState(() => _checkingIn = false);
-    if (success && mounted) _showServiceSummary(context);
+    if (success && mounted) await _showServiceSummary(context);
   }
 
   Widget _photoItem(String label, bool done, VoidCallback onTap) {

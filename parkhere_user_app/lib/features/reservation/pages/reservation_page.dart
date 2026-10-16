@@ -145,9 +145,10 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                     padding: const EdgeInsets.all(16),
                     itemCount: ordered.length,
                     itemBuilder: (context, index) => _ReservationCard(
-                      reservation: ordered[index],
-                      onCancel: () => _cancelPreReservation(ordered[index]),
-                    ),
+                        reservation: ordered[index],
+                        onCancel: () => _cancelPreReservation(ordered[index]),
+                        onChanged: () => ref.invalidate(reservationsProvider),
+                      ),
                   ),
                 ),
                 ListView(
@@ -361,8 +362,13 @@ class _ContractedServiceCard extends StatelessWidget {
 class _ReservationCard extends StatelessWidget {
   final ReservationModel reservation;
   final VoidCallback onCancel;
+  final VoidCallback onChanged;
 
-  const _ReservationCard({required this.reservation, required this.onCancel});
+  const _ReservationCard({
+    required this.reservation,
+    required this.onCancel,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -477,14 +483,15 @@ class _ReservationCard extends StatelessWidget {
                   if (reservation.status == ReservationStatus.open &&
                       !reservation.checkedIn)
                     OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
+                    onPressed: () async {
+                        await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) =>
                                 CheckinPage(preCheckin: reservation.preCheckin),
                           ),
                         );
+                        onChanged();
                       },
                       icon: const Icon(Icons.login),
                       label: const Text('Check-in'),
@@ -507,6 +514,7 @@ class _ReservationCard extends StatelessWidget {
                     apiStatus: reservation.apiStatus,
                     paymentStatus: reservation.paymentStatus,
                     status: reservation.status,
+                    checkedIn: reservation.checkedIn,
                     holdExpiresAt: reservation.validUntil,
                   ))
                     OutlinedButton.icon(

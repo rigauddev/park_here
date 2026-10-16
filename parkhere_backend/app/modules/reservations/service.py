@@ -204,7 +204,10 @@ class ReservationService:
                 status_code=409,
                 detail="Paid reservations require a refund request; cancellation cannot substitute for a refund.",
             )
-        if current_user.role == UserRoleEnum.CUSTOMER and reservation.status != "pre_reserved":
+        if current_user.role == UserRoleEnum.CUSTOMER and reservation.status not in {
+            "pre_reserved",
+            "pending_operator_approval",
+        }:
             raise HTTPException(
                 status_code=409,
                 detail="Only an unpaid pre-reservation can be cancelled directly.",

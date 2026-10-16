@@ -47,7 +47,7 @@ async def list_my_reservations(
     expired_by_parking: dict[str, int] = {}
     for reservation in reservations:
         if (
-            reservation.status == "pre_reserved"
+            reservation.status in {"pre_reserved", "pending_operator_approval"}
             and reservation.hold_expires_at.replace(tzinfo=None) <= now
         ):
             reservation.status = "cancelled"

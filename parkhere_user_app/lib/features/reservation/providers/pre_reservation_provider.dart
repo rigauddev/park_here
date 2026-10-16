@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/services/api_service.dart';
+import '../../../core/services/local_storage_service.dart';
 import '../models/pre_reservation_model.dart';
 
 final preReservationProvider =
@@ -16,6 +18,47 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
   @override
   Future<PreReservationModel?> build() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // A pre-reservation is a server resource. The local copy is only a
+    // fallback for offline rendering, so a login on another device can recover
+    // the active hold from the authenticated reservations endpoint.
+    final token = (await LocalStorageService().getTokens())['access'];
+    if (token != null && token.isNotEmpty) {
+      try {
+        final remote = await ApiService().getAuthorized('/reservations', token);
+        final active = remote
+            .whereType<Map<String, dynamic>>()
+            .where(
+              (item) =>
+                  item['status'] == 'pre_reserved' ||
+                  item['status'] == 'pending_operator_approval',
+            )
+            .toList();
+        if (active.isNotEmpty) {
+          active.sort((a, b) =>
+              _date(b['created_at']).compareTo(_date(a['created_at'])));
+          final item = active.first;
+          final remotePre = PreReservationModel.fromApi(item);
+          await prefs.setString(
+            'parkhere_pre_reservation',
+            jsonEncode(remotePre.toJson()),
+          );
+          if (remotePre.active && !remotePre.isExpired) {
+            _startExpirationTimer(
+              remotePre.expiresAt.difference(DateTime.now()).inSeconds,
+            );
+          }
+          return remotePre;
+        }
+        // Remove a stale local hold after the server confirms that none is
+        // active anymore (for example after cancellation on another device).
+        await prefs.remove('parkhere_pre_reservation');
+        return null;
+      } catch (_) {
+        // Continue with the local cache when the API is temporarily offline.
+      }
+    }
+
     final raw = prefs.getString('parkhere_pre_reservation');
     if (raw == null) return null;
     try {
@@ -39,6 +82,9 @@ class PreReservationNotifier extends AsyncNotifier<PreReservationModel?> {
       return null;
     }
   }
+
+  static DateTime _date(Object? value) =>
+      DateTime.tryParse(value as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   Future<void> createPreReservation({
     required String parkingId,
