@@ -26,6 +26,9 @@ import '../../features/partner_management/pages/guide_services_page.dart';
 import '../../features/partner_management/pages/admin_management_page.dart';
 import '../../features/partner_management/pages/partner_shifts_page.dart';
 import '../../features/partner_management/providers/partner_operators_provider.dart';
+import '../../features/partner_management/pages/convenience_pos_page.dart';
+import '../../features/partner_management/pages/parking_convenience_page.dart';
+import '../../features/partner_management/providers/partner_parking_provider.dart';
 
 enum _MainArea {
   menu,
@@ -41,6 +44,8 @@ enum _MainArea {
   dashboard,
   profile,
   help,
+  conveniencePos,
+  convenienceProducts,
 }
 
 class MainNavigation extends ConsumerStatefulWidget {
@@ -444,6 +449,10 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return const ProfilePage();
       case _MainArea.help:
         return const HelpCenterPage();
+      case _MainArea.conveniencePos:
+        return const _ConvenienceEntryPage(pos: true);
+      case _MainArea.convenienceProducts:
+        return const _ConvenienceEntryPage(pos: false);
     }
   }
 
@@ -514,6 +523,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return isPartner ? 4 : 3;
       case _MainArea.reservations:
         return isPartner ? 2 : 2;
+      case _MainArea.conveniencePos:
+      case _MainArea.convenienceProducts:
+        return isPartner ? 0 : 0;
     }
   }
 
@@ -678,27 +690,15 @@ class _WebMenu extends ConsumerWidget {
             if (expanded)
               Text('ParkHere', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 18),
-            if (!isAdmin)
+            if (!isAdmin && isPartner && !isGuide)
               _MenuCategory(
                 expanded: expanded,
-                title: 'Navegação',
+                title: 'Gestão',
                 items: [
-                  if (isPartner && (isPartnerOwner || isGuide))
-                    _MenuItem(
-                      Icons.dashboard_outlined,
-                      'Dashboard',
-                      _MainArea.dashboard,
-                    ),
                   if (isPartner && isPartnerOwner)
                     _MenuItem(
                       Icons.business_center_outlined,
                       'Minha empresa',
-                      _MainArea.management,
-                    ),
-                  if (isPartner && isPartnerOwner && !isGuide)
-                    _MenuItem(
-                      Icons.storefront_outlined,
-                      'Conveniências e caixa',
                       _MainArea.management,
                     ),
                   if (isPartner && !isGuide)
@@ -706,34 +706,6 @@ class _WebMenu extends ConsumerWidget {
                       Icons.schedule_outlined,
                       'Escalas',
                       _MainArea.shifts,
-                    ),
-                  if (isGuide)
-                    _MenuItem(
-                      Icons.local_parking_outlined,
-                      'Estacionamentos',
-                      _MainArea.map,
-                    )
-                  else if (!isPartner || !isOperator || operatorHasShiftToday)
-                    _MenuItem(
-                      isPartner
-                          ? Icons.local_parking_outlined
-                          : Icons.map_outlined,
-                      isPartner ? 'Mapa de vagas' : 'Mapa',
-                      _MainArea.map,
-                    ),
-                  if (isGuide)
-                    _MenuItem(
-                      Icons.tour_outlined,
-                      'Meus serviços',
-                      _MainArea.services,
-                    ),
-                  if (isPartner &&
-                      !isGuide &&
-                      (!isOperator || operatorHasShiftToday))
-                    _MenuItem(
-                      Icons.confirmation_number_outlined,
-                      'Reservas recebidas',
-                      _MainArea.reservations,
                     ),
                   if (isPartner && isPartnerOwner && !isGuide)
                     _MenuItem(
@@ -747,6 +719,80 @@ class _WebMenu extends ConsumerWidget {
                       'Financeiro Pro',
                       _MainArea.financial,
                     ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin && isPartner && !isGuide)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Operacional',
+                items: [
+                  if (!isOperator || operatorHasShiftToday)
+                    _MenuItem(
+                      Icons.local_parking_outlined,
+                      'Mapa de vagas',
+                      _MainArea.map,
+                    ),
+                  if (!isOperator || operatorHasShiftToday)
+                    _MenuItem(
+                      Icons.confirmation_number_outlined,
+                      'Reservas',
+                      _MainArea.reservations,
+                    ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin && isPartner && isPartnerOwner && !isGuide)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Conveniência',
+                items: [
+                  _MenuItem(
+                    Icons.point_of_sale_outlined,
+                    'Ponto de venda',
+                    _MainArea.conveniencePos,
+                  ),
+                  _MenuItem(
+                    Icons.inventory_2_outlined,
+                    'Produtos',
+                    _MainArea.convenienceProducts,
+                  ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin && !isPartner)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Navegação',
+                items: [
+                  _MenuItem(Icons.map_outlined, 'Mapa', _MainArea.map),
+                  _MenuItem(
+                    Icons.confirmation_number_outlined,
+                    'Reservas',
+                    _MainArea.reservations,
+                  ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin && isPartner && isGuide)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Navegação',
+                items: [
+                  _MenuItem(
+                    Icons.local_parking_outlined,
+                    'Estacionamentos',
+                    _MainArea.map,
+                  ),
+                  _MenuItem(
+                    Icons.tour_outlined,
+                    'Meus serviços',
+                    _MainArea.services,
+                  ),
                 ],
                 selectedArea: selectedArea,
                 onSelected: onSelected,
@@ -918,65 +964,83 @@ class _MobileDrawer extends StatelessWidget {
                 onTap: () => onSelected(_MainArea.management, 3),
               ),
             ] else ...[
-              if (isPartner && (isPartnerOwner || isGuide))
-                ListTile(
-                  leading: const Icon(Icons.business_center_outlined),
-                  title: const Text('Minha empresa'),
-                  onTap: () => onSelected(_MainArea.management),
+              if (isPartner && !isGuide) ...[
+                _MobileMenuGroup(
+                  title: 'Gestão',
+                  icon: Icons.business_center_outlined,
+                  children: [
+                    if (isPartnerOwner)
+                      _MobileMenuItem(
+                        icon: Icons.business_center_outlined,
+                        title: 'Minha empresa',
+                        onTap: () => onSelected(_MainArea.management),
+                      ),
+                    if (isPartnerOwner)
+                      _MobileMenuItem(
+                        icon: Icons.group_outlined,
+                        title: 'Usuários',
+                        onTap: () => onSelected(_MainArea.users),
+                      ),
+                    if (isPartnerOwner)
+                      _MobileMenuItem(
+                        icon: Icons.lock_outline,
+                        title: 'Financeiro',
+                        onTap: () => onSelected(_MainArea.financial),
+                      ),
+                    _MobileMenuItem(
+                      icon: Icons.calendar_month_outlined,
+                      title: 'Escala',
+                      onTap: () => onSelected(_MainArea.shifts),
+                    ),
+                  ],
                 ),
-              if (isPartner && isPartnerOwner && !isGuide)
-                ListTile(
-                  leading: const Icon(Icons.storefront_outlined),
-                  title: const Text('Conveniências e caixa'),
-                  onTap: () => onSelected(_MainArea.management),
+                _MobileMenuGroup(
+                  title: 'Operacional',
+                  icon: Icons.local_parking_outlined,
+                  children: [
+                    if (!isOperator || operatorHasShiftToday)
+                      _MobileMenuItem(
+                        icon: Icons.local_parking_outlined,
+                        title: 'Mapa de vagas',
+                        onTap: () => onSelected(_MainArea.map),
+                      ),
+                    if (!isOperator || operatorHasShiftToday)
+                      _MobileMenuItem(
+                        icon: Icons.confirmation_number_outlined,
+                        title: 'Reservas',
+                        onTap: () => onSelected(_MainArea.reservations),
+                      ),
+                  ],
                 ),
-              if (isPartner && isOperator)
-                ListTile(
-                  leading: const Icon(Icons.calendar_month_outlined),
-                  title: const Text('Minha escala'),
-                  onTap: () => onSelected(_MainArea.shifts),
-                ),
-              if (isPartner &&
-                  !isGuide &&
-                  (!isOperator || operatorHasShiftToday))
-                ListTile(
-                  leading: const Icon(Icons.confirmation_number_outlined),
-                  title: const Text('Reservas recebidas'),
-                  onTap: () => onSelected(_MainArea.reservations),
-                ),
-              if (isPartner && isPartnerOwner && !isGuide)
-                ListTile(
-                  leading: const Icon(Icons.group_outlined),
-                  title: const Text('Usuários'),
-                  onTap: () => onSelected(_MainArea.users),
-                ),
-              if (isPartner &&
-                  !isGuide &&
-                  (!isOperator || operatorHasShiftToday))
-                ListTile(
-                  leading: const Icon(Icons.local_parking_outlined),
-                  title: const Text('Mapa de vagas'),
-                  onTap: () => onSelected(_MainArea.map),
-                ),
-              if (isGuide)
+                if (isPartnerOwner)
+                  _MobileMenuGroup(
+                    title: 'Conveniência',
+                    icon: Icons.storefront_outlined,
+                    children: [
+                      _MobileMenuItem(
+                        icon: Icons.point_of_sale_outlined,
+                        title: 'Ponto de venda',
+                        onTap: () => onSelected(_MainArea.conveniencePos),
+                      ),
+                      _MobileMenuItem(
+                        icon: Icons.inventory_2_outlined,
+                        title: 'Produtos',
+                        onTap: () => onSelected(_MainArea.convenienceProducts),
+                      ),
+                    ],
+                  ),
+              ] else if (isGuide) ...[
                 ListTile(
                   leading: const Icon(Icons.local_parking_outlined),
                   title: const Text('Estacionamentos'),
                   onTap: () => onSelected(_MainArea.map),
                 ),
-              if (isGuide)
                 ListTile(
                   leading: const Icon(Icons.tour_outlined),
                   title: const Text('Meus serviços'),
                   onTap: () => onSelected(_MainArea.services),
                 ),
-              if (isPartner && isPartnerOwner && !isGuide)
-                ListTile(
-                  leading: const Icon(Icons.lock_outline),
-                  title: const Text('Financeiro Pro'),
-                  onTap: () => onSelected(_MainArea.financial),
-                )
-              else if (!isPartner) ...[
+              ] else ...[
                 ListTile(
                   leading: const Icon(Icons.local_parking),
                   title: const Text('Estacionamento'),
@@ -1103,6 +1167,51 @@ class _MenuCategory extends StatelessWidget {
   }
 }
 
+class _MobileMenuGroup extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<_MobileMenuItem> children;
+
+  const _MobileMenuGroup({
+    required this.title,
+    required this.icon,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      initiallyExpanded: true,
+      leading: Icon(icon),
+      title: Text(title),
+      childrenPadding: const EdgeInsets.only(left: 16),
+      children: children,
+    );
+  }
+}
+
+class _MobileMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _MobileMenuItem({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, size: 21),
+      title: Text(title),
+      onTap: onTap,
+    );
+  }
+}
+
 class _MenuItem {
   final IconData icon;
   final String label;
@@ -1151,6 +1260,72 @@ class _MenuHubPage extends StatelessWidget {
             page: const HelpCenterPage(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ConvenienceEntryPage extends ConsumerWidget {
+  final bool pos;
+
+  const _ConvenienceEntryPage({required this.pos});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final parkings = ref.watch(partnerParkingProvider);
+    return Scaffold(
+      appBar: AppBar(title: Text(pos ? 'Ponto de venda' : 'Produtos')),
+      body: parkings.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(
+          child: Text('Não foi possível carregar as unidades: $error'),
+        ),
+        data: (items) {
+          final active = items.where((item) => item.id != null).toList();
+          if (active.isEmpty) {
+            return const Center(
+              child: Text(
+                'Cadastre uma unidade antes de acessar a conveniência.',
+              ),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: active.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final parking = active[index];
+              return Card(
+                child: ListTile(
+                  leading: Icon(
+                    pos
+                        ? Icons.point_of_sale_outlined
+                        : Icons.inventory_2_outlined,
+                  ),
+                  title: Text(parking.name),
+                  subtitle: Text(parking.address),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    final id = parking.id!;
+                    final page = pos
+                        ? ConveniencePosPage(
+                            parkingId: id,
+                            parkingName: parking.name,
+                          )
+                        : ParkingConveniencePage(
+                            parkingId: id,
+                            parkingName: parking.name,
+                          );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => page),
+                    );
+                  },
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
