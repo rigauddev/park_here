@@ -36,6 +36,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   bool backPhoto = false;
   bool hasGuideIndication = false;
   bool _checkingIn = false;
+  String _checkinStep = '';
   final Set<String> _uploadedPhotoKinds = {};
 
   bool get allPhotosDone => frontPhoto && leftPhoto && rightPhoto && backPhoto;
@@ -367,6 +368,33 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
               () => _capture('rear', () => setState(() => backPhoto = true)),
             ),
 
+            if (_checkingIn)
+              Card(
+                margin: const EdgeInsets.only(top: 12),
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 3),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _checkinStep.isEmpty
+                              ? 'Processando check-in...'
+                              : _checkinStep,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
             const Spacer(),
 
             SizedBox(
@@ -418,14 +446,36 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       );
       return;
     }
-    setState(() => _checkingIn = true);
+    setState(() {
+      _checkingIn = true;
+      _checkinStep = 'Enviando fotos do veículo...';
+    });
     if (!await _uploadPendingPhotos()) {
-      if (mounted) setState(() => _checkingIn = false);
+      if (mounted) {
+        setState(() {
+          _checkingIn = false;
+          _checkinStep = '';
+        });
+      }
       return;
     }
+    if (mounted) setState(() => _checkinStep = 'Confirmando check-in...');
     final success = await _confirmBackendCheckin();
-    if (mounted) setState(() => _checkingIn = false);
-    if (success && mounted) await _showServiceSummary(context);
+    if (mounted) {
+      setState(() {
+        _checkingIn = false;
+        _checkinStep = '';
+      });
+    }
+    if (success && mounted) {
+      await ApiFeedback.show(
+        context,
+        'Check-in realizado com sucesso. O veículo foi registrado no estacionamento.',
+        isError: false,
+        title: 'Check-in concluído',
+      );
+      if (mounted) await _showServiceSummary(context);
+    }
   }
 
   Future<void> _uploadPhoto(
