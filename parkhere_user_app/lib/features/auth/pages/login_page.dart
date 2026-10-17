@@ -131,7 +131,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.white.withValues(alpha: 0.72),
                           textStyle: const TextStyle(fontSize: 11),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 4,
+                          ),
                         ),
                       )
                     else
@@ -404,6 +407,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
   Future<void> _submitLogin() async {
     final authState = ref.read(authProvider);
+    final isMfaAttempt = authState.status == AuthStatus.mfaRequired;
 
     setState(() {
       isLoading = true;
@@ -439,6 +443,14 @@ class _LoginPageState extends ConsumerState<LoginPage>
             .verifyMfa(mfaController.text.trim());
       }
     } catch (e) {
+      // Never leave secrets or an MFA challenge visible after a failed
+      // authentication attempt. The user must start a fresh challenge.
+      passwordController.clear();
+      if (isMfaAttempt) {
+        emailController.clear();
+        mfaController.clear();
+        ref.read(authProvider.notifier).resetLoginFlow();
+      }
       if (!mounted) return;
       final message = _authErrorMessage(e);
       setState(() => loginError = message);

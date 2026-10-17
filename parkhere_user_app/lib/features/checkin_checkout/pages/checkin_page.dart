@@ -84,7 +84,10 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       }
     } catch (error) {
       if (mounted) {
-        await ApiFeedback.show(context, 'Não foi possível registrar a foto: $error');
+        await ApiFeedback.show(
+          context,
+          'Não foi possível registrar a foto: $error',
+        );
       }
     }
   }
@@ -263,10 +266,8 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
                         borderRadius: BorderRadius.circular(18),
                       ),
                     ),
-                    onPressed: () => Navigator.pop(
-                      sheetContext,
-                      pre.plan.name != 'hourly',
-                    ),
+                    onPressed: () =>
+                        Navigator.pop(sheetContext, pre.plan.name != 'hourly'),
 
                     child: Text(
                       pre.plan.name == 'hourly'
@@ -378,7 +379,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
                     borderRadius: BorderRadius.circular(18),
                   ),
                 ),
-                onPressed: _checkingIn ? null : _completeCheckinBeforePayment,
+                onPressed: _checkingIn || !allPhotosDone
+                    ? null
+                    : _completeCheckinBeforePayment,
                 child: _checkingIn
                     ? const SizedBox(
                         width: 22,

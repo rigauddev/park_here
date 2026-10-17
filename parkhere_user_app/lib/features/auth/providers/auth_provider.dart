@@ -22,10 +22,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   final _storage = LocalStorageService();
   final _api = ApiService();
+  int _authFlowGeneration = 0;
 
   /// 🔎 Verifica token ao iniciar app
   Future<void> checkAuthOnStartup() async {
+    final startupGeneration = _authFlowGeneration;
     final tokens = await _storage.getTokens();
+    if (startupGeneration != _authFlowGeneration ||
+        state.status == AuthStatus.authenticated ||
+        state.status == AuthStatus.mfaRequired) {
+      return;
+    }
     final tokenClaims = _decodeAccessClaims(tokens["access"]);
     final role = tokens["role"] ?? tokenClaims["role"];
     final tenantId = tokens["tenant_id"] ?? tokenClaims["tenant_id"];
@@ -41,6 +48,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (state.status == AuthStatus.authenticated) return;
 
     if (tokens["access"] != null && _isExpired(tokenClaims["exp"])) {
+      if (startupGeneration != _authFlowGeneration) return;
       await logout();
       // Let AuthGate rebuild to the signed-out screen before presenting the
       // same centered feedback used for an API 401 during an active session.
@@ -74,6 +82,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String password, {
     AuthAccountType accountType = AuthAccountType.customer,
   }) async {
+    _authFlowGeneration++;
     // Discard the previous identity before beginning a new MFA challenge.
     // This prevents account switching from reusing stale tokens or role data.
     state = AuthState(status: AuthStatus.loading, accountType: accountType);
@@ -97,7 +106,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         mfaToken: response["mfa_token"] as String?,
       );
     } on ApiConnectionException {
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Não foi possível conectar com a API");
     } catch (error) {
       final message = error.toString().replaceFirst('Exception: ', '');
@@ -114,13 +123,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
         );
         return;
       }
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
     }
   }
 
   /// 🔐 MFA
   Future<void> verifyMfa(String code) async {
+    _authFlowGeneration++;
     final mfaToken = state.mfaToken;
 
     if (mfaToken == null) {
@@ -164,19 +174,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
         clearMfaToken: true,
       );
     } on ApiConnectionException {
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Não foi possível conectar com a API");
     } catch (_) {
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
     }
   }
 
   void resetLoginFlow() {
-    state = state.copyWith(
-      status: AuthStatus.unauthenticated,
-      clearMfaToken: true,
-    );
+    _authFlowGeneration++;
+    state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
   Future<String> requestEmailValidationCode(String email) async {
@@ -325,6 +333,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// 🚪 LOGOUT
   Future<void> logout() async {
+    _authFlowGeneration++;
     await _storage.clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
