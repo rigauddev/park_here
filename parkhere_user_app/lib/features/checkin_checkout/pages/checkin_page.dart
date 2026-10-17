@@ -496,8 +496,15 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   Future<bool> _uploadPendingPhotos() async {
     final token = ref.read(authProvider).accessToken;
     final reservationId = widget.preCheckin.reservationId;
-    if (token == null || reservationId == null) {
+    if (token == null) {
       await ApiFeedback.show(context, 'Sessão expirada. Entre novamente.');
+      return false;
+    }
+    if (reservationId == null || reservationId.isEmpty) {
+      await ApiFeedback.show(
+        context,
+        'A reserva não foi sincronizada. Atualize a tela de reservas e tente novamente.',
+      );
       return false;
     }
     for (final entry in _captured.entries) {
@@ -584,7 +591,17 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   Future<bool> _confirmBackendCheckin() async {
     final reservationId = widget.preCheckin.reservationId;
     final token = ref.read(authProvider).accessToken;
-    if (reservationId == null || token == null) return false;
+    if (token == null) {
+      await ApiFeedback.show(context, 'Sessão expirada. Entre novamente.');
+      return false;
+    }
+    if (reservationId == null || reservationId.isEmpty) {
+      await ApiFeedback.show(
+        context,
+        'A reserva não foi sincronizada. Atualize a tela de reservas e tente novamente.',
+      );
+      return false;
+    }
     try {
       final position = await LocationService().getCurrentLocation();
       await ApiService().postAuthorized(

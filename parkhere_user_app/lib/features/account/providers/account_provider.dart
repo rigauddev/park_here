@@ -230,7 +230,24 @@ class AccountNotifier extends StateNotifier<AccountState> {
     await _persistSetupIfComplete();
   }
 
-  Future<void> addWalletMethod(WalletMethodModel method) async {
+  Future<void> addWalletMethod(
+    WalletMethodModel method, {
+    String? accountHolderDocument,
+  }) async {
+    if (method.type == WalletMethodType.pix) {
+      final token = (await _storage.getTokens())['access'];
+      if (token == null || token.isEmpty) {
+        throw StateError('Entre novamente para salvar a conta de repasse.');
+      }
+      final saved = await _api.putAuthorized('/partners/payout-account', {
+        'pix_key': method.pixKey,
+        'account_holder_name': method.holderName,
+        'account_holder_document': accountHolderDocument,
+      }, token);
+      state = state.copyWith(walletMethods: [_walletFromJson(saved)]);
+      await _persistWalletMethods();
+      return;
+    }
     if (method.type != WalletMethodType.pix) {
       final token = (await _storage.getTokens())['access'];
       if (token == null || token.isEmpty) {
@@ -314,12 +331,21 @@ class AccountNotifier extends StateNotifier<AccountState> {
 
   Future<void> syncWalletMethods() async {
     final token = (await _storage.getTokens())['access'];
-    if (token == null ||
-        token.isEmpty ||
-        _tokenClaim(token, 'role') != 'customer') {
+    if (token == null || token.isEmpty) {
       return;
     }
     try {
+      if (_tokenClaim(token, 'role') != 'customer') {
+        final payout = await _api.getAuthorizedMap(
+          '/partners/payout-account',
+          token,
+        );
+        state = state.copyWith(
+          walletMethods: payout.isEmpty ? const [] : [_walletFromJson(payout)],
+        );
+        await _persistWalletMethods();
+        return;
+      }
       final remote = await _api.getAuthorized(
         '/customer-assets/payment-methods',
         token,

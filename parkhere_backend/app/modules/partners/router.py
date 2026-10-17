@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pathlib import Path
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy import func
 from sqlalchemy.orm import aliased
@@ -168,6 +168,25 @@ class PartnerFeatureActivationRequest(BaseModel):
     billing_period: str
     payment_method: str
     notes: str | None = None
+
+
+class PartnerPayoutAccountRequest(BaseModel):
+    pix_key: str = Field(min_length=3, max_length=120)
+    account_holder_name: str = Field(min_length=2, max_length=160)
+    account_holder_document: str = Field(min_length=11, max_length=18)
+
+    @field_validator("pix_key")
+    @classmethod
+    def clean_pix_key(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("account_holder_document")
+    @classmethod
+    def clean_document(cls, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if len(digits) not in {11, 14}:
+            raise ValueError("Informe um CPF ou CNPJ válido")
+        return digits
 
 
 @router.post("/signup")
@@ -389,6 +408,83 @@ async def get_my_partner_profile(
         if payment_account
         else None,
     }
+
+
+def _payout_account_payload(account: PartnerPaymentAccount | None) -> dict | None:
+    if account is None:
+        return None
+    key = account.pix_key or ""
+    masked = f"{key[:3]}***{key[-4:]}" if len(key) > 7 else ("***" if key else None)
+    return {
+        "id": account.id,
+        "type": "pix",
+        "label": account.account_label,
+        "pixKey": masked,
+        "holderName": account.account_holder_name,
+        "verificationStatus": account.verification_status,
+        "isActive": bool(account.is_active),
+    }
+
+
+@router.get("/payout-account")
+async def get_payout_account(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    account = await db.scalar(
+        select(PartnerPaymentAccount)
+        .where(PartnerPaymentAccount.tenant_id == current_user.tenant_id)
+        .where(PartnerPaymentAccount.is_default.is_(True))
+        .where(PartnerPaymentAccount.is_active.is_(True))
+    )
+    return _payout_account_payload(account) or {}
+
+
+@router.put("/payout-account")
+async def save_payout_account(
+    data: PartnerPayoutAccountRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    profile = await db.scalar(
+        select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id)
+    )
+    expected_document = re.sub(r"\D", "", (profile.document_number if profile else "") or "")
+    if not expected_document:
+        raise HTTPException(
+            status_code=409,
+            detail="Finalize a validação do CPF/CNPJ do parceiro antes de cadastrar a conta de repasse.",
+        )
+    if expected_document and data.account_holder_document != expected_document:
+        raise HTTPException(
+            status_code=422,
+            detail="A chave Pix deve estar vinculada ao CPF/CNPJ validado do parceiro.",
+        )
+    account = await db.scalar(
+        select(PartnerPaymentAccount)
+        .where(PartnerPaymentAccount.tenant_id == current_user.tenant_id)
+        .where(PartnerPaymentAccount.is_default.is_(True))
+    )
+    if account is None:
+        account = PartnerPaymentAccount(
+            tenant_id=current_user.tenant_id,
+            provider="mercado_pago",
+            provider_account_id="pending_oauth_link",
+            account_label="Conta Pix do parceiro",
+            is_default=True,
+            is_active=True,
+        )
+        db.add(account)
+    account.pix_key = data.pix_key
+    account.account_holder_name = " ".join(data.account_holder_name.split())
+    account.account_holder_document = data.account_holder_document
+    account.verification_status = "pending_provider_verification"
+    account.status = "pending_verification"
+    await db.commit()
+    await db.refresh(account)
+    return _payout_account_payload(account)
 
 
 @router.get('/feature-requests')

@@ -762,8 +762,9 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
         dayShifts.sort(
           (a, b) => (a['ends_at'] as String).compareTo(b['ends_at'] as String),
         );
-        final lastEnd = DateTime.parse(dayShifts.last['ends_at'] as String)
-            .toLocal();
+        final lastEnd = DateTime.parse(
+          dayShifts.last['ends_at'] as String,
+        ).toLocal();
         if (lastEnd.isAfter(startsAt)) {
           startsAt = lastEnd;
           endsAt = startsAt.add(const Duration(hours: 8));
@@ -1586,7 +1587,9 @@ class _ScheduleCalendar extends StatelessWidget {
               itemCount: dayCount,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 7,
-                childAspectRatio: 1.15,
+                // Keep enough vertical room for the day, status badge and
+                // unit markers on narrow phone screens.
+                childAspectRatio: 0.9,
               ),
               itemBuilder: (context, index) {
                 final date = firstVisible.add(Duration(days: index));

@@ -950,3 +950,13 @@ operadores podem consultar, mas somente gestor/admin pode alterar.
 Enquanto `convenience_management` não estiver liberado, as rotas retornam
 `403` com `code=feature_locked`. O pagamento de uma solicitação reserva a
 capacidade imediatamente; a gestão administrativa ainda pode revisar o pedido.
+
+### Conta de repasse Pix do parceiro
+
+`GET /partners/payout-account` retorna somente dados mascarados da conta Pix do
+parceiro autenticado. `PUT /partners/payout-account` recebe `pix_key`,
+`account_holder_name` e `account_holder_document` (CPF/CNPJ). O documento deve
+ser igual ao documento validado no cadastro do parceiro; caso contrário a API
+recusa a alteração. A conta fica com `verificationStatus=pending_provider_verification`
+até a integração Mercado Pago/OAuth confirmar a titularidade. O cliente não
+possui conta de repasse e não pode acessar essas rotas.

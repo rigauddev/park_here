@@ -286,6 +286,7 @@ class _ReservationDetailsPageState
   };
 
   String _formatDate(DateTime date) {
+    date = date.toLocal();
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     final hour = date.hour.toString().padLeft(2, '0');

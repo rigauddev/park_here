@@ -3,6 +3,8 @@ services:
     build:
       context: ./parkhere_backend
     container_name: parkhere_api
+    environment:
+      TZ: America/Bahia
     ports:
       - "8000:8000"
     depends_on:

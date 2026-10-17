@@ -21,6 +21,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   final numberController = TextEditingController();
   final expiryController = TextEditingController();
   final pixController = TextEditingController();
+  final payoutDocumentController = TextEditingController();
   WalletMethodType type = WalletMethodType.creditCard;
   String selectedBrand = 'Visa';
   bool _makeDefault = true;
@@ -39,6 +40,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     numberController.dispose();
     expiryController.dispose();
     pixController.dispose();
+    payoutDocumentController.dispose();
     super.dispose();
   }
 
@@ -120,6 +122,31 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               onSelectionChanged: (value) => setState(() => type = value.first),
             ),
           const SizedBox(height: 14),
+          if (isPartner) ...[
+            TextField(
+              controller: holderController,
+              decoration: const InputDecoration(
+                labelText: 'Nome do titular da conta Pix',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: payoutDocumentController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'CPF/CNPJ validado do parceiro',
+                prefixIcon: Icon(Icons.badge_outlined),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'A conta ficará pendente até a validação do provedor de pagamento. O CPF/CNPJ precisa ser o mesmo validado no cadastro do parceiro.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+          ],
           if (isPix)
             TextField(
               controller: pixController,
@@ -220,6 +247,13 @@ class _WalletPageState extends ConsumerState<WalletPage> {
       _showError('Informe a chave Pix.');
       return;
     }
+    if (isPix &&
+        (holderController.text.trim().isEmpty ||
+            payoutDocumentController.text.replaceAll(RegExp(r'\D'), '').length <
+                11)) {
+      _showError('Informe o titular e o CPF/CNPJ validado do parceiro.');
+      return;
+    }
 
     if (!isPix &&
         (holderController.text.trim().isEmpty ||
@@ -255,6 +289,9 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               pixKey: isPix ? pixController.text.trim() : null,
               isActive: willBeDefault,
             ),
+            accountHolderDocument: isPix
+                ? payoutDocumentController.text.replaceAll(RegExp(r'\D'), '')
+                : null,
           );
     } catch (error) {
       if (mounted) {
@@ -267,6 +304,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     numberController.clear();
     expiryController.clear();
     pixController.clear();
+    payoutDocumentController.clear();
 
     if (!mounted) return;
     setState(() => _makeDefault = false);

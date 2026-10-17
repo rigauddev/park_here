@@ -108,6 +108,7 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                     tourGuide: false,
                     transport: false,
                     total: preReservation.total,
+                    reservationId: preReservation.id,
                     userLocationLat: 0,
                     userLocationLng: 0,
                   ),
@@ -145,10 +146,10 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                     padding: const EdgeInsets.all(16),
                     itemCount: ordered.length,
                     itemBuilder: (context, index) => _ReservationCard(
-                        reservation: ordered[index],
-                        onCancel: () => _cancelPreReservation(ordered[index]),
-                        onChanged: () => ref.invalidate(reservationsProvider),
-                      ),
+                      reservation: ordered[index],
+                      onCancel: () => _cancelPreReservation(ordered[index]),
+                      onChanged: () => ref.invalidate(reservationsProvider),
+                    ),
                   ),
                 ),
                 ListView(
@@ -483,7 +484,7 @@ class _ReservationCard extends StatelessWidget {
                   if (reservation.status == ReservationStatus.open &&
                       !reservation.checkedIn)
                     OutlinedButton.icon(
-                    onPressed: () async {
+                      onPressed: () async {
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -560,6 +561,7 @@ class _ReservationCard extends StatelessWidget {
   }
 
   String _formatDate(DateTime date) {
+    date = date.toLocal();
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     final hour = date.hour.toString().padLeft(2, '0');
