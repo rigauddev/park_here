@@ -131,6 +131,7 @@ class _EnabledFinancialReport extends ConsumerStatefulWidget {
 class _EnabledFinancialReportState
     extends ConsumerState<_EnabledFinancialReport> {
   int _periodDays = 30;
+  int _movementTab = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -157,7 +158,21 @@ class _EnabledFinancialReportState
           ).subtract(Duration(days: _periodDays - 1));
           return !item.createdAt.toLocal().isBefore(start);
         }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        final paid = filtered.where((item) => item.paymentStatus == 'paid');
+        final incoming = filtered
+            .where(
+              (item) =>
+                  item.status != 'cancelled' && item.paymentStatus == 'paid',
+            )
+            .toList();
+        final outgoing = filtered
+            .where(
+              (item) =>
+                  item.status == 'cancelled' ||
+                  item.paymentStatus == 'refunded' ||
+                  item.paymentStatus == 'refunded_pending',
+            )
+            .toList();
+        final paid = incoming;
         final received = paid.fold<double>(
           0,
           (sum, item) => sum + item.finalTotal,
@@ -177,6 +192,24 @@ class _EnabledFinancialReportState
                     ? 'Reservation and payment report'
                     : 'Relatório de reservas e pagamentos',
                 style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              SegmentedButton<int>(
+                segments: [
+                  ButtonSegment(
+                    value: 0,
+                    icon: const Icon(Icons.arrow_downward),
+                    label: Text(isEnglish ? 'Entries' : 'Entradas'),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    icon: const Icon(Icons.arrow_upward),
+                    label: Text(isEnglish ? 'Outflows' : 'Saídas'),
+                  ),
+                ],
+                selected: {_movementTab},
+                onSelectionChanged: (selected) =>
+                    setState(() => _movementTab = selected.first),
               ),
               const SizedBox(height: 12),
               SegmentedButton<int>(
@@ -216,8 +249,13 @@ class _EnabledFinancialReportState
                     icon: Icons.receipt_long_outlined,
                   ),
                   _MetricCard(
-                    label: isEnglish ? 'Paid reservations' : 'Reservas pagas',
-                    value: '${paid.length}',
+                    label: _movementTab == 0
+                        ? (isEnglish ? 'Paid reservations' : 'Reservas pagas')
+                        : (isEnglish
+                              ? 'Cancellations/refunds'
+                              : 'Cancelamentos/estornos'),
+                    value:
+                        '${_movementTab == 0 ? incoming.length : outgoing.length}',
                     icon: Icons.event_available_outlined,
                   ),
                 ],
@@ -237,15 +275,21 @@ class _EnabledFinancialReportState
                 ),
               ),
               const SizedBox(height: 8),
-              for (final item in filtered.take(50))
+              for (final item in (_movementTab == 0 ? incoming : outgoing).take(
+                50,
+              ))
                 _ReservationRow(item: item, isEnglish: isEnglish),
-              if (filtered.isEmpty)
+              if ((_movementTab == 0 ? incoming : outgoing).isEmpty)
                 Card(
                   child: ListTile(
                     title: Text(
                       isEnglish
-                          ? 'No reservations in this period.'
-                          : 'Nenhuma reserva neste período.',
+                          ? (_movementTab == 0
+                                ? 'No incoming movements in this period.'
+                                : 'No outgoing movements in this period.')
+                          : (_movementTab == 0
+                                ? 'Nenhuma entrada neste período.'
+                                : 'Nenhuma saída neste período.'),
                     ),
                   ),
                 ),

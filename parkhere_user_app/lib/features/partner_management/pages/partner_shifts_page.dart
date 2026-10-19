@@ -10,8 +10,6 @@ import '../models/managed_parking_model.dart';
 import '../models/partner_operator_model.dart';
 import '../providers/partner_operators_provider.dart';
 import '../providers/partner_parking_provider.dart';
-import '../providers/partner_operations_provider.dart';
-import '../widgets/cash_session_dialog.dart';
 
 class PartnerShiftsPage extends ConsumerStatefulWidget {
   const PartnerShiftsPage({super.key});
@@ -72,12 +70,6 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
               : _text('Escalas por unidade', 'Schedules by unit'),
         ),
         actions: [
-          if (isOperator)
-            IconButton(
-              tooltip: _text('Abrir ou fechar caixas', 'Open or close tills'),
-              onPressed: () => _cashAction(),
-              icon: const Icon(Icons.point_of_sale_outlined),
-            ),
           IconButton(
             tooltip: _text('Exportar escala em PDF', 'Export schedule as PDF'),
             onPressed: () => _exportPdf(parkings, operators),
@@ -244,49 +236,6 @@ class _PartnerShiftsPageState extends ConsumerState<PartnerShiftsPage> {
         },
       ),
     );
-  }
-
-  Future<void> _cashAction() async {
-    final token = ref.read(authProvider).accessToken;
-    if (token == null || !mounted) return;
-    try {
-      final session = await fetchCashSession(token: token);
-      final open = session['open'] == true;
-      List<Map<String, String>> options = const [];
-      if (!open) {
-        final parkings = await ref.read(partnerParkingProvider.future);
-        options = [
-          for (final parking in parkings)
-            if (parking.id != null) {'id': parking.id!, 'name': parking.name},
-        ];
-        if (options.isEmpty) {
-          if (mounted) {
-            await ApiFeedback.show(context, _text(
-              'Nenhuma unidade autorizada foi encontrada para abrir o caixa.',
-              'No authorized unit was found to open the till.',
-            ));
-          }
-          return;
-        }
-      }
-      if (!mounted) return;
-      final changed = await showCashSessionDialog(
-        context,
-        ref,
-        parkingOptions: options,
-        open: !open,
-      );
-      if (!mounted || !changed) return;
-      setState(() {
-        _shiftsFuture = ref.read(partnerOperatorsProvider.notifier).fetchShifts();
-      });
-      await ApiFeedback.show(context, _text(
-        open ? 'Turno encerrado. Os caixas foram fechados.' : 'Turno iniciado. Os caixas foram abertos.',
-        open ? 'Shift closed. Both tills are closed.' : 'Shift started. Both tills are open.',
-      ));
-    } catch (error) {
-      if (mounted) await ApiFeedback.show(context, '$error');
-    }
   }
 
   Widget _parkingDropdown(List<ManagedParkingModel> parkings) => Padding(
