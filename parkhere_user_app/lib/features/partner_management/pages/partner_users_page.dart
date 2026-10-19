@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/validators/form_validators.dart';
 import '../../../core/widgets/api_feedback.dart';
+import '../../../core/services/api_service.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operator_model.dart';
 import '../models/managed_parking_model.dart';
 import '../providers/partner_operators_provider.dart';
@@ -17,6 +19,12 @@ const _operatorPermissionLabels = {
   'checkin.own': 'Check-in das reservas dele',
   'checkout.own': 'Checkout das reservas dele',
   'payments.receive': 'Receber pagamento',
+  'reservations.edit': 'Editar reservas',
+  'reservations.delete': 'Excluir/cancelar reservas',
+  'parking_map.edit': 'Editar disponibilidade das vagas',
+  'convenience.view': 'Visualizar conveniência',
+  'convenience.edit': 'Cadastrar e editar produtos',
+  'convenience.delete': 'Excluir produtos',
 };
 
 class PartnerUsersPage extends ConsumerWidget {
@@ -30,6 +38,14 @@ class PartnerUsersPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Usuarios'),
         actions: [
+          IconButton(
+            tooltip: 'Regras e perfis',
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => _PermissionProfilesDialog(ref: ref),
+            ),
+            icon: const Icon(Icons.rule_outlined),
+          ),
           IconButton(
             tooltip: 'Atualizar',
             onPressed: () => ref.invalidate(partnerOperatorsProvider),
@@ -158,6 +174,104 @@ class PartnerUsersPage extends ConsumerWidget {
   }
 }
 
+class _PermissionProfilesDialog extends ConsumerStatefulWidget {
+  final WidgetRef ref;
+  const _PermissionProfilesDialog({required this.ref});
+  @override
+  ConsumerState<_PermissionProfilesDialog> createState() => _PermissionProfilesDialogState();
+}
+
+class _PermissionProfilesDialogState extends ConsumerState<_PermissionProfilesDialog> {
+  List<Map<String, dynamic>> profiles = [];
+  final selected = <String>{..._operatorPermissionLabels.keys};
+  bool loading = true;
+  bool creating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) throw Exception('Sessão expirada');
+      final data = await ApiService().getAuthorized('/partners/permission-profiles', token);
+      if (mounted) setState(() => profiles = data.cast<Map<String, dynamic>>());
+    } catch (error) {
+      if (mounted) await ApiFeedback.show(context, '$error');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _create() async {
+    final name = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Novo perfil de regras'),
+        content: TextField(controller: name, decoration: const InputDecoration(labelText: 'Nome do perfil')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, name.text.trim()), child: const Text('Continuar')),
+        ],
+      ),
+    );
+    name.dispose();
+    if (value == null || value.isEmpty) return;
+    setState(() => creating = true);
+    try {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) throw Exception('Sessão expirada');
+      await ApiService().postAuthorized('/partners/permission-profiles', {
+        'name': value,
+        'permissions': selected.toList(),
+      }, token);
+      await _load();
+    } catch (error) {
+      if (mounted) await ApiFeedback.show(context, '$error');
+    } finally {
+      if (mounted) setState(() => creating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Regras e perfis de acesso'),
+    content: SizedBox(
+      width: 520,
+      child: SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Gestor pode criar perfis personalizados e associá-los aos operadores na configuração do usuário.'),
+          const SizedBox(height: 12),
+          if (loading) const Center(child: CircularProgressIndicator())
+          else ...profiles.map((profile) => ListTile(
+            leading: const Icon(Icons.badge_outlined),
+            title: Text(profile['name']?.toString() ?? ''),
+            subtitle: Text('${(profile['permissions'] as List<dynamic>? ?? []).length} permissões'),
+          )),
+          const Divider(),
+          const Text('Permissões do novo perfil', style: TextStyle(fontWeight: FontWeight.bold)),
+          for (final entry in _operatorPermissionLabels.entries)
+            CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              value: selected.contains(entry.key),
+              title: Text(entry.value),
+              onChanged: (value) => setState(() => value == true ? selected.add(entry.key) : selected.remove(entry.key)),
+            ),
+        ]),
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
+      FilledButton.icon(onPressed: creating ? null : _create, icon: const Icon(Icons.add), label: const Text('Criar perfil')),
+    ],
+  );
+}
+
 class _LimitCard extends StatelessWidget {
   final int count;
   final VoidCallback onRequest;
@@ -264,6 +378,8 @@ class _OperatorAssignmentDialog extends ConsumerStatefulWidget {
 class _OperatorAssignmentDialogState
     extends ConsumerState<_OperatorAssignmentDialog> {
   final selected = <String>{};
+  List<Map<String, dynamic>> profiles = [];
+  String? selectedProfileId;
   bool loadingAssignments = true;
   bool savingAssignments = false;
 
@@ -271,6 +387,23 @@ class _OperatorAssignmentDialogState
   void initState() {
     super.initState();
     _loadAssignments();
+    _loadProfiles();
+  }
+
+  Future<void> _loadProfiles() async {
+    try {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) return;
+      final data = await ApiService().getAuthorized('/partners/permission-profiles', token);
+      if (!mounted) return;
+      final rows = data.cast<Map<String, dynamic>>();
+      final matches = rows.where((profile) {
+        final permissions = (profile['permissions'] as List<dynamic>? ?? []).cast<String>();
+        return permissions.toSet().difference(widget.operator.permissions.toSet()).isEmpty &&
+            permissions.length == widget.operator.permissions.length;
+      }).toList();
+      setState(() { profiles = rows; selectedProfileId = matches.isEmpty ? null : matches.first['id'] as String?; });
+    } catch (_) {}
   }
 
   Future<void> _loadAssignments() async {
@@ -353,6 +486,19 @@ class _OperatorAssignmentDialogState
                     contentPadding: EdgeInsets.zero,
                   ),
               const Divider(),
+              if (profiles.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: selectedProfileId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Perfil de regras'),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Permissões personalizadas')),
+                    for (final profile in profiles.where((item) => item['id'] != null))
+                      DropdownMenuItem<String?>(value: profile['id'] as String, child: Text(profile['name'].toString())),
+                  ],
+                  onChanged: savingAssignments ? null : (value) => setState(() => selectedProfileId = value),
+                ),
+              if (profiles.isNotEmpty) const SizedBox(height: 8),
               const Text(
                 'O e-mail e o CPF são apenas para consulta. Os turnos são gerenciados na tela Escalas.',
               ),
@@ -399,6 +545,13 @@ class _OperatorAssignmentDialogState
       await ref
           .read(partnerOperatorsProvider.notifier)
           .assignParkings(widget.operator.id, selected.toList());
+      final token = ref.read(authProvider).accessToken;
+      if (token != null) {
+        await ApiService().putAuthorized('/partners/operators/${widget.operator.id}/permission-profile', {
+          'profile_id': selectedProfileId,
+          if (selectedProfileId == null) 'permissions': widget.operator.permissions,
+        }, token);
+      }
       if (mounted) {
         Navigator.pop(context);
       }
