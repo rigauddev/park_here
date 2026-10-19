@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select, text
 
@@ -149,7 +150,13 @@ async def seed_homologation_valenca():
             db.add(OperatorWorkProfile(operator_id=operator.id, parking_id=parking.id,
                                        daily_hours=8, lunch_minutes=60,
                                        work_modality="24h", days_off="[]", bank_hours=0))
-        now = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Shift times are stored as Brazil wall-clock values.  Start the
+        # homologation schedule on today's local date so an operator can open
+        # a turn immediately after a seed reset (UTC can already be tomorrow
+        # or still be yesterday for Valença/Bahia).
+        now = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+        )
         for offset in range(7):
             day = now + timedelta(days=offset)
             for index, operator in enumerate(operators):

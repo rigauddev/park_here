@@ -328,3 +328,13 @@ e horário.
   dias. A renovação recorrente automática e a confirmação automática Pix/cartão
   dependem da integração Mercado Pago; até lá, cada pedido depende de revisão
   administrativa do comprovante.
+# Homologação: abertura de turno e PDV
+
+- O seed inicia os turnos na data local de Brasília (Valença/BA). Após recriar o
+  banco, o operador deve abrir o turno pela tela **Minha escala** ou pelo ícone
+  de caixa, informando o saldo inicial do estacionamento e da conveniência.
+- Sem turno vigente, o mapa e o PDV permanecem bloqueados.
+- No PDV, vendas em dinheiro mostram o troco no formulário e no comprovante.
+  Uma venda Pix em homologação exibe um QR Code fictício identificado como
+  simulado; ele não movimenta dinheiro real.
+

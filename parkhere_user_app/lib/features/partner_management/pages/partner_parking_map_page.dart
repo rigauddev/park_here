@@ -901,7 +901,7 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
                         style: TextStyle(color: Colors.red),
                       ),
                     ),
-                  if (canCheckout && reservation.isManualArrival)
+                  if (canCheckout)
                     FilledButton.icon(
                       onPressed: () {
                         Navigator.pop(context);
@@ -920,25 +920,7 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
                       icon: const Icon(Icons.logout),
                       label: const Text('Registrar checkout'),
                     ),
-                  if (canCheckout && !reservation.isManualArrival) ...[
-                    FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        showDialog<void>(
-                          context: context,
-                          builder: (_) => _CheckoutPhotosDialog(
-                            reservationId: reservation.id,
-                            customerForgot: false,
-                            onCompleted: () {
-                              ref.invalidate(partnerParkingMapProvider);
-                              ref.invalidate(partnerReservationsProvider);
-                            },
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.logout),
-                      label: const Text('Registrar checkout'),
-                    ),
+                  if (canCheckout) ...[
                     OutlinedButton.icon(
                       onPressed: () {
                         Navigator.pop(context);

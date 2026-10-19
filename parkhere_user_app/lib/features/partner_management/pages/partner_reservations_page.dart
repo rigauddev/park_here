@@ -236,7 +236,9 @@ class _PartnerReservationCard extends ConsumerWidget {
                 ],
               ),
             ],
-            if (reservation.status == 'pending_operator_approval') ...[
+            if (reservation.status == 'pending_operator_approval' ||
+                reservation.notificationStatus ==
+                    'awaiting_operating_hours_approval') ...[
               const SizedBox(height: 12),
               Text(
                 'Entrada fora do horário: confirme se o estacionamento aceitará esta chegada.',
@@ -245,6 +247,7 @@ class _PartnerReservationCard extends ConsumerWidget {
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
+                runSpacing: 8,
                 children: [
                   FilledButton.icon(
                     onPressed: () => _reviewArrival(context, ref, 'approve'),
