@@ -270,6 +270,7 @@ class PartnerReservationSummary {
   final String? customerPhone;
   final String? createdByName;
   final String? createdByPhone;
+  final String? notificationStatus;
 
   const PartnerReservationSummary({
     required this.id,
@@ -294,6 +295,7 @@ class PartnerReservationSummary {
     this.customerPhone,
     this.createdByName,
     this.createdByPhone,
+    this.notificationStatus,
   });
 
   factory PartnerReservationSummary.fromJson(Map<String, dynamic> json) {
@@ -325,6 +327,7 @@ class PartnerReservationSummary {
       customerPhone: json['customer_phone'] as String?,
       createdByName: json['created_by_name'] as String?,
       createdByPhone: json['created_by_phone'] as String?,
+      notificationStatus: json['notification_status'] as String?,
     );
   }
 }

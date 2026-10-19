@@ -219,6 +219,10 @@ async def create_convenience_sale(
         if product.stock_quantity is not None:
             product.stock_quantity -= item.quantity
     await db.commit()
+    # Server defaults such as created_at may be expired after commit in
+    # async SQLAlchemy. Refresh before reading them for the receipt to avoid
+    # a MissingGreenlet lazy load.
+    await db.refresh(sale)
     return {
         "id": sale.id,
         "total_amount": sale.total_amount,

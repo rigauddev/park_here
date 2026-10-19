@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/services/api_service.dart';
 import '../../../core/services/local_storage_service.dart';
@@ -129,6 +130,31 @@ class _ConveniencePosPageState extends State<ConveniencePosPage> {
           ],
         ),
       );
+      if (_paymentMethod == 'pix' && mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Pix simulado'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Use este QR Code apenas para simulação local.'),
+                const SizedBox(height: 12),
+                QrImageView(
+                  data: 'PARKHERE-MOCK-PIX-${result['id']}-${result['total_amount']}',
+                  size: 220,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Fechar'),
+              ),
+            ],
+          ),
+        );
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -313,7 +339,20 @@ class _ConveniencePosPageState extends State<ConveniencePosPage> {
               controller: _received,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Valor recebido'),
+              onChanged: (_) => setState(() {}),
             ),
+            if (double.tryParse(_received.text.replaceAll(',', '.')) != null &&
+                double.tryParse(_received.text.replaceAll(',', '.'))! >= _total)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Troco: R\$ ${(double.parse(_received.text.replaceAll(',', '.')) - _total).toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
           ],
           const Spacer(),
           FilledButton.icon(
