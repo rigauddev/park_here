@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/i18n/app_localizations.dart';
@@ -175,7 +174,6 @@ class _ParkingLayoutPanel extends ConsumerWidget {
               else
                 const SizedBox(height: 10),
               _FeeStatementCard(onTap: () => _showFeeStatement(context, ref)),
-              const _CashShiftCard(),
               const SizedBox(height: 12),
             ],
             Wrap(
@@ -365,83 +363,6 @@ class _FeeStatementCard extends StatelessWidget {
         ),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _CashShiftCard extends StatefulWidget {
-  const _CashShiftCard();
-
-  @override
-  State<_CashShiftCard> createState() => _CashShiftCardState();
-}
-
-class _CashShiftCardState extends State<_CashShiftCard> {
-  double? opening;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadOpening();
-  }
-
-  Future<void> _loadOpening() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getDouble('cash_shift_opening');
-    if (mounted && value != null) setState(() => opening = value);
-  }
-
-  Future<void> _openShift() async {
-    final controller = TextEditingController();
-    final value = await showDialog<double>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Abertura de caixa / Cash opening'),
-        content: TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Dinheiro inicial / Opening cash',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              double.tryParse(controller.text.replaceAll(',', '.')),
-            ),
-            child: const Text('Iniciar turno'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (value == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('cash_shift_opening', value);
-    if (mounted) setState(() => opening = value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.point_of_sale),
-        title: const Text('Caixa do turno / Shift cash'),
-        subtitle: Text(
-          opening == null
-              ? 'Informe o dinheiro inicial.'
-              : 'Abertura: R\$ ${opening!.toStringAsFixed(2)}',
-        ),
-        trailing: IconButton(
-          onPressed: _openShift,
-          icon: const Icon(Icons.edit),
-        ),
       ),
     );
   }

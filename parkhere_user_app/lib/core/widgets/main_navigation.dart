@@ -98,24 +98,19 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           .read(partnerOperatorsProvider.notifier)
           .fetchShifts();
       final now = DateTime.now();
-      final todayStart = DateTime(now.year, now.month, now.day);
-      final tomorrowStart = todayStart.add(const Duration(days: 1));
-      final hasShiftToday = shifts.any((shift) {
+      final hasActiveShift = shifts.any((shift) {
         final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
         final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
-        // A scheduled operator can use the operational menu for their whole
-        // workday, even before the shift starts. The backend still enforces
-        // authorization for each operation and unit.
-        return starts.isBefore(tomorrowStart) && ends.isAfter(todayStart);
+        return !now.isBefore(starts) && !now.isAfter(ends);
       });
       if (!mounted) return;
       setState(() {
-        _operatorHasShiftToday = hasShiftToday;
-        if (!hasShiftToday && !_isOperatorAllowedArea(_selectedArea)) {
+        _operatorHasShiftToday = hasActiveShift;
+        if (!hasActiveShift && !_isOperatorAllowedArea(_selectedArea)) {
           _selectedArea = _MainArea.shifts;
         }
       });
-      if (hasShiftToday && !_cashPromptShown) {
+      if (hasActiveShift && !_cashPromptShown) {
         _cashPromptShown = true;
         await _promptCashIfNeeded(shifts);
       }
@@ -133,10 +128,16 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   Future<List<Map<String, String>>> _cashParkingOptions(
     List<Map<String, dynamic>> shifts,
   ) async {
-    final ids = <String>{
-      for (final shift in shifts)
-        if (shift['parking_id'] is String) shift['parking_id'] as String,
-    };
+    final ids = <String>{};
+    for (final shift in shifts) {
+      final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
+      final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
+      if (shift['parking_id'] is String &&
+          !DateTime.now().isBefore(starts) &&
+          !DateTime.now().isAfter(ends)) {
+        ids.add(shift['parking_id'] as String);
+      }
+    }
     final parkings = await ref.read(partnerParkingProvider.future);
     return [
       for (final parking in parkings)
@@ -154,7 +155,12 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       if (session['open'] == true || !mounted) return;
       final options = await _cashParkingOptions(shifts);
       if (!mounted || options.isEmpty) return;
-      await showCashSessionDialog(context, ref, parkingOptions: options, open: true);
+      await showCashSessionDialog(
+        context,
+        ref,
+        parkingOptions: options,
+        open: true,
+      );
       if (mounted) setState(() {});
     } catch (_) {
       // A transient prompt error must not prevent access to the schedule page.
@@ -168,16 +174,32 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       final session = await fetchCashSession(token: token);
       if (!mounted) return;
       if (session['open'] == true) {
-        await showCashSessionDialog(context, ref, parkingOptions: const [], open: false);
+        await showCashSessionDialog(
+          context,
+          ref,
+          parkingOptions: const [],
+          open: false,
+        );
       } else {
-        final shifts = await ref.read(partnerOperatorsProvider.notifier).fetchShifts();
+        final shifts = await ref
+            .read(partnerOperatorsProvider.notifier)
+            .fetchShifts();
         final options = await _cashParkingOptions(shifts);
-        if (mounted) await showCashSessionDialog(context, ref, parkingOptions: options, open: true);
+        if (mounted) {
+          await showCashSessionDialog(
+            context,
+            ref,
+            parkingOptions: options,
+            open: true,
+          );
+        }
       }
       if (mounted) await _loadOperatorShiftAccess();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
     }
   }
 
