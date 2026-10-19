@@ -62,7 +62,6 @@ class _LockedFeature extends StatelessWidget {
     final isPaid = details?['is_paid'] == true;
     final period = switch (details?['billing_period']) {
       'annual' => isEnglish ? 'year' : 'ano',
-      'one_time' => isEnglish ? 'one time' : 'pagamento único',
       _ => isEnglish ? 'month' : 'mês',
     };
 

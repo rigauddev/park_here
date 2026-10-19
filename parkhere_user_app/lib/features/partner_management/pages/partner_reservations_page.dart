@@ -54,6 +54,9 @@ class _PartnerReservationsPageState
               : items
                     .where((item) => item.parkingName == parkingFilter)
                     .toList();
+          final pendingOutsideHours = filtered
+              .where((item) => item.status == 'pending_operator_approval')
+              .length;
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -75,6 +78,20 @@ class _PartnerReservationsPageState
                     setState(() => parkingFilter = value ?? 'Todos'),
               ),
               const SizedBox(height: 12),
+              if (pendingOutsideHours > 0)
+                Card(
+                  color: Colors.orange.shade50,
+                  child: ListTile(
+                    leading: const Icon(
+                      Icons.notifications_active_outlined,
+                      color: Colors.orange,
+                    ),
+                    title: const Text('Solicitação fora do horário'),
+                    subtitle: Text(
+                      '$pendingOutsideHours reserva(s) aguardam sua decisão. Esta notificação aparece no painel web e no aplicativo.',
+                    ),
+                  ),
+                ),
               for (final item in filtered)
                 _PartnerReservationCard(reservation: item),
             ],
@@ -226,18 +243,21 @@ class _PartnerReservationCard extends ConsumerWidget {
                 style: TextStyle(color: Colors.orange.shade800),
               ),
               const SizedBox(height: 8),
-              Wrap(spacing: 8, children: [
-                FilledButton.icon(
-                  onPressed: () => _reviewArrival(context, ref, 'approve'),
-                  icon: const Icon(Icons.check),
-                  label: const Text('Aceitar entrada'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _reviewArrival(context, ref, 'reject'),
-                  icon: const Icon(Icons.close),
-                  label: const Text('Recusar'),
-                ),
-              ]),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => _reviewArrival(context, ref, 'approve'),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Aceitar entrada'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _reviewArrival(context, ref, 'reject'),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Recusar'),
+                  ),
+                ],
+              ),
             ],
             if (reservation.status != 'completed' &&
                 reservation.status != 'cancelled' &&

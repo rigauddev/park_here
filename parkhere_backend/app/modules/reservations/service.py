@@ -44,7 +44,10 @@ class ReservationService:
     VALID_SPOT_TYPES = {"uncovered", "covered", "vip", "large", "bus", "pickup", "motorhome"}
     VALID_PLANS = {"hourly", "daily", "weekly", "monthly"}
     FREE_CANCELLATION_MINUTES = 5
-    CHECKOUT_GRACE_MINUTES = 15
+    # Hourly reservations have a ten-minute checkout window after the
+    # contracted period. Expiry is handled by the operator, never by a list
+    # or map request (which must remain read-only).
+    CHECKOUT_GRACE_MINUTES = 10
 
     @staticmethod
     async def create_pre_checkin(
@@ -198,10 +201,24 @@ class ReservationService:
         reservation, parking = await _get_reservation_with_parking(db, reservation_id)
         _ensure_cancel_permission(current_user, reservation, parking)
 
-        if reservation.status in {"cancelled", "completed", "checked_out", "expired"}:
+        if reservation.status in {"completed", "checked_out", "expired"}:
             raise HTTPException(
                 status_code=409,
                 detail="Reservation cannot be cancelled",
+            )
+
+        # Mobile retries are common after a timeout. The first request may
+        # already have committed the cancellation, so return the persisted
+        # state instead of reporting a misleading error.
+        if reservation.status == "cancelled":
+            actor_name = None
+            if reservation.cancelled_by_user_id:
+                actor = await db.scalar(
+                    select(User).where(User.id == reservation.cancelled_by_user_id)
+                )
+                actor_name = actor.name if actor else None
+            return to_response(reservation).model_copy(
+                update={"cancelled_by_name": actor_name}
             )
 
         if reservation.payment_status == "paid":
@@ -305,12 +322,13 @@ class ReservationService:
                     detail="Ative a localização para fazer check-in. É necessário informar sua posição.",
                 )
             distance = _distance_meters(latitude, longitude, parking.lat, parking.lng)
-            if distance > 150:
+            if distance > 70:
                 raise HTTPException(
                     status_code=403,
                     detail=(
                         "Você precisa estar dentro do estacionamento para fazer check-in. "
-                        "Ative a localização e tente novamente."
+                        f"Distância calculada: {round(distance)} m (limite: 70 m). "
+                        "Confirme a localização do estacionamento no mapa e tente novamente."
                     ),
                 )
 
@@ -394,6 +412,40 @@ class ReservationService:
 
         reservation.status = "completed"
         reservation.checked_out_at = datetime.utcnow()
+        parking.available_spots = min(parking.available_spots + 1, parking.total_spots)
+        await db.commit()
+        await db.refresh(reservation)
+        return to_response(reservation)
+
+    @staticmethod
+    async def operator_checkout_without_customer(
+        db: AsyncSession,
+        reservation_id: str,
+        current_user: User,
+        reason: str,
+    ) -> ReservationResponse:
+        """Release a checked-in vehicle when the customer left without checkout.
+
+        This is an explicit operator action: it never runs from a read/list
+        endpoint and it requires one spot photo to be uploaded separately.
+        """
+        reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+        if current_user.role not in {
+            UserRoleEnum.OPERATOR,
+            UserRoleEnum.PARTNER_MANAGER,
+            UserRoleEnum.PARKING_ADMIN,
+        } or current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        if reservation.status != "checked_in":
+            raise HTTPException(status_code=409, detail="Reservation must be checked in before checkout")
+
+        excess_minutes, excess_amount = calculate_checkout_excess(reservation, parking)
+        reservation.checkout_grace_minutes = ReservationService.CHECKOUT_GRACE_MINUTES
+        reservation.checkout_excess_minutes = excess_minutes
+        reservation.checkout_excess_amount = excess_amount
+        reservation.status = "completed"
+        reservation.checked_out_at = datetime.utcnow()
+        reservation.cancellation_reason = (reason or "Cliente deixou o estacionamento sem realizar o checkout.").strip()
         parking.available_spots = min(parking.available_spots + 1, parking.total_spots)
         await db.commit()
         await db.refresh(reservation)
@@ -642,6 +694,35 @@ async def expire_parking_reservations(db, parking):
     await db.flush()
 
 
+async def expire_user_reservations(db: AsyncSession, user_id: str) -> None:
+    """Expire stale holds for one customer before returning their history."""
+    rows = (await db.scalars(
+        select(Reservation).where(
+            Reservation.user_id == user_id,
+            Reservation.status.in_(["pre_reserved", "pending_operator_approval"]),
+            Reservation.hold_expires_at <= datetime.utcnow(),
+            Reservation.payment_status != "paid",
+        ).with_for_update()
+    )).all()
+    if not rows:
+        return
+    parking_ids = {row.parking_id for row in rows}
+    parkings = {
+        parking.id: parking
+        for parking in (await db.scalars(select(Parking).where(Parking.id.in_(parking_ids)))).all()
+    }
+    now = datetime.utcnow()
+    for reservation in rows:
+        reservation.status = "cancelled"
+        reservation.payment_status = "expired"
+        reservation.cancelled_at = now
+        reservation.cancellation_reason = "Pré-reserva expirada automaticamente."
+        parking = parkings.get(reservation.parking_id)
+        if parking:
+            parking.available_spots = min(parking.total_spots, parking.available_spots + 1)
+    await db.commit()
+
+
 async def allocate_spot(db, parking, requested, kind):
     blocked = set(json.loads(getattr(parking, "blocked_spots", None) or "[]"))
     occupied = (await db.scalars(select(Reservation.spot_code).where(
@@ -684,8 +765,9 @@ async def _calculate_pricing(
     selected_services = _selected_services(parking.services, data.service_codes)
     services_amount = sum(service.price for service in selected_services)
     service_amounts = {"parking": base_amount}
-    for service in selected_services:
-        service_amounts[service.code] = service_amounts.get(service.code, 0) + service.price
+    if services_amount > 0:
+        # One global rate covers optional services sold inside the parking.
+        service_amounts["additional_services"] = services_amount
 
     platform_fee_lines = await PlatformFeeService.calculate_lines(
         db, service_amounts, parking.tenant_id, parking.id
@@ -880,9 +962,7 @@ def to_response(reservation: Reservation) -> ReservationResponse:
 
     return ReservationResponse(
         id=reservation.id,
-        created_at=reservation.created_at.isoformat() + "Z"
-        if reservation.created_at
-        else None,
+        created_at=_utc_iso(reservation.created_at),
         created_by_name=None,
         created_by_phone=None,
         walk_in_plate=reservation.walk_in_plate,
@@ -893,23 +973,19 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         parking_lng=getattr(reservation, "parking_lng", None),
         parking_city=getattr(reservation, "parking_city", None),
         status=reservation.status,
-        checked_in_at=reservation.checked_in_at.isoformat() + "Z"
-        if reservation.checked_in_at
-        else None,
-        checked_out_at=reservation.checked_out_at.isoformat() + "Z"
-        if reservation.checked_out_at
-        else None,
+        checked_in_at=_utc_iso(reservation.checked_in_at),
+        checked_out_at=_utc_iso(reservation.checked_out_at),
         spot_code=reservation.spot_code,
         arrival_estimate_at=(
-            reservation.arrival_estimate_at.isoformat() + "Z"
+            _utc_iso(reservation.arrival_estimate_at)
             if reservation.arrival_estimate_at
             else (
-                reservation.created_at + timedelta(minutes=reservation.route_minutes)
-            ).isoformat() + "Z"
+                _utc_iso(reservation.created_at + timedelta(minutes=reservation.route_minutes))
+            )
         ),
         is_manual_arrival=reservation.is_manual_arrival,
         route_minutes=reservation.route_minutes,
-        hold_expires_at=reservation.hold_expires_at.isoformat() + "Z",
+        hold_expires_at=_utc_iso(reservation.hold_expires_at),
         estimated_total=reservation.estimated_total,
         spot_type=reservation.spot_type,
         pricing_plan=reservation.pricing_plan,
@@ -926,25 +1002,26 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         platform_fees=platform_fees,
         payment_status=reservation.payment_status,
         payment_method=getattr(reservation, "payment_method", None),
-        terms_accepted_at=(
-            reservation.terms_accepted_at.isoformat() + "Z"
-            if reservation.terms_accepted_at
-            else None
-        ),
+        terms_accepted_at=_utc_iso(reservation.terms_accepted_at),
         terms_version=reservation.terms_version,
         terms_locale=reservation.terms_locale,
         accepted_terms=accepted_terms,
         notification_status=reservation.notification_status,
-        cancelled_at=reservation.cancelled_at.isoformat() + "Z"
-        if reservation.cancelled_at
-        else None,
+        cancelled_at=_utc_iso(reservation.cancelled_at),
         cancelled_by_user_id=reservation.cancelled_by_user_id,
         cancellation_fee_amount=reservation.cancellation_fee_amount,
         cancellation_credit_amount=reservation.cancellation_credit_amount,
         checkout_grace_minutes=reservation.checkout_grace_minutes,
         checkout_excess_minutes=reservation.checkout_excess_minutes,
         checkout_excess_amount=reservation.checkout_excess_amount,
-        checkout_excess_paid_at=reservation.checkout_excess_paid_at.isoformat() + "Z"
-        if reservation.checkout_excess_paid_at
-        else None,
+        checkout_excess_paid_at=_utc_iso(reservation.checkout_excess_paid_at),
     )
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    """Serialize database timestamps as unambiguous UTC for mobile clients."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

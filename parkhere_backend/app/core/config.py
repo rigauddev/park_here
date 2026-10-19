@@ -28,5 +28,7 @@ class Settings:
     MERCADO_PAGO_ACCESS_TOKEN: str = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
     MERCADO_PAGO_PUBLIC_KEY: str = os.getenv("MERCADO_PAGO_PUBLIC_KEY")
     MERCADO_PAGO_WEBHOOK_SECRET: str = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET")
+    MERCADO_PAGO_API_BASE_URL: str = os.getenv("MERCADO_PAGO_API_BASE_URL", "https://api.mercadopago.com")
+    MERCADO_PAGO_WEBHOOK_URL: str = os.getenv("MERCADO_PAGO_WEBHOOK_URL")
 
 settings = Settings()

@@ -36,10 +36,49 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
   bool backPhoto = false;
   bool hasGuideIndication = false;
   bool _checkingIn = false;
+  bool _locationValidated = false;
+  bool _checkingLocation = true;
   String _checkinStep = '';
   final Set<String> _uploadedPhotoKinds = {};
 
   bool get allPhotosDone => frontPhoto && leftPhoto && rightPhoto && backPhoto;
+
+  @override
+  void initState() {
+    super.initState();
+    _validateLocationBeforeCapture();
+  }
+
+  Future<void> _validateLocationBeforeCapture() async {
+    try {
+      final position = await LocationService().getCurrentLocation();
+      final distance = LocationService().calculateDistance(
+        startLat: position.latitude,
+        startLng: position.longitude,
+        endLat: widget.preCheckin.parking.lat,
+        endLng: widget.preCheckin.parking.lng,
+      );
+      if (!mounted) return;
+      setState(() {
+        _locationValidated = distance <= 70;
+        _checkingLocation = false;
+      });
+      if (distance > 70) {
+        await ApiFeedback.show(
+          context,
+          'A localização está a ${distance.round()} m do estacionamento. '
+          'O check-in exige até 70 m. Confirme o ponto do estacionamento no mapa e tente novamente.',
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _locationValidated = false;
+        _checkingLocation = false;
+      });
+      await ApiFeedback.show(context, '$error');
+    }
+  }
 
   Future<void> _capture(String kind, VoidCallback markDone) async {
     try {
@@ -446,6 +485,13 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       );
       return;
     }
+    if (!_locationValidated) {
+      await ApiFeedback.show(
+        context,
+        'Confirme sua localização dentro do estacionamento antes de concluir.',
+      );
+      return;
+    }
     setState(() {
       _checkingIn = true;
       _checkinStep = 'Enviando fotos do veículo...';
@@ -536,7 +582,9 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
       ),
       title: Text(label),
       trailing: ElevatedButton(
-        onPressed: done ? null : onTap,
+        onPressed: done || _checkingLocation || !_locationValidated
+            ? null
+            : onTap,
         child: Text(done ? "OK" : "Capturar"),
       ),
     );

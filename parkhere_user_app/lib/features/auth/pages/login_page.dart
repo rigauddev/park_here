@@ -297,6 +297,28 @@ class _LoginPageState extends ConsumerState<LoginPage>
                             ),
                           ),
                           const SizedBox(height: 6),
+                          if (authState.status == AuthStatus.mfaRequired)
+                            Align(
+                              alignment: Alignment.center,
+                              child: TextButton.icon(
+                                onPressed: isLoading
+                                    ? null
+                                    : () {
+                                        emailController.clear();
+                                        passwordController.clear();
+                                        mfaController.clear();
+                                        ref
+                                            .read(authProvider.notifier)
+                                            .resetLoginFlow();
+                                      },
+                                icon: const Icon(Icons.close, size: 18),
+                                label: Text(
+                                  isPortuguese
+                                      ? 'Cancelar acesso'
+                                      : 'Cancel access',
+                                ),
+                              ),
+                            ),
                           TextButton(
                             onPressed:
                                 authState.status == AuthStatus.mfaRequired

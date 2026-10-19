@@ -135,3 +135,32 @@ solicitacao persistida e aprovacao manual. A API aplica os limites e os
 entitlements. Compra automatica, conciliacao, vigencia e webhook permanecem
 pendentes do Mercado Pago. Pacotes de operadores continuam no fluxo de cotas
 existente; cada unidade adiciona dois operadores conforme a regra atual.
+
+### Conveniência: estoque e operação
+
+O módulo de conveniência é um add-on pago e separado dos serviços extras da
+reserva. O gestor cadastra categorias, produtos, preço e, opcionalmente,
+`stock_quantity`; estoque nulo mantém o produto sem controle de quantidade.
+Operadores com turno ativo acessam somente o Ponto de venda, pesquisam por nome
+ou código de barras e registram vendas; não editam nem removem produtos. Cada
+venda reduz o estoque quando controlado e gera comprovante operacional não
+fiscal, além de alimentar os registros de caixa/financeiro.
+
+### Taxas administrativas
+
+Toda taxa deve identificar o serviço ao qual se aplica (`service_type`) e
+possui rótulo e descrição em português e inglês. A tela de gestão exibe ambos
+conforme o idioma selecionado pelo administrador, evitando taxas genéricas ou
+sem contexto.
+# Módulos pagos e conveniência
+
+Módulos bloqueados abrem uma página de benefícios antes da contratação. O
+parceiro escolhe somente plano mensal recorrente (compromisso mínimo de seis
+meses) ou anual. A gestão do app configura preços, limite de parcelas e
+descontos por Pix, crédito e débito; a API recalcula o total e o app só libera
+o módulo após confirmação do pagamento e da análise prevista pelo fluxo.
+
+Filiais/unidades adicionais usam o mesmo fluxo e destacam gestão centralizada,
+separação operacional e relatórios consolidados ou por unidade. Conveniência é
+um módulo pago com produtos, categorias, estoque, PDV, troco, fechamento de
+caixa e comprovante operacional não fiscal.

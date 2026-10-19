@@ -57,6 +57,9 @@ class PartnerFeatureEntitlement(BaseModel):
     price = Column(Float, nullable=False, default=0)
     billing_period = Column(String(20), nullable=False, default="monthly")
     billing_prices = Column(Text, nullable=True)
+    # JSON configuration for each recurring plan.  Kept as a text column for
+    # compatibility with the existing MySQL deployment.
+    payment_terms = Column(Text, nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(String(500), nullable=True)
 
@@ -71,7 +74,9 @@ class PartnerFeatureRequest(BaseModel):
     capacity_after = Column(Integer, nullable=True)
     unit_price = Column(Float, nullable=False, default=0)
     total_price = Column(Float, nullable=False, default=0)
-    billing_period = Column(String(20), nullable=False, default='one_time')
+    billing_period = Column(String(20), nullable=False, default='monthly')
+    # Snapshot of the terms used when the request was created.
+    payment_terms = Column(Text, nullable=True)
     status = Column(String(30), nullable=False, default='pending_payment', index=True)
     payment_method = Column(String(20), nullable=False, default='pix')
     receipt_path = Column(Text, nullable=True)

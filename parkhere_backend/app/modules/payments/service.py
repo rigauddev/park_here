@@ -25,6 +25,7 @@ from app.modules.reservations.service import calculate_checkout_excess, _distanc
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.platform_fees.service import PlatformFeeService
+from app.modules.payments.mercado_pago_client import MercadoPagoClient, MercadoPagoError
 
 
 class PaymentService:
@@ -70,11 +71,8 @@ class PaymentService:
                     status_code=403,
                     detail="O pagamento por hora só pode ser realizado dentro de 50 metros do estacionamento.",
                 )
-        if settings.PAYMENT_PROVIDER != "mock":
-            raise HTTPException(
-                status_code=503,
-                detail="Mercado Pago integration is not enabled; no payment was created",
-            )
+        if settings.PAYMENT_PROVIDER not in {"mock", "mercado_pago"}:
+            raise HTTPException(status_code=503, detail="Provedor de pagamento não configurado")
         if data.method == "cash" and current_user.role == UserRoleEnum.CUSTOMER:
             raise HTTPException(
                 status_code=403,
@@ -172,10 +170,38 @@ class PaymentService:
             },
         ]
 
+        checkout_url = _mock_checkout_url(external_reference)
+        provider = "mock"
+        provider_payment_id = None
+        if settings.PAYMENT_PROVIDER == "mercado_pago":
+            if data.method == "cash":
+                raise HTTPException(status_code=422, detail="Mercado Pago não processa dinheiro em espécie")
+            try:
+                preference_payload = {
+                    "items": [{
+                        "title": f"ParkHere - reserva {reservation.id}",
+                        "quantity": 1,
+                        "currency_id": "BRL",
+                        "unit_price": round(gross_amount, 2),
+                    }],
+                    "external_reference": external_reference,
+                    "metadata": {"reservation_id": reservation.id, "payment_purpose": purpose},
+                }
+                if settings.MERCADO_PAGO_WEBHOOK_URL:
+                    preference_payload["notification_url"] = settings.MERCADO_PAGO_WEBHOOK_URL
+                preference = await MercadoPagoClient().create_preference(preference_payload)
+            except MercadoPagoError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            checkout_url = preference.get("init_point") or preference.get("sandbox_init_point")
+            provider_payment_id = str(preference.get("id")) if preference.get("id") else None
+            if not checkout_url or not provider_payment_id:
+                raise HTTPException(status_code=502, detail="Mercado Pago não retornou a preferência de pagamento")
+            provider = "mercado_pago"
+
         transaction = PaymentTransaction(
             reservation_id=reservation.id,
             tenant_id=parking.tenant_id,
-            provider=settings.PAYMENT_PROVIDER,
+            provider=provider,
             method=data.method,
             cash_received=data.cash_received if data.method == "cash" else None,
             payment_purpose=purpose,
@@ -186,14 +212,15 @@ class PaymentService:
                 establishment_fee_amount=establishment_fee_amount,
             partner_amount=partner_amount,
             provider_fee_estimate=provider_fee_estimate,
-            checkout_url=_mock_checkout_url(external_reference),
+            checkout_url=checkout_url,
             qr_code=_mock_pix_code(external_reference, gross_amount)
-            if data.method == "pix"
+            if data.method == "pix" and provider == "mock"
             else None,
             external_reference=external_reference,
             partner_provider_account_id=partner_account.provider_account_id
             if partner_account
             else None,
+            provider_payment_id=provider_payment_id,
             split_snapshot=json.dumps(split),
         )
 
@@ -229,6 +256,8 @@ class PaymentService:
         _ensure_payment_permission(current_user, reservation, parking)
         if transaction.method == "cash" and current_user.role == UserRoleEnum.CUSTOMER:
             raise HTTPException(status_code=403, detail="Cash is staff only")
+        if transaction.provider == "mercado_pago":
+            raise HTTPException(status_code=409, detail="A confirmação será feita pelo webhook do Mercado Pago")
         if settings.PAYMENT_PROVIDER != "mock" or transaction.provider != "mock":
             raise HTTPException(status_code=403, detail="Provider confirmation required")
         if transaction.status == "paid":
@@ -249,6 +278,7 @@ class PaymentService:
         await apply_cash_fee_ledger(db, transaction)
         transaction.status = "paid"
         reservation.payment_method = transaction.method
+        reservation.payment_confirmed_at = datetime.utcnow()
         transaction.provider_payment_id = transaction.provider_payment_id or f"mp_mock_{payment_id}"
         if transaction.payment_purpose == "checkout_excess":
             reservation.checkout_excess_paid_at = datetime.utcnow()
@@ -351,11 +381,14 @@ def _ensure_payable_reservation(reservation: Reservation) -> None:
 
 def _reservation_fee_amounts(reservation: Reservation) -> dict[str, float]:
     amounts = {"parking": float(reservation.base_amount or 0)}
+    extras_total = 0.0
     if reservation.selected_services_snapshot:
         for item in json.loads(reservation.selected_services_snapshot):
             code = item.get("code")
             if code:
-                amounts[code] = amounts.get(code, 0) + float(item.get("price") or 0)
+                extras_total += float(item.get("price") or 0)
+    if extras_total > 0:
+        amounts["additional_services"] = extras_total
     return amounts
 
 

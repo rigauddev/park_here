@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.core.database import AsyncSessionLocal, engine
 from app.core.security import hash_password
@@ -16,6 +16,7 @@ from app.modules.parkings.models import Parking, ParkingService
 from app.modules.platform_fees.models import PlatformFee
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
+from app.modules.partners.work_schedule_models import OperatorWorkProfile
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.payments.models import PartnerPaymentAccount
@@ -42,6 +43,157 @@ SEED_VEHICLE_ID = "00000000-0000-0000-0000-000000000001"
 async def seed():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # The homologation dataset is intentionally small and deterministic.  Keep
+    # the legacy seed helpers below for reference, but use this path by default
+    # so local resets never recreate unrelated cities or reservations.
+    await seed_homologation_valenca()
+    return
+
+
+async def seed_homologation_valenca():
+    """Reset and create the single-park homologation scenario used by QA."""
+    from app.modules.platform_fees.models import PartnerFeatureEntitlement
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+        # Keep alembic's migration history intact; only application data is reset.
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name != "alembic_version":
+                await conn.execute(delete(table))
+        await conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+
+    async with AsyncSessionLocal() as db:
+        tenant = Tenant(
+            name="ParkHere Valença",
+            cnpj="11222333000144",
+            email="gestor@parkhere.test",
+            plan=PlanEnum.PRO,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(tenant)
+        await db.flush()
+
+        admin = User(
+            name="Administrador ParkHere", firt_name="Administrador",
+            email="admin@parkhere.test", password_hash=hash_password("123456"),
+            phone="75999990000", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.SUPER_ADMIN,
+        )
+        manager = User(
+            tenant_id=tenant.id, name="Gestor ParkHere Valença", firt_name="Gestor",
+            email="gestor@parkhere.test", password_hash=hash_password("123456"),
+            phone="75999990001", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.PARTNER_MANAGER,
+        )
+        operators = [
+            User(
+                tenant_id=tenant.id, name=f"Operador {i}", firt_name="Operador",
+                email=f"operador{i}@parkhere.test", password_hash=hash_password("123456"),
+                phone=f"7599999000{i+1}", phone_verified=True, email_verified=True,
+                role=UserRoleEnum.OPERATOR,
+                permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
+            ) for i in range(1, 4)
+        ]
+        customer = User(
+            name="Cliente de Homologação", firt_name="Cliente",
+            email="cliente@parkhere.test", password_hash=hash_password("123456"),
+            phone="75988887777", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.CUSTOMER,
+        )
+        db.add_all([admin, manager, *operators, customer])
+        await db.flush()
+
+        parking = Parking(
+            tenant_id=tenant.id, name="ParkHere Valença 24h",
+            address="Rua Desembargador Amâncio de Souza, 709, Valença - BA",
+            street="Rua Desembargador Amâncio de Souza", number="709",
+            neighborhood="Centro", postal_code="45400-000", city="Valença",
+            lat=-13.3703, lng=-39.0731, rating=5.0,
+            total_spots=50, available_spots=50, covered_spots=20,
+            uncovered_spots=30, vip_spots=0, large_spots=0, bus_spots=0,
+            pickup_spots=0, moto_home_spots=0, has_covered_area=True,
+            has_24h_gate=True, has_security_system=True, is_active=True,
+            accepts_guide_affiliates=False, work_regime="three_shifts",
+            operating_hours=json.dumps({day: {"open": "00:00", "close": "23:59"}
+                                        for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}),
+            category_pricing=json.dumps({
+                "covered": {"first_hour_price": 14, "additional_hour_price": 7,
+                             "daily_price": 52, "weekly_price": 230, "monthly_price": 380},
+                "uncovered": {"first_hour_price": 10, "additional_hour_price": 5,
+                               "daily_price": 40, "weekly_price": 180, "monthly_price": 300},
+            }),
+            covered_first_hour_price=14, covered_additional_hour_price=7,
+            covered_daily_price=52, covered_weekly_price=230, covered_monthly_price=380,
+            uncovered_first_hour_price=10, uncovered_additional_hour_price=5,
+            uncovered_daily_price=40, uncovered_weekly_price=180, uncovered_monthly_price=300,
+            first_hour_price=10, additional_hour_price=5, daily_price=40,
+            weekly_price=180, monthly_price=300,
+        )
+        db.add(parking)
+        await db.flush()
+        db.add(ParkingService(
+            parking_id=parking.id, code="car_wash", name="Lava-jato",
+            description="Lavagem externa opcional", price=30, is_active=True,
+        ))
+
+        db.add(PartnerProfile(
+            tenant_id=tenant.id, service_type="parking", company_name="ParkHere Valença",
+            cnpj=tenant.cnpj, document_type="cnpj", document_number=tenant.cnpj,
+            registration_status="active", responsible_name=manager.name,
+            approval_status="approved",
+        ))
+        for operator in operators:
+            db.add(OperatorParkingAssignment(operator_id=operator.id, parking_id=parking.id))
+            db.add(OperatorWorkProfile(operator_id=operator.id, parking_id=parking.id,
+                                       daily_hours=8, lunch_minutes=60,
+                                       work_modality="24h", days_off="[]", bank_hours=0))
+        now = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        for offset in range(7):
+            day = now + timedelta(days=offset)
+            for index, operator in enumerate(operators):
+                start = day + timedelta(hours=index * 8)
+                end = start + timedelta(hours=8)
+                db.add(OperatorWorkShift(operator_id=operator.id, parking_id=parking.id,
+                                         starts_at=start, ends_at=end))
+
+        db.add(Vehicle(id=SEED_VEHICLE_ID, user_id=customer.id, nickname="Meu carro",
+                       plate="PKH1A23", brand="Toyota", model="Corolla", color="Prata",
+                       vehicle_document="CRLV-2026-TESTE", ownership_type="owner",
+                       is_active=True, vehicle_type="car"))
+        db.add(WalletPaymentMethod(user_id=customer.id, method_type="card",
+                                  label="Cartão de teste", last_four="4242",
+                                  card_brand="Visa", cardholder_name="Cliente de Homologação",
+                                  expiration_month=12, expiration_year=2030, is_active=True))
+        db.add(PartnerPaymentAccount(
+            tenant_id=tenant.id, provider="mercado_pago",
+            provider_account_id="mp_test_seller_valenca", account_label="Conta de teste",
+            pix_key="teste@parkhere.test", account_holder_name=tenant.name,
+            account_holder_document=tenant.cnpj, verification_status="test",
+            status="active", is_default=True, is_active=True,
+        ))
+        for service_type, mode, fixed, percentage in [
+            ("parking", "percentage", 0, 5),
+            ("additional_services", "percentage", 0, 5),
+            ("guide_commission", "percentage", 0, 10),
+            ("cancellation", "fixed", 5, 0),
+            ("module", "percentage", 0, 3),
+        ]:
+            db.add(PlatformFee(service_type=service_type, fee_mode=mode,
+                               fixed_amount=fixed, percentage=percentage,
+                               min_fee=0, is_active=True))
+        for feature in ("financial_management", "dashboard", "convenience"):
+            db.add(PartnerFeatureEntitlement(tenant_id=tenant.id, feature_key=feature,
+                                              is_enabled=(feature == "financial_management"),
+                                              is_paid=(feature != "financial_management"),
+                                              price=49.90 if feature != "dashboard" else 39.90,
+                                              billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
+                                              notes="Homologação"))
+        await db.commit()
+        print("Seed de homologação criado: Valença, estacionamento 24h, sem reservas.")
+        print("admin@parkhere.test / gestor@parkhere.test / operador1..3@parkhere.test / cliente@parkhere.test - senha 123456")
+        return
 
     async with AsyncSessionLocal() as db:
         existing = await db.execute(select(User).where(User.email == "cliente@parkhere.test"))
@@ -1716,7 +1868,7 @@ async def ensure_seed_reservations(db, commit=True):
         )
         reservation.cancellation_fee_amount = 0
         reservation.cancellation_credit_amount = 0
-        reservation.checkout_grace_minutes = 15
+        reservation.checkout_grace_minutes = 10
         reservation.checkout_excess_minutes = 0
         reservation.checkout_excess_amount = 0
         reservation.checkout_excess_paid_at = None
@@ -1777,6 +1929,15 @@ async def ensure_platform_fees(db, commit=True):
             "max_fee": 10,
         },
         "establishment": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 0,
+            "min_fee": 0,
+            "max_fee": None,
+        },
+        # Serviço extra dentro da unidade: a gestão pode ajustar a taxa global
+        # e o override por parceiro/unidade no painel administrativo.
+        "additional_services": {
             "fee_mode": "percentage",
             "fixed_amount": 0,
             "percentage": 0,

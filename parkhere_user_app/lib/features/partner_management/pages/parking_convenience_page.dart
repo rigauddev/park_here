@@ -132,7 +132,9 @@ class _ParkingConveniencePageState extends State<ParkingConveniencePage> {
                     ),
                     title: Text(item['name'] as String? ?? ''),
                     subtitle: Text(
-                      '${item['category'] ?? ''}${item['subcategory'] == null ? '' : ' · ${item['subcategory']}'}\n${item['description'] ?? ''}',
+                      '${item['category'] ?? ''}${item['subcategory'] == null ? '' : ' · ${item['subcategory']}'}\n'
+                      '${item['description'] ?? ''}'
+                      '${item['stock_quantity'] == null ? '' : '\nEstoque: ${item['stock_quantity']}'}',
                     ),
                     isThreeLine: true,
                     trailing: Text(
@@ -161,6 +163,7 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
   final description = TextEditingController();
   final price = TextEditingController(text: '0');
   final barcode = TextEditingController();
+  final stock = TextEditingController();
   String? categoryId;
 
   @override
@@ -172,6 +175,7 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
       description,
       price,
       barcode,
+      stock,
     ]) {
       controller.dispose();
     }
@@ -221,6 +225,11 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
               'Código de barras (opcional)',
               keyboard: TextInputType.number,
             ),
+            _field(
+              stock,
+              'Estoque (vazio = sem controle)',
+              keyboard: TextInputType.number,
+            ),
           ],
         ),
       ),
@@ -260,6 +269,9 @@ class _ConvenienceDialogState extends State<_ConvenienceDialog> {
               'barcode': barcode.text.trim().isEmpty
                   ? null
                   : barcode.text.trim(),
+              'stock_quantity': stock.text.trim().isEmpty
+                  ? null
+                  : int.tryParse(stock.text.trim()),
               'is_active': true,
             });
           },

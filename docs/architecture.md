@@ -128,3 +128,12 @@ Direcao definida:
 ### Parceiros e unidades
 
 `parkings` permanece como o agregado de unidades de estacionamento, que é o produto principal do MVP. Os demais parceiros (guia, hotel, restaurante, lava-jato e transporte) usam `partner_profiles` e módulos de serviços; não é necessário renomear a tabela agora. A evolução deve criar agregados próprios por categoria e manter a relação com o parceiro, evitando misturar inventário de vagas com serviços de outros segmentos.
+
+### Caixas e conciliação
+
+O caixa operacional do estacionamento e o caixa do PDV de conveniência são
+sessões e livros separados, com permissões, abertura/fechamento e auditoria
+próprios. Isso evita misturar recebimentos de reservas com vendas de produtos e
+permite que cada operador feche somente o caixa do turno em que trabalha. O
+Financeiro e o dashboard consolidam os dois por origem (`parking` e
+`convenience`) e também oferecem filtros por unidade, período e origem.

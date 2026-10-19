@@ -242,6 +242,10 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
         token,
       );
       ref.invalidate(reservationsProvider);
+      // Fetch the server state immediately. This prevents a committed
+      // cancellation from remaining visible as an open hold in the local
+      // provider after a timeout or retry.
+      await ref.read(reservationsProvider.future);
     } catch (error) {
       if (mounted) {
         await ApiFeedback.show(context, '$error');

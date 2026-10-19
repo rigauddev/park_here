@@ -26,19 +26,19 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Precisamos da sua localização para encontrar estacionamentos próximos.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Usamos a câmera para registrar as fotos do veículo no check-in e checkout.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Usamos suas fotos apenas quando você escolher anexá-las ao ParkHere.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Precisamos acessar a API local de desenvolvimento do ParkHere na mesma rede.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Usamos a câmera para registrar as fotos do veículo no check-in e checkout.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Precisamos acessar a API local de desenvolvimento do ParkHere na mesma rede.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Precisamos da sua localização para encontrar estacionamentos próximos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Usamos suas fotos apenas quando você escolher anexá-las ao ParkHere.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

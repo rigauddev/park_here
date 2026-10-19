@@ -203,47 +203,75 @@ class _ConveniencePosPageState extends State<ConveniencePosPage> {
         ),
       ),
       Expanded(
-        child: ListView.builder(
-          itemCount: products.length,
-          itemBuilder: (_, index) {
-            final product = products[index];
-            final id = product['id'] as String;
-            final quantity = _cart[id] ?? 0;
-            return ListTile(
-              title: Text(product['name'] as String? ?? ''),
-              subtitle: Text(
-                '${product['barcode'] ?? 'Sem código'} · R\$ ${(product['price'] as num? ?? 0).toStringAsFixed(2)}',
-              ),
-              trailing: quantity == 0
-                  ? IconButton(
-                      icon: const Icon(Icons.add_shopping_cart),
-                      onPressed: () => setState(() => _cart[id] = 1),
-                    )
-                  : Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.remove),
-                          onPressed: () => setState(
-                            () => quantity == 1
-                                ? _cart.remove(id)
-                                : _cart[id] = quantity - 1,
-                          ),
-                        ),
-                        Text('$quantity'),
-                        IconButton(
-                          icon: const Icon(Icons.add),
-                          onPressed: () =>
-                              setState(() => _cart[id] = quantity + 1),
-                        ),
-                      ],
-                    ),
-            );
+        child: Builder(
+          builder: (context) {
+            final grouped = <String, List<Map<String, dynamic>>>{};
+            for (final product in products) {
+              final category = (product['category'] as String?)?.trim();
+              grouped
+                  .putIfAbsent(
+                    category == null || category.isEmpty
+                        ? 'Sem categoria'
+                        : category,
+                    () => <Map<String, dynamic>>[],
+                  )
+                  .add(product);
+            }
+            final children = <Widget>[];
+            for (final entry in grouped.entries) {
+              children.add(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                  child: Text(
+                    entry.key,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              );
+              for (final product in entry.value) {
+                children.add(_productTile(product));
+              }
+            }
+            return ListView(children: children);
           },
         ),
       ),
     ],
   );
+
+  Widget _productTile(Map<String, dynamic> product) {
+    final id = product['id'] as String;
+    final quantity = _cart[id] ?? 0;
+    return ListTile(
+      title: Text(product['name'] as String? ?? ''),
+      subtitle: Text(
+        '${product['barcode'] ?? 'Sem código'} · R\$ ${(product['price'] as num? ?? 0).toStringAsFixed(2)}',
+      ),
+      trailing: quantity == 0
+          ? IconButton(
+              icon: const Icon(Icons.add_shopping_cart),
+              onPressed: () => setState(() => _cart[id] = 1),
+            )
+          : Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove),
+                  onPressed: () => setState(
+                    () => quantity == 1
+                        ? _cart.remove(id)
+                        : _cart[id] = quantity - 1,
+                  ),
+                ),
+                Text('$quantity'),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () => setState(() => _cart[id] = quantity + 1),
+                ),
+              ],
+            ),
+    );
+  }
 
   Widget _cartPanel() => Card(
     margin: const EdgeInsets.all(12),

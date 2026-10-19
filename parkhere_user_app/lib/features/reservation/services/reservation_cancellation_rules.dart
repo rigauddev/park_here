@@ -17,9 +17,12 @@ class ReservationCancellationRules {
         paymentStatus != 'paid' &&
         paymentStatus != 'expired' &&
         status == ReservationStatus.open &&
-        // Após o check-in a reserva não pode ser cancelada diretamente.
-        // O cliente deverá seguir o fluxo de checkout/reembolso.
-        !checkedIn &&
+        // The API status is authoritative. A failed geolocation check must
+        // never hide cancellation because a local screen briefly opened the
+        // check-in flow.
+        (apiStatus == 'pre_reserved' ||
+            apiStatus == 'pending_operator_approval' ||
+            !checkedIn) &&
         holdExpiresAt.isAfter(currentTime);
   }
 }

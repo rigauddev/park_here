@@ -398,7 +398,6 @@ class ParkingManagementFormPage extends ConsumerStatefulWidget {
 class _ParkingManagementFormPageState
     extends ConsumerState<ParkingManagementFormPage> {
   final nameController = TextEditingController();
-  final addressController = TextEditingController();
   final streetController = TextEditingController();
   final numberController = TextEditingController();
   final neighborhoodController = TextEditingController();
@@ -408,7 +407,6 @@ class _ParkingManagementFormPageState
   final latController = TextEditingController();
   final lngController = TextEditingController();
   final totalController = TextEditingController();
-  final availableController = TextEditingController();
   final arrivalToleranceController = TextEditingController();
   final coveredController = TextEditingController();
   final uncoveredController = TextEditingController();
@@ -434,6 +432,7 @@ class _ParkingManagementFormPageState
     'bus': List.generate(5, (_) => TextEditingController()),
     'pickup': List.generate(5, (_) => TextEditingController()),
   };
+  final Set<String> enabledSpecialTypes = <String>{};
 
   final serviceDescriptionController = TextEditingController();
 
@@ -468,10 +467,6 @@ class _ParkingManagementFormPageState
     if (totalController.text != total.toString()) {
       totalController.text = total.toString();
     }
-    if (widget.parking == null &&
-        availableController.text != total.toString()) {
-      availableController.text = total.toString();
-    }
   }
 
   @override
@@ -494,7 +489,6 @@ class _ParkingManagementFormPageState
       lngController.text = '-39.0731';
       coveredController.text = '0';
       uncoveredController.text = '0';
-      availableController.text = '0';
       arrivalToleranceController.text = '15';
       vipController.text = '0';
       largeController.text = '0';
@@ -504,7 +498,6 @@ class _ParkingManagementFormPageState
     }
 
     nameController.text = parking.name;
-    addressController.text = parking.address;
     streetController.text = parking.street ?? '';
     numberController.text = parking.number ?? '';
     neighborhoodController.text = parking.neighborhood ?? '';
@@ -513,7 +506,6 @@ class _ParkingManagementFormPageState
     latController.text = parking.lat.toString();
     lngController.text = parking.lng.toString();
     totalController.text = parking.totalSpots.toString();
-    availableController.text = parking.availableSpots.toString();
     arrivalToleranceController.text = parking.arrivalToleranceMinutes
         .toString();
     coveredController.text = parking.coveredSpots.toString();
@@ -522,6 +514,9 @@ class _ParkingManagementFormPageState
     largeController.text = parking.largeSpots.toString();
     busController.text = parking.busSpots.toString();
     pickupController.text = parking.pickupSpots.toString();
+    for (final type in specialPricing.keys) {
+      if (_countFor(type) > 0) enabledSpecialTypes.add(type);
+    }
     has24hGate = parking.has24hGate;
     workRegime = parking.workRegime;
     operatingHours
@@ -557,7 +552,6 @@ class _ParkingManagementFormPageState
   void dispose() {
     for (final controller in [
       nameController,
-      addressController,
       streetController,
       numberController,
       neighborhoodController,
@@ -567,7 +561,6 @@ class _ParkingManagementFormPageState
       latController,
       lngController,
       totalController,
-      availableController,
       arrivalToleranceController,
       coveredController,
       uncoveredController,
@@ -676,7 +669,6 @@ class _ParkingManagementFormPageState
                 ],
               ),
               _field(neighborhoodController, 'Bairro'),
-              _field(addressController, 'Endereço completo', readOnly: true),
               if (cepMessage != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -707,20 +699,10 @@ class _ParkingManagementFormPageState
           _Section(
             title: 'Vagas',
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _field(totalController, 'Total', readOnly: true),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _field(
-                      availableController,
-                      'Disponíveis',
-                      readOnly: true,
-                    ),
-                  ),
-                ],
+              _field(
+                totalController,
+                'Total de vagas (calculado)',
+                readOnly: true,
               ),
               _field(arrivalToleranceController, 'Tolerância de chegada (min)'),
               Row(
@@ -736,16 +718,14 @@ class _ParkingManagementFormPageState
                 'bus': 'Ônibus',
                 'pickup': 'Picape',
               }.entries)
-                if (_countFor(entry.key) > 0)
+                if (enabledSpecialTypes.contains(entry.key))
                   _PricingSection(
                     title: 'Tarifas ${entry.value}',
                     controllers: specialPricing[entry.key]!,
                     invalidField: invalidField,
                   ),
               OutlinedButton.icon(
-                onPressed: () => _showMessage(
-                  'Para criar um tipo especial, informe quantidade acima de zero e suas tarifas.',
-                ),
+                onPressed: _addSpecialType,
                 icon: const Icon(Icons.add),
                 label: const Text('Adicionar tipo especial'),
               ),
@@ -758,20 +738,14 @@ class _ParkingManagementFormPageState
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: _field(vipController, 'VIP')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(largeController, 'Carro grande')),
-                ],
-              ),
-              Row(
-                children: [
-                  Expanded(child: _field(busController, 'Ônibus')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(pickupController, 'Picape')),
-                ],
-              ),
+              for (final entry in {
+                'vip': 'VIP',
+                'large': 'Carro grande / picape',
+                'bus': 'Ônibus',
+                'pickup': 'Picape',
+              }.entries)
+                if (enabledSpecialTypes.contains(entry.key))
+                  _specialSpotCountField(entry.key, entry.value),
               SwitchListTile(
                 value: has24hGate,
                 onChanged: (value) => setState(() => has24hGate = value),
@@ -983,7 +957,6 @@ class _ParkingManagementFormPageState
       if (!mounted) return;
       streetController.text = street;
       neighborhoodController.text = neighborhood;
-      addressController.text = address;
       cityController.text = city;
 
       // ViaCEP does not provide coordinates. Nominatim fills them from the
@@ -1047,9 +1020,7 @@ class _ParkingManagementFormPageState
       final details = first['address'] as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       final displayName = first['display_name'] as String?;
-      if (displayName != null && displayName.trim().isNotEmpty) {
-        addressController.text = displayName;
-      }
+      if (displayName != null && displayName.trim().isNotEmpty) {}
       final road = details['road'] as String?;
       if (road != null) streetController.text = road;
       final houseNumber = details['house_number'] as String?;
@@ -1212,7 +1183,7 @@ class _ParkingManagementFormPageState
     final total = _sumSpots();
     final covered = _int(coveredController, 'Cobertas');
     final uncovered = _int(uncoveredController, 'Descobertas');
-    final available = _int(availableController, 'Disponíveis');
+    final available = widget.parking?.availableSpots ?? total;
     final arrivalTolerance = _int(
       arrivalToleranceController,
       'Tolerância de chegada',
@@ -1235,8 +1206,6 @@ class _ParkingManagementFormPageState
     final neighborhood = _required(neighborhoodController, 'Bairro');
     final city = _required(cityController, 'Cidade');
     final fullAddress = '$street, $number, $neighborhood, $city';
-    addressController.text = fullAddress;
-
     return ManagedParkingModel(
       id: widget.parking?.id,
       name: _required(nameController, 'Nome'),
@@ -1295,6 +1264,52 @@ class _ParkingManagementFormPageState
     'bus' => _int(busController, 'Ônibus'),
     _ => _int(pickupController, 'Picape'),
   };
+
+  Widget _specialSpotCountField(String key, String label) {
+    final controller = switch (key) {
+      'vip' => vipController,
+      'large' => largeController,
+      'bus' => busController,
+      _ => pickupController,
+    };
+    return _field(
+      controller,
+      '$label · quantidade',
+      keyboardType: TextInputType.number,
+    );
+  }
+
+  Future<void> _addSpecialType() async {
+    final options = {
+      'vip': 'VIP',
+      'large': 'Carro grande / picape',
+      'bus': 'Ônibus',
+      'pickup': 'Picape',
+    }..removeWhere((key, _) => enabledSpecialTypes.contains(key));
+    if (options.isEmpty) {
+      await _showMessage('Todos os tipos especiais já foram adicionados.');
+      return;
+    }
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final entry in options.entries)
+              ListTile(
+                leading: const Icon(Icons.add_circle_outline),
+                title: Text(entry.value),
+                onTap: () => Navigator.pop(context, entry.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    setState(() => enabledSpecialTypes.add(selected));
+  }
 
   ParkingAreaPricingModel _pricing(List<TextEditingController> controllers) {
     if (controllers.any((controller) => _double(controller, 'Tarifa') < 0)) {

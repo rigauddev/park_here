@@ -42,6 +42,16 @@ class ApiService {
     throw Exception(_errorMessage(response));
   }
 
+  Future<Map<String, dynamic>> getMap(String endpoint) async {
+    final response = await http
+        .get(Uri.parse('${ApiConstants.baseUrl}$endpoint'))
+        .timeout(_timeout);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(_errorMessage(response));
+  }
+
   Future<List<dynamic>> getAuthorized(String endpoint, String token) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
@@ -50,7 +60,15 @@ class ApiService {
         .timeout(_timeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return jsonDecode(response.body) as List<dynamic>;
+      final decoded = jsonDecode(response.body);
+      if (decoded is List<dynamic>) return decoded;
+      // Keep a typed error instead of letting the web runtime throw a raw
+      // `_JsonMap is not a subtype of List` exception when an endpoint returns
+      // a structured API error with HTTP 2xx by mistake.
+      if (decoded is Map<String, dynamic>) {
+        throw Exception(decoded['detail']?.toString() ?? 'Resposta inválida da API.');
+      }
+      throw Exception('Resposta inválida da API.');
     }
 
     await _handleUnauthorized(response);
@@ -169,6 +187,38 @@ class ApiService {
         contentType: _imageMediaType(fileName),
       ),
     );
+    final response = await http.Response.fromStream(
+      await request.send().timeout(_timeout),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    await _handleUnauthorized(response);
+    throw Exception(_errorMessage(response));
+  }
+
+  Future<Map<String, dynamic>> postAuthorizedMultipart(
+    String endpoint,
+    String token, {
+    required Map<String, String> fields,
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse('${ApiConstants.baseUrl}$endpoint'),
+          )
+          ..headers.addAll(_authorizedHeaders(token))
+          ..fields.addAll(fields)
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'photo',
+              bytes,
+              filename: fileName,
+              contentType: _imageMediaType(fileName),
+            ),
+          );
     final response = await http.Response.fromStream(
       await request.send().timeout(_timeout),
     );

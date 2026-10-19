@@ -40,6 +40,39 @@ async def list_parkings(
     return [_to_response(parking) for parking in parkings]
 
 
+@router.get("/cities")
+async def list_service_cities(
+    q: str | None = Query(default=None, min_length=1, max_length=120),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return distinct cities that currently have an active service.
+
+    City lookup is deliberately data-driven: an unknown city returns an empty
+    list and never becomes a client-side parsing error. The app can still
+    accept arbitrary text and then display the no-results state.
+    """
+    rows = await db.scalars(
+        select(Parking.city)
+        .where(Parking.is_active.is_(True))
+        .distinct()
+        .order_by(Parking.city.asc())
+    )
+    normalized_query = _normalize_city(q) if q else ""
+    values = []
+    seen = set()
+    for value in rows.all():
+        if not value:
+            continue
+        if normalized_query and normalized_query not in _normalize_city(value):
+            continue
+        canonical = _canonical_city(value)
+        key = _normalize_city(canonical)
+        if key not in seen:
+            seen.add(key)
+            values.append(canonical)
+    return {"cities": values}
+
+
 @router.get('/{parking_id}/guides')
 async def list_affiliated_guides(parking_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(

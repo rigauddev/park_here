@@ -58,6 +58,7 @@ class PartnerFeatureRequest(BaseModel):
     price: float = Field(default=0, ge=0)
     billing_prices: dict[str, float] = Field(default_factory=dict)
     billing_period: str = 'monthly'
+    payment_terms: dict = Field(default_factory=dict)
     notes: str | None = Field(default=None, max_length=500)
 
 
@@ -86,6 +87,44 @@ class PartnerApprovalRequest(BaseModel):
 def _ensure_admin(user: User) -> None:
     if user.role != UserRoleEnum.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail='System administrator required')
+
+
+def _normalise_payment_terms(value: dict | None) -> dict:
+    """Validate the two supported recurring plans and return a safe snapshot."""
+    value = value or {}
+    allowed_methods = {'pix', 'credit_card', 'debit_card'}
+    result = {}
+    for period, default_months in (('monthly', 6), ('annual', 12)):
+        raw = value.get(period) or {}
+        if not isinstance(raw, dict):
+            raise HTTPException(status_code=422, detail='Configuração de cobrança inválida')
+        months = int(raw.get('minimum_months', default_months))
+        if period == 'monthly' and months < 6:
+            raise HTTPException(status_code=422, detail='O plano mensal exige contratação mínima de 6 meses')
+        if period == 'annual' and months < 12:
+            months = 12
+        installments = int(raw.get('installments', 1))
+        if installments < 1 or installments > 24:
+            raise HTTPException(status_code=422, detail='Quantidade de parcelas inválida')
+        discounts = raw.get('discounts') or {}
+        if not isinstance(discounts, dict):
+            raise HTTPException(status_code=422, detail='Descontos por meio de pagamento inválidos')
+        clean_discounts = {}
+        for method, discount in discounts.items():
+            if method not in allowed_methods:
+                raise HTTPException(status_code=422, detail='Meio de pagamento inválido nos descontos')
+            discount = float(discount)
+            if discount < 0 or discount > 100:
+                raise HTTPException(status_code=422, detail='Desconto deve estar entre 0 e 100%')
+            clean_discounts[method] = discount
+        result[period] = {
+            'minimum_months': months,
+            'installments': installments,
+            'discounts': clean_discounts,
+            'trial_enabled': bool(raw.get('trial_enabled', False)),
+            'trial_days': min(max(int(raw.get('trial_days', 30)), 1), 90),
+        }
+    return result
 
 
 def _audit(db: AsyncSession, actor: User, action: str, target_type: str,
@@ -526,6 +565,7 @@ async def get_partner_features(tenant_id: str, db: AsyncSession = Depends(get_db
         'price': by_key[feature['key']].price if feature['key'] in by_key else 0,
         'billing_period': by_key[feature['key']].billing_period if feature['key'] in by_key else feature['default_billing_period'],
         'billing_prices': _feature_prices(by_key[feature['key']]) if feature['key'] in by_key else {},
+        'payment_terms': _feature_payment_terms(by_key.get(feature['key'])),
         'expires_at': by_key[feature['key']].expires_at.isoformat() + 'Z' if feature['key'] in by_key and by_key[feature['key']].expires_at else None,
         'notes': by_key[feature['key']].notes if feature['key'] in by_key else None,
         'requestable': feature['requestable'],
@@ -544,12 +584,19 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
         raise HTTPException(status_code=404, detail='Funcionalidade não cadastrada')
     if data.is_paid and data.price <= 0:
         raise HTTPException(status_code=422, detail='Informe um preço maior que zero para uma funcionalidade paga')
-    if data.billing_period not in {'monthly', 'annual', 'one_time'}:
+    if data.billing_period not in {'monthly', 'annual'}:
         raise HTTPException(status_code=422, detail='Periodicidade inválida')
-    if set(data.billing_prices) - {'monthly', 'annual', 'one_time'}:
+    # Older web bundles sent the removed one-time field. Keep the endpoint
+    # backward compatible while storing only the two supported plans.
+    billing_prices = dict(data.billing_prices)
+    if 'one_time' in billing_prices and 'monthly' not in billing_prices:
+        billing_prices['monthly'] = billing_prices['one_time']
+    billing_prices.pop('one_time', None)
+    if set(billing_prices) - {'monthly', 'annual'}:
         raise HTTPException(status_code=422, detail='Modalidade de cobrança inválida')
-    if any(value < 0 for value in data.billing_prices.values()):
+    if any(value < 0 for value in billing_prices.values()):
         raise HTTPException(status_code=422, detail='Os valores não podem ser negativos')
+    payment_terms = _normalise_payment_terms(data.payment_terms)
     item = await db.scalar(select(PartnerFeatureEntitlement).where(
         PartnerFeatureEntitlement.tenant_id == tenant_id,
         PartnerFeatureEntitlement.feature_key == feature_key,
@@ -565,8 +612,9 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
     item.price = data.price
     item.billing_period = data.billing_period
     item.billing_prices = json.dumps(
-        data.billing_prices or {data.billing_period: data.price}
+        billing_prices or {data.billing_period: data.price}
     )
+    item.payment_terms = json.dumps(payment_terms)
     item.notes = data.notes
     _audit(db, current_user, 'partner.feature.updated', 'partner_feature', item.id or tenant_id,
            tenant_id, {'feature_key': feature_key, 'before': before, 'after': data.model_dump()})
@@ -575,6 +623,7 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
     return {'tenant_id': tenant_id, 'feature_key': feature_key, 'is_enabled': item.is_enabled,
             'is_paid': item.is_paid, 'price': item.price, 'billing_period': item.billing_period,
             'billing_prices': _feature_prices(item),
+            'payment_terms': payment_terms,
             'notes': item.notes}
 
 
@@ -583,9 +632,19 @@ def _feature_prices(item: PartnerFeatureEntitlement) -> dict[str, float]:
         values = json.loads(item.billing_prices or '{}')
     except json.JSONDecodeError:
         values = {}
+    if 'monthly' not in values and 'one_time' in values:
+        values['monthly'] = values['one_time']
     if not values and item.price > 0:
         values[item.billing_period] = item.price
-    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual', 'one_time'}}
+    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual'}}
+
+
+def _feature_payment_terms(item: PartnerFeatureEntitlement | None) -> dict:
+    try:
+        value = json.loads(item.payment_terms or '{}') if item else {}
+    except json.JSONDecodeError:
+        value = {}
+    return _normalise_payment_terms(value)
 
 
 @router.get('/feature-requests')
@@ -679,7 +738,7 @@ async def review_partner_feature_request(
                 )
                 db.add(entitlement)
             entitlement.is_enabled = True
-            period_days = {'monthly': 30, 'annual': 365, 'one_time': 30}[request.billing_period]
+            period_days = {'monthly': 30, 'annual': 365}[request.billing_period]
             entitlement.expires_at = datetime.utcnow() + timedelta(days=period_days)
         request.status = 'approved'
     else:
@@ -836,8 +895,30 @@ async def upsert_platform_fee(
 
 
 def _fee_payload(row: PlatformFee) -> dict:
+    labels = {
+        'reservation': ('Reservas', 'Reservations'),
+        'payment': ('Pagamentos', 'Payments'),
+        'parking': ('Reservas de estacionamento', 'Parking reservations'),
+        'car_wash': ('Serviços de lava-jato', 'Car wash services'),
+        'insurance': ('Seguro', 'Insurance'),
+        'transport': ('Transporte', 'Transport'),
+        'tour_guide': ('Serviços de guia turístico', 'Tour guide services'),
+        'guide_commission': ('Comissão de guia', 'Guide commission'),
+        'cancellation': ('Cancelamento', 'Cancellation'),
+        'establishment': ('Taxa do estabelecimento', 'Establishment fee'),
+        'feature': ('Funcionalidades', 'Features'),
+        'additional_units': ('Filiais adicionais', 'Additional branches'),
+        'additional_services': ('Serviços extras do estacionamento', 'Extra parking services'),
+        'financial_management': ('Financeiro Pro', 'Finance Pro'),
+        'convenience_management': ('Módulo de conveniência', 'Convenience module'),
+    }
+    name, name_en = labels.get(row.service_type, (row.service_type, row.service_type))
     return {
         'service_type': row.service_type,
+        'service_name': name,
+        'service_name_en': name_en,
+        'description': f'Taxa aplicada ao serviço {name}.',
+        'description_en': f'Fee applied to the {name_en} service.',
         'fee_mode': row.fee_mode,
         'fixed_amount': row.fixed_amount,
         'percentage': row.percentage,

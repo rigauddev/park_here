@@ -2183,15 +2183,19 @@ class _CheckoutPhotosDialog extends ConsumerStatefulWidget {
 }
 
 class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
-  final Map<String, XFile?> photos = {
-    'Frente': null,
-    'Traseira': null,
-    'Lateral esquerda': null,
-    'Lateral direita': null,
-  };
+  XFile? spotPhoto;
+  final reasonController = TextEditingController(
+    text: 'Cliente deixou o estacionamento sem realizar o checkout.',
+  );
   bool isSubmitting = false;
 
-  bool get hasAllPhotos => photos.values.every((photo) => photo != null);
+  bool get hasPhoto => spotPhoto != null;
+
+  @override
+  void dispose() {
+    reasonController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2210,25 +2214,27 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Capture frente, traseira e laterais do veiculo antes de liberar a vaga.',
+                'Registre uma foto da vaga liberada e informe o motivo da saída sem checkout.',
                 style: TextStyle(color: AppTheme.textMuted),
               ),
               const SizedBox(height: 14),
-              for (final entry in photos.entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: OutlinedButton.icon(
-                    onPressed: canUseCamera && !isSubmitting
-                        ? () => _takePhoto(entry.key)
-                        : null,
-                    icon: Icon(
-                      entry.value == null
-                          ? Icons.photo_camera_outlined
-                          : Icons.check_circle,
-                    ),
-                    label: Text(entry.key),
-                  ),
+              OutlinedButton.icon(
+                onPressed: canUseCamera && !isSubmitting ? _takePhoto : null,
+                icon: Icon(
+                  spotPhoto == null
+                      ? Icons.photo_camera_outlined
+                      : Icons.check_circle,
                 ),
+                label: Text(
+                  spotPhoto == null ? 'Fotografar vaga' : 'Foto registrada',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: reasonController,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Motivo'),
+              ),
               if (!canUseCamera)
                 const Text(
                   'O checkout com fotos deve ser feito no celular.',
@@ -2244,7 +2250,7 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
           child: const Text('Cancelar'),
         ),
         FilledButton.icon(
-          onPressed: hasAllPhotos && !isSubmitting ? _confirmCheckout : null,
+          onPressed: hasPhoto && !isSubmitting ? _confirmCheckout : null,
           icon: isSubmitting
               ? const SizedBox(
                   width: 16,
@@ -2258,14 +2264,14 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
     );
   }
 
-  Future<void> _takePhoto(String label) async {
+  Future<void> _takePhoto() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.camera,
       maxWidth: 1600,
       imageQuality: 85,
     );
     if (picked == null || !mounted) return;
-    setState(() => photos[label] = picked);
+    setState(() => spotPhoto = picked);
   }
 
   Future<void> _confirmCheckout() async {
@@ -2274,18 +2280,12 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
 
     setState(() => isSubmitting = true);
     try {
-      for (final entry in photos.entries) {
-        final photo = entry.value!;
-        await ApiService().uploadAuthorizedFile(
-          '/reservations/${widget.reservationId}/photos?kind=${_photoKind(entry.key)}',
-          token,
-          photo.name,
-          await photo.readAsBytes(),
-        );
-      }
-      await checkoutOperationalReservation(
-        token: token,
-        reservationId: widget.reservationId,
+      await ApiService().postAuthorizedMultipart(
+        '/reservations/${widget.reservationId}/operator-checkout',
+        token,
+        fields: {'reason': reasonController.text.trim()},
+        fileName: spotPhoto!.name,
+        bytes: await spotPhoto!.readAsBytes(),
       );
       widget.onCompleted();
       if (!mounted) return;
@@ -2298,13 +2298,6 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
       if (mounted) setState(() => isSubmitting = false);
     }
   }
-
-  String _photoKind(String label) => switch (label) {
-    'Frente' => 'front',
-    'Traseira' => 'rear',
-    'Lateral esquerda' => 'left',
-    _ => 'right',
-  };
 }
 
 class _MoneySummaryCard extends StatelessWidget {

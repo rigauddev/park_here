@@ -38,6 +38,7 @@ class _PartnerFeatureAccessPageState
   String? _message;
   String _billingPeriod = 'monthly';
   String _paymentMethod = 'pix';
+  double? _requestTotal;
   PlatformFile? _receipt;
 
   @override
@@ -45,9 +46,8 @@ class _PartnerFeatureAccessPageState
     super.initState();
     _quantity = widget.requestedQuantity.clamp(1, 100);
     final configured = widget.partner.featureDetails(widget.featureKey) ?? {};
-    _billingPeriod = widget.featureKey == 'additional_units'
-        ? 'monthly'
-        : configured['billing_period'] as String? ?? 'monthly';
+    final configuredPeriod = configured['billing_period'] as String?;
+    _billingPeriod = configuredPeriod == 'annual' ? 'annual' : 'monthly';
     _loadRequestStatus();
   }
 
@@ -80,6 +80,7 @@ class _PartnerFeatureAccessPageState
                 request['billing_period'] as String? ?? _billingPeriod;
             _paymentMethod =
                 request['payment_method'] as String? ?? _paymentMethod;
+            _requestTotal = (request['total_price'] as num?)?.toDouble();
           }
         });
       }
@@ -105,16 +106,30 @@ class _PartnerFeatureAccessPageState
         !quantityBased || feature['is_enabled'] == true;
     final period = switch (_billingPeriod) {
       'annual' => en ? 'year' : 'ano',
-      'one_time' => en ? 'one-time' : 'pagamento único',
       _ => en ? 'month' : 'mês',
     };
+    final rawTerms = (feature['payment_terms'] as Map<String, dynamic>?) ?? {};
+    final terms =
+        (rawTerms[_billingPeriod] as Map<String, dynamic>?) ??
+        <String, dynamic>{
+          'minimum_months': _billingPeriod == 'monthly' ? 6 : 12,
+          'installments': 1,
+          'discounts': <String, dynamic>{},
+        };
+    final minMonths =
+        (terms['minimum_months'] as num?)?.toInt() ??
+        (_billingPeriod == 'monthly' ? 6 : 12);
+    final installments = (terms['installments'] as num?)?.toInt() ?? 1;
+    final discount =
+        ((terms['discounts'] as Map<String, dynamic>?)?[_paymentMethod] as num?)
+            ?.toDouble() ??
+        0;
     final name = en
         ? (feature['name_en'] as String? ?? widget.featureKey)
         : (feature['name'] as String? ?? widget.featureKey);
     final description = en
         ? (feature['description_en'] as String? ?? '')
         : (feature['description'] as String? ?? '');
-
     return Scaffold(
       appBar: AppBar(
         title: Text(en ? 'Feature access' : 'Acesso à funcionalidade'),
@@ -140,6 +155,20 @@ class _PartnerFeatureAccessPageState
                       ),
                       const SizedBox(height: 8),
                       Text(description),
+                      const SizedBox(height: 16),
+                      ..._benefits(en, widget.featureKey).map(
+                        (benefit) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.check_circle_outline, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(benefit)),
+                            ],
+                          ),
+                        ),
+                      ),
                       if (quantityBased) ...[
                         const SizedBox(height: 18),
                         Text(
@@ -195,12 +224,6 @@ class _PartnerFeatureAccessPageState
                               value: 'annual',
                               child: Text(en ? 'Annual' : 'Anual'),
                             ),
-                            DropdownMenuItem(
-                              value: 'one_time',
-                              child: Text(
-                                en ? 'One-time · 30 days' : 'Única · 30 dias',
-                              ),
-                            ),
                           ],
                           onChanged: (value) => setState(
                             () => _billingPeriod = value ?? 'monthly',
@@ -239,12 +262,21 @@ class _PartnerFeatureAccessPageState
                       const Divider(height: 28),
                       Text(
                         paid
-                            ? 'R\$ ${(price * (quantityBased ? _quantity : 1)).toStringAsFixed(2)} / $period'
+                            ? 'R\$ ${(_requestTotal ?? _requestAmount()).toStringAsFixed(2)} / $period'
                             : (en
                                   ? 'Access currently locked'
                                   : 'Acesso bloqueado no momento'),
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
+                      if (paid) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          en
+                              ? 'Minimum commitment: $minMonths months · up to $installments installment(s) · ${discount.toStringAsFixed(0)}% discount for this method.'
+                              : 'Contratação mínima: $minMonths meses · até $installments parcela(s) · desconto de ${discount.toStringAsFixed(0)}% neste meio.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                       if (widget.featureKey == 'additional_services') ...[
                         const SizedBox(height: 8),
                         Text(
@@ -368,7 +400,12 @@ class _PartnerFeatureAccessPageState
               'payment_method': _paymentMethod,
             }, token);
         requestId = response['id'] as String;
-        if (mounted) setState(() => _requestId = requestId);
+        if (mounted) {
+          setState(() {
+            _requestId = requestId;
+            _requestTotal = (response['total_price'] as num?)?.toDouble();
+          });
+        }
       }
       final receipt = _receipt!;
       await _api.uploadAuthorizedFile(
@@ -422,10 +459,15 @@ class _PartnerFeatureAccessPageState
               'payment_method': _paymentMethod,
             }, token);
         requestId = response['id'] as String;
-        if (mounted) setState(() => _requestId = requestId);
+        if (mounted) {
+          setState(() {
+            _requestId = requestId;
+            _requestTotal = (response['total_price'] as num?)?.toDouble();
+          });
+        }
       }
       if (!mounted) return;
-      final amount = _requestAmount();
+      final amount = _requestTotal ?? _requestAmount();
       final paid = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
@@ -434,6 +476,7 @@ class _PartnerFeatureAccessPageState
             featureRequestId: requestId,
             paymentPurpose: 'feature_purchase',
             payNow: true,
+            contractedModules: _contractedModules(context.strings.isEnglish),
             onPaymentSuccess: () async {
               if (!mounted) return;
               setState(() {
@@ -470,8 +513,76 @@ class _PartnerFeatureAccessPageState
     final prices = (feature['billing_prices'] as Map<String, dynamic>?) ?? {};
     final legacy = (feature['price'] as num?)?.toDouble() ?? 0;
     final unit = (prices[_billingPeriod] as num?)?.toDouble() ?? legacy;
-    return unit * (feature['quantity_based'] == true ? _quantity : 1);
+    final quantity = feature['quantity_based'] == true ? _quantity : 1;
+    final months = _billingPeriod == 'monthly' ? 6 : 1;
+    return unit * quantity * months;
   }
+
+  List<String> _benefits(bool en, String key) {
+    final values = switch (key) {
+      'additional_units' =>
+        en
+            ? [
+                'Centralized management for every branch',
+                'Separate services and teams by unit',
+                'Combined and individual financial reports',
+              ]
+            : [
+                'Gestão centralizada de todas as filiais',
+                'Serviços e equipes separados por unidade',
+                'Relatórios financeiros consolidados e individuais',
+              ],
+      'convenience_management' =>
+        en
+            ? [
+                'Point of sale with categories and barcode search',
+                'Stock control and shift closing report',
+                'Non-fiscal receipt for each sale',
+              ]
+            : [
+                'Ponto de venda com categorias e busca por código de barras',
+                'Controle de estoque e fechamento do caixa',
+                'Comprovante não fiscal para cada venda',
+              ],
+      _ =>
+        en
+            ? [
+                'Unlock the complete workflow for your partner',
+                'Secure data and role-based access',
+                'Support for future improvements',
+              ]
+            : [
+                'Libere o fluxo completo para seu parceiro',
+                'Dados seguros e acesso por perfil',
+                'Suporte para futuras melhorias',
+              ],
+    };
+    return values;
+  }
+
+  List<Map<String, dynamic>> _contractedModules(bool en) => [
+    for (final entry in widget.partner.features.entries)
+      if (entry.value is Map<String, dynamic>)
+        {
+          'name': en
+              ? ((entry.value as Map<String, dynamic>)['name_en'] as String? ??
+                    entry.key)
+              : ((entry.value as Map<String, dynamic>)['name'] as String? ??
+                    entry.key),
+          'is_enabled': entry.key == widget.featureKey
+              ? _paymentCompleted
+              : (entry.value as Map<String, dynamic>)['is_enabled'] == true,
+          'amount': entry.key == widget.featureKey
+              ? _requestAmount()
+              : (((entry.value as Map<String, dynamic>)['billing_prices']
+                                as Map<String, dynamic>?)?['monthly']
+                            as num?)
+                        ?.toDouble() ??
+                    ((entry.value as Map<String, dynamic>)['price'] as num?)
+                        ?.toDouble() ??
+                    0,
+        },
+  ];
 
   Future<void> _chooseReceipt() async {
     final result = await FilePicker.platform.pickFiles(

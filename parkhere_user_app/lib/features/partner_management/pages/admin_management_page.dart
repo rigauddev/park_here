@@ -338,6 +338,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           ..._featureRequestCards(),
         ];
       case 2:
+        final currency = context.strings.isEnglish ? 'BRL' : r'R$';
         return [
           const Text(
             'Taxas e planos',
@@ -347,9 +348,18 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           ..._fees.map(
             (fee) => Card(
               child: ListTile(
-                title: Text(fee['service_type'] as String? ?? ''),
+                title: Text(
+                  context.strings.isEnglish
+                      ? (fee['service_name_en'] as String? ??
+                            fee['service_type'] as String? ??
+                            '')
+                      : (fee['service_name'] as String? ??
+                            fee['service_type'] as String? ??
+                            ''),
+                ),
                 subtitle: Text(
-                  '${fee['percentage'] ?? 0}% + BRL ${fee['fixed_amount'] ?? 0}',
+                  '${context.strings.isEnglish ? fee['description_en'] ?? '' : fee['description'] ?? ''}\n'
+                  '${fee['percentage'] ?? 0}% + $currency ${fee['fixed_amount'] ?? 0}',
                 ),
                 trailing: const Icon(Icons.edit_outlined),
                 onTap: () => _editFee(fee),
@@ -584,60 +594,75 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         .where((partner) => partner['approval_status'] != 'approved')
         .toList();
     if (pending.isEmpty) {
-      return [const Card(child: ListTile(title: Text('Nenhum parceiro pendente.')))];
+      return [
+        const Card(child: ListTile(title: Text('Nenhum parceiro pendente.'))),
+      ];
     }
     return [
       for (final partner in pending)
         Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                partner['company_name'] as String? ?? 'Parceiro',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 4),
-              Text('Status: ${partner['approval_status'] ?? 'pendente'}'),
-              const SizedBox(height: 8),
-              ...((partner['documents'] as List?) ?? const []).map(
-                (item) => ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.description_outlined),
-                  title: Text(item['file_name'] as String? ?? 'Documento'),
-                  subtitle: Text(item['document_type'] as String? ?? ''),
-                  trailing: const Icon(Icons.visibility_outlined),
-                  onTap: () => _showPartnerDocument(item),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  partner['company_name'] as String? ?? 'Parceiro',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
-              ),
-              Wrap(spacing: 8, children: [
-                if (partner['approval_status'] == 'documents_submitted' ||
-                    partner['approval_status'] == 'waiting_documents')
-                  FilledButton.tonal(
-                    onPressed: () => _reviewPartnerApproval(
-                      partner, 'documents', 'approve',
-                    ),
-                    child: const Text('Aprovar documentação'),
+                const SizedBox(height: 4),
+                Text('Status: ${partner['approval_status'] ?? 'pendente'}'),
+                const SizedBox(height: 8),
+                ...((partner['documents'] as List?) ?? const []).map(
+                  (item) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.description_outlined),
+                    title: Text(item['file_name'] as String? ?? 'Documento'),
+                    subtitle: Text(item['document_type'] as String? ?? ''),
+                    trailing: const Icon(Icons.visibility_outlined),
+                    onTap: () => _showPartnerDocument(item),
                   ),
-                if (partner['approval_status'] == 'waiting_inspection')
-                  FilledButton(
-                    onPressed: () => _reviewPartnerApproval(
-                      partner, 'inspection', 'approve',
-                    ),
-                    child: const Text('Aprovar vistoria'),
-                  ),
-                OutlinedButton(
-                  onPressed: () => _reviewPartnerApproval(
-                    partner,
-                    partner['approval_status'] == 'waiting_inspection'
-                        ? 'inspection'
-                        : 'documents',
-                    'reject',
-                  ),
-                  child: const Text('Reprovar'),
                 ),
-              ]),
-            ]),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    if (partner['approval_status'] == 'documents_submitted' ||
+                        partner['approval_status'] == 'waiting_documents')
+                      FilledButton.tonal(
+                        onPressed: () => _reviewPartnerApproval(
+                          partner,
+                          'documents',
+                          'approve',
+                        ),
+                        child: const Text('Aprovar documentação'),
+                      ),
+                    if (partner['approval_status'] == 'waiting_inspection')
+                      FilledButton(
+                        onPressed: () => _reviewPartnerApproval(
+                          partner,
+                          'inspection',
+                          'approve',
+                        ),
+                        child: const Text('Aprovar vistoria'),
+                      ),
+                    OutlinedButton(
+                      onPressed: () => _reviewPartnerApproval(
+                        partner,
+                        partner['approval_status'] == 'waiting_inspection'
+                            ? 'inspection'
+                            : 'documents',
+                        'reject',
+                      ),
+                      child: const Text('Reprovar'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
     ];
@@ -659,12 +684,18 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           content: SizedBox(
             width: 560,
             height: 480,
-            child: extension == 'png' || extension == 'jpg' || extension == 'jpeg'
-                ? InteractiveViewer(child: Image.memory(bytes, fit: BoxFit.contain))
+            child:
+                extension == 'png' || extension == 'jpg' || extension == 'jpeg'
+                ? InteractiveViewer(
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  )
                 : _PdfDocumentPreview(bytes: bytes),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fechar'),
+            ),
           ],
         ),
       );
@@ -689,9 +720,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       );
       await _load();
       if (mounted) {
-        await ApiFeedback.show(context, decision == 'approve'
-            ? 'Etapa aprovada.'
-            : 'Parceiro reprovado.');
+        await ApiFeedback.show(
+          context,
+          decision == 'approve' ? 'Etapa aprovada.' : 'Parceiro reprovado.',
+        );
       }
     } catch (error) {
       if (mounted) await ApiFeedback.show(context, '$error');
@@ -1084,7 +1116,6 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
 
   String _billingPeriodLabel(String? value) => switch (value) {
     'annual' => _tr('ano', 'year'),
-    'one_time' => _tr('pagamento único', 'one time'),
     _ => _tr('mês', 'month'),
   };
 
@@ -1693,6 +1724,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     double? price,
     String? billingPeriod,
     Map<String, double>? billingPrices,
+    Map<String, dynamic>? paymentTerms,
   }) async {
     final tenantId = _featureTenantId;
     final token = ref.read(authProvider).accessToken;
@@ -1707,6 +1739,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           'billing_prices': billingPrices ?? feature['billing_prices'] ?? {},
           'billing_period':
               billingPeriod ?? feature['billing_period'] ?? 'monthly',
+          'payment_terms': paymentTerms ?? feature['payment_terms'] ?? {},
           'notes': feature['notes'],
         },
         token,
@@ -1722,6 +1755,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   Future<void> _editPartnerFeature(Map<String, dynamic> feature) async {
     var enabled = feature['is_enabled'] == true;
     var paid = feature['is_paid'] == true;
+    var trialEnabled =
+        ((feature['payment_terms'] as Map<String, dynamic>?)?['monthly']
+            as Map<String, dynamic>?)?['trial_enabled'] ==
+        true;
     var period = feature['billing_period'] as String? ?? 'monthly';
     final prices = (feature['billing_prices'] as Map<String, dynamic>?) ?? {};
     final monthly = TextEditingController(
@@ -1734,10 +1771,38 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           '${prices['annual'] ?? (period == 'annual' ? feature['price'] : 0) ?? 0}'
               .replaceAll('.', ','),
     );
-    final oneTime = TextEditingController(
+    final terms = (feature['payment_terms'] as Map<String, dynamic>?) ?? {};
+    final monthlyTerms = (terms['monthly'] as Map<String, dynamic>?) ?? {};
+    final annualTerms = (terms['annual'] as Map<String, dynamic>?) ?? {};
+    final monthlyInstallments = TextEditingController(
+      text: '${monthlyTerms['installments'] ?? 1}',
+    );
+    final annualInstallments = TextEditingController(
+      text: '${annualTerms['installments'] ?? 1}',
+    );
+    final monthlyDiscount = TextEditingController(
       text:
-          '${prices['one_time'] ?? (period == 'one_time' ? feature['price'] : 0) ?? 0}'
-              .replaceAll('.', ','),
+          '${((monthlyTerms['discounts'] as Map<String, dynamic>?)?['pix'] ?? 0)}',
+    );
+    final monthlyCreditDiscount = TextEditingController(
+      text:
+          '${((monthlyTerms['discounts'] as Map<String, dynamic>?)?['credit_card'] ?? 0)}',
+    );
+    final monthlyDebitDiscount = TextEditingController(
+      text:
+          '${((monthlyTerms['discounts'] as Map<String, dynamic>?)?['debit_card'] ?? 0)}',
+    );
+    final annualDiscount = TextEditingController(
+      text:
+          '${((annualTerms['discounts'] as Map<String, dynamic>?)?['pix'] ?? 0)}',
+    );
+    final annualCreditDiscount = TextEditingController(
+      text:
+          '${((annualTerms['discounts'] as Map<String, dynamic>?)?['credit_card'] ?? 0)}',
+    );
+    final annualDebitDiscount = TextEditingController(
+      text:
+          '${((annualTerms['discounts'] as Map<String, dynamic>?)?['debit_card'] ?? 0)}',
     );
     final saved = await showDialog<bool>(
       context: context,
@@ -1757,6 +1822,24 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                     ),
                     value: enabled,
                     onChanged: (value) => setDialogState(() => enabled = value),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _tr(
+                        'Disponibilizar demonstração gratuita',
+                        'Offer a free trial',
+                      ),
+                    ),
+                    subtitle: Text(
+                      _tr(
+                        'Aplicada por até 30 dias antes da cobrança.',
+                        'Up to 30 days before billing.',
+                      ),
+                    ),
+                    value: trialEnabled,
+                    onChanged: (value) =>
+                        setDialogState(() => trialEnabled = value),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -1790,14 +1873,108 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                   ),
                   const SizedBox(height: 10),
                   TextField(
-                    controller: oneTime,
+                    controller: monthlyDiscount,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
                     decoration: InputDecoration(
                       labelText: _tr(
-                        'Pagamento único · 30 dias (BRL)',
-                        'One-time · 30 days (BRL)',
+                        'Desconto mensal no Pix (%)',
+                        'Monthly Pix discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: monthlyInstallments,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Parcelas mensais permitidas',
+                        'Allowed monthly installments',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto anual no Pix (%)',
+                        'Annual Pix discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualInstallments,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Parcelas anuais permitidas',
+                        'Allowed annual installments',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: monthlyCreditDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto mensal crédito (%)',
+                        'Monthly credit discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: monthlyDebitDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto mensal débito (%)',
+                        'Monthly debit discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualCreditDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto anual crédito (%)',
+                        'Annual credit discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualDebitDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto anual débito (%)',
+                        'Annual debit discount (%)',
                       ),
                       border: const OutlineInputBorder(),
                     ),
@@ -1816,10 +1993,6 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                       DropdownMenuItem(
                         value: 'annual',
                         child: Text(_tr('Anual', 'Annual')),
-                      ),
-                      DropdownMenuItem(
-                        value: 'one_time',
-                        child: Text(_tr('Única', 'One time')),
                       ),
                     ],
                     onChanged: (value) {
@@ -1850,20 +2023,69 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         isPaid: paid,
         price: switch (period) {
           'annual' => double.tryParse(annual.text.replaceAll(',', '.')) ?? 0,
-          'one_time' => double.tryParse(oneTime.text.replaceAll(',', '.')) ?? 0,
           _ => double.tryParse(monthly.text.replaceAll(',', '.')) ?? 0,
         },
         billingPeriod: period,
         billingPrices: {
           'monthly': double.tryParse(monthly.text.replaceAll(',', '.')) ?? 0,
           'annual': double.tryParse(annual.text.replaceAll(',', '.')) ?? 0,
-          'one_time': double.tryParse(oneTime.text.replaceAll(',', '.')) ?? 0,
+        },
+        paymentTerms: {
+          'monthly': {
+            'minimum_months': 6,
+            'installments': int.tryParse(monthlyInstallments.text) ?? 1,
+            'trial_enabled': trialEnabled,
+            'trial_days': 30,
+            'discounts': {
+              'pix':
+                  double.tryParse(monthlyDiscount.text.replaceAll(',', '.')) ??
+                  0,
+              'credit_card':
+                  double.tryParse(
+                    monthlyCreditDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+              'debit_card':
+                  double.tryParse(
+                    monthlyDebitDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+            },
+          },
+          'annual': {
+            'minimum_months': 12,
+            'installments': int.tryParse(annualInstallments.text) ?? 1,
+            'trial_enabled': trialEnabled,
+            'trial_days': 30,
+            'discounts': {
+              'pix':
+                  double.tryParse(annualDiscount.text.replaceAll(',', '.')) ??
+                  0,
+              'credit_card':
+                  double.tryParse(
+                    annualCreditDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+              'debit_card':
+                  double.tryParse(
+                    annualDebitDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+            },
+          },
         },
       );
     }
     monthly.dispose();
     annual.dispose();
-    oneTime.dispose();
+    monthlyDiscount.dispose();
+    monthlyInstallments.dispose();
+    monthlyCreditDiscount.dispose();
+    monthlyDebitDiscount.dispose();
+    annualDiscount.dispose();
+    annualInstallments.dispose();
+    annualCreditDiscount.dispose();
+    annualDebitDiscount.dispose();
   }
 
   List<Widget> _emailTemplateSection() => [
@@ -2172,7 +2394,15 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                 for (final fee in rows)
                   ListTile(
                     title: Text(
-                      _categoryLabel(fee['service_type'] as String? ?? ''),
+                      context.strings.isEnglish
+                          ? (fee['service_name_en'] as String? ??
+                                _categoryLabel(
+                                  fee['service_type'] as String? ?? '',
+                                ))
+                          : (fee['service_name'] as String? ??
+                                _categoryLabel(
+                                  fee['service_type'] as String? ?? '',
+                                )),
                     ),
                     subtitle: Text(
                       '${fee['source'] == 'partner' ? 'Personalizada' : 'Padrão'} · ${fee['percentage']}% + R\$ ${fee['fixed_amount']}',
@@ -2375,7 +2605,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Taxa: ${fee['service_type']}'),
+        title: Text(
+          '${context.strings.isEnglish ? 'Fee' : 'Taxa'}: '
+          '${context.strings.isEnglish ? fee['service_name_en'] ?? _categoryLabel(fee['service_type'] as String? ?? '') : fee['service_name'] ?? _categoryLabel(fee['service_type'] as String? ?? '')}',
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2425,11 +2658,11 @@ class _PdfDocumentPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PdfPreview(
-        build: (_) async => bytes,
-        canChangeOrientation: false,
-        canChangePageFormat: false,
-        canDebug: false,
-        allowPrinting: false,
-        allowSharing: false,
-      );
+    build: (_) async => bytes,
+    canChangeOrientation: false,
+    canChangePageFormat: false,
+    canDebug: false,
+    allowPrinting: false,
+    allowSharing: false,
+  );
 }

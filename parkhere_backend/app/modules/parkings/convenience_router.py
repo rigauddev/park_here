@@ -29,6 +29,7 @@ class ConvenienceProductInput(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     price: float = Field(ge=0, allow_inf_nan=False)
     barcode: str | None = Field(default=None, max_length=80)
+    stock_quantity: int | None = Field(default=None, ge=0, le=2_000_000)
     is_active: bool = True
 
     @field_validator("category", "subcategory", "name", "description", mode="before")
@@ -48,6 +49,7 @@ def _payload(item: ParkingConvenienceProduct) -> dict:
         "description": item.description,
         "price": item.price,
         "barcode": item.barcode,
+        "stock_quantity": item.stock_quantity,
         "is_active": item.is_active,
     }
 
@@ -184,6 +186,8 @@ async def create_convenience_sale(
     sale_items: list[ParkingConvenienceSaleItem] = []
     for item in data.items:
         product = by_id[item.product_id]
+        if product.stock_quantity is not None and product.stock_quantity < item.quantity:
+            raise HTTPException(status_code=409, detail=f"Estoque insuficiente para {product.name}")
         line_total = round(float(product.price) * item.quantity, 2)
         total += line_total
         sale_items.append(ParkingConvenienceSaleItem(
@@ -210,6 +214,10 @@ async def create_convenience_sale(
     for item in sale_items:
         item.sale_id = sale.id
         db.add(item)
+    for item in data.items:
+        product = by_id[item.product_id]
+        if product.stock_quantity is not None:
+            product.stock_quantity -= item.quantity
     await db.commit()
     return {
         "id": sale.id,
@@ -217,6 +225,11 @@ async def create_convenience_sale(
         "payment_method": sale.payment_method,
         "cash_received": sale.cash_received,
         "change_amount": sale.change_amount,
+        "receipt": {
+            "number": sale.id,
+            "issued_at": sale.created_at.isoformat() if sale.created_at else None,
+            "is_fiscal": False,
+        },
         "items": [{"product_id": item.product_id, "quantity": item.quantity} for item in sale_items],
     }
 

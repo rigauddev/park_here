@@ -181,16 +181,18 @@ Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
   mapa/reservas, serviços, equipe, afiliações e caixa básico/Pro. Guias recebem
   dashboard, serviços, afiliações e vagas para serviços adicionais. Cada item
   contém nomes e descrições em português/inglês, acesso, classificação paga ou
-  gratuita, `price`, `billing_period`, `billing_prices` e dados de solicitação
-  por quantidade.
+  gratuita, `price`, `billing_period`, `billing_prices`, `payment_terms` e dados
+  de solicitação por quantidade.
 - `PUT /admin/platform-fees/partners/{tenant_id}/features/{feature_key}` grava
-  ativação, classificação como paga, preços em `billing_prices` (`monthly`,
-  `annual`, `one_time`) e observações. `monthly` vence em 30 dias, `annual` em
-  365 dias e `one_time` em 30 dias após a aprovação administrativa.
+  ativação, classificação como paga, preços em `billing_prices` (`monthly` e
+  `annual`) e `payment_terms`. Cada termo informa `minimum_months`,
+  `installments` e descontos por `pix`, `credit_card` e `debit_card`. O plano
+  mensal exige no mínimo seis meses; o anual representa doze meses.
 - `POST /partners/feature-requests` recebe `feature_key`, `quantity`,
-  `billing_period` (`monthly`, `annual`, `one_time`) e `payment_method`
-  (`pix`, `credit_card`, `debit_card`). A solicitação registra o preço
-  configurado para a modalidade e começa em `pending_payment`.
+  `billing_period` (`monthly` ou `annual`) e `payment_method`. A API calcula o
+  compromisso mínimo, desconto e total, grava um snapshot de `payment_terms` e
+  retorna `total_price`, `gross_total`, `discount_percentage` e
+  `contract_months`.
 - `POST /partners/feature-requests/{request_id}/pay` registra o pagamento
   simulado e muda o pedido para `payment_received`.
 - `POST /partners/feature-requests/{request_id}/receipt` só aceita pedidos em
@@ -199,6 +201,14 @@ Todos os endpoints abaixo exigem `SUPER_ADMIN` e token Bearer.
   as solicitações e seus estados. O meio de pagamento é uma declaração para
   conciliação manual; criação de cobrança e confirmação automática do Mercado
   Pago ainda não estão conectadas.
+
+### Terminais e maquininhas (V2)
+
+`PaymentTransaction` já guarda provedor, identificador externo, método, status
+ e o snapshot do split. A integração de maquininha deve criar a cobrança com a
+mesma referência externa da solicitação e receber webhook assinado do provedor.
+O backend valida assinatura e idempotência antes de aprovar, recusar ou
+estornar; o app nunca libera uma reserva apenas porque retornou da maquininha.
 - `GET /admin/platform-fees/feature-requests` lista pedidos; o superadmin usa
   `PUT /admin/platform-fees/feature-requests/{request_id}/approve` ou
   `/reject` para analisar. A aprovação exige comprovante anexado, libera o
@@ -264,6 +274,12 @@ dados históricos são preservados.
 ## Busca De Estacionamentos
 
 `GET /parkings?city=Valenca`
+
+`GET /parkings/cities?q=sao` retorna `{ "cities": ["São Paulo"] }` com as
+cidades que possuem unidades ativas. A busca é normalizada para acentos e
+retorna lista vazia para cidades sem serviço, sem lançar erro no aplicativo.
+O cliente usa primeiro a geolocalização para selecionar a cidade mais próxima
+e só consulta esse catálogo quando o usuário digita outra cidade.
 
 Query:
 
@@ -560,7 +576,7 @@ Regras:
 
 No check-in do cliente, `POST /reservations/{reservation_id}/checkin` recebe
 `latitude` e `longitude` atuais na query. O servidor valida distância máxima de
-150 metros do estacionamento e grava o horário e o usuário autenticado que
+70 metros do estacionamento e grava o horário e o usuário autenticado que
 realizou a ação. Gestores e operadores continuam autorizados para a portaria do
 próprio tenant.
 
@@ -734,7 +750,7 @@ Regras:
 - Pagamento em dinheiro confirmado cria debito `partner_fee_debts` com a taxa ParkHere daquela reserva.
 - Pagamento online futuro abate debitos pendentes do repasse do parceiro e retorna `withheld_fee_amount`.
 - Confirmacao mock e idempotente: repetir `/payments/{payment_id}/confirm` nao duplica debito nem liquidacao.
-- Checkout por hora permite tolerancia de 15 minutos apos o tempo contratado.
+- Checkout por hora permite tolerância de 10 minutos após o tempo contratado. O checkout não é automático: o operador registra a saída manualmente com uma foto da vaga quando o cliente sai sem finalizar.
 - Se houver excedente sem pagamento, `POST /reservations/{reservation_id}/checkout` retorna `402` e mantem checkout bloqueado.
 - A confirmacao de pagamento do excedente grava `checkout_excess_paid_at` e libera nova tentativa de checkout.
 - O app chama primeiro o checkout. Quando a API responde `402`, usa os minutos e valor de excedente calculados no servidor e cria a intenção com `purpose=checkout_excess`; após confirmação, repete o checkout.
@@ -841,8 +857,16 @@ O endpoint `GET /reservations/{reservation_id}/photos` lista os metadados das fo
 O endpoint `POST /reservations/{reservation_id}/photos?kind=...` aceita fotos do
 check-in e checkout. O envio do checkout usa os mesmos tipos (`front`, `rear`,
 `left`, `right`) e substitui o arquivo anterior da reserva. Os arquivos ficam
-em armazenamento local temporário por sete dias e são removidos na próxima
-limpeza do endpoint.
+em armazenamento local temporário por 30 dias; sem incidente vinculado, ficam
+aptos à remoção após esse prazo.
+
+Para reservas horárias, após o pagamento e o check-in, o cliente deve concluir o checkout em até dez minutos após o tempo contratado. O checkout nunca é automático. O operador pode usar `POST /reservations/{id}/operator-checkout` com multipart (`reason` e uma foto `photo`) para registrar que o cliente saiu sem checkout e liberar a vaga.
+
+Reservas com chegada fora do horário usam `status=pending_operator_approval` e
+`notification_status=awaiting_operating_hours_approval`. A tela de reservas do
+parceiro exibe um aviso persistente para a equipe. Push nativo e Web Push ainda
+dependem da configuração do provedor de notificações; o contrato já mantém o
+estado necessário para a futura entrega idempotente.
 
 ## Jornada e escalas — 10/09/2026
 
@@ -923,7 +947,7 @@ Clientes antigos que não enviam o campo continuam sendo tratados como `car`.
 `POST /payments/reservations/{reservation_id}/intent` aceita `latitude` e
 `longitude` opcionais. Para clientes pagando uma reserva horária ou excedente
 de checkout, os dois campos são obrigatórios e a API exige distância máxima de
-50 metros do estacionamento. Reservas diárias, semanais e mensais não usam
+70 metros do estacionamento. Reservas diárias, semanais e mensais não usam
 essa validação no pagamento do check-in.
 # Conveniências da unidade de estacionamento
 
@@ -960,3 +984,32 @@ ser igual ao documento validado no cadastro do parceiro; caso contrário a API
 recusa a alteração. A conta fica com `verificationStatus=pending_provider_verification`
 até a integração Mercado Pago/OAuth confirmar a titularidade. O cliente não
 possui conta de repasse e não pode acessar essas rotas.
+
+## Taxas administrativas e conveniência (2026-10)
+
+- `GET /admin/platform-fees` continua retornando `service_type` e agora também
+  `service_name`, `service_name_en`, `description` e `description_en`, para a
+  tela administrativa explicar exatamente qual serviço está sendo tarifado no
+  idioma selecionado.
+- `POST /partners/parking-management/{parking_id}/conveniences` aceita
+  `stock_quantity` opcional. Nulo significa que o estoque não é controlado;
+  quando informado, a venda valida e reduz a quantidade.
+- `GET /partners/parking-management/{parking_id}/conveniences` retorna
+  `stock_quantity`.
+- `POST /partners/parking-management/{parking_id}/convenience-sales` rejeita
+  venda acima do estoque e retorna `receipt` com número, data e
+  `is_fiscal=false`. Esse comprovante é operacional e não substitui documento
+  fiscal.
+
+### Mercado Pago (primeira integração)
+
+O provedor permanece `mock` por padrão. Para homologação real, configure no
+backend `PAYMENT_PROVIDER=mercado_pago`, `MERCADO_PAGO_ACCESS_TOKEN` e
+`MERCADO_PAGO_WEBHOOK_URL`. O endpoint de intenção cria uma preferência Checkout
+Pro em `POST /checkout/preferences` e retorna `checkout_url`/`provider` sem
+expor o token ao aplicativo. A confirmação do pagamento real não é aceita pelo
+botão do app: `POST /payments/webhooks/mercado-pago` consulta o pagamento na API
+do Mercado Pago e só então atualiza a transação e a reserva. Em produção,
+configure `MERCADO_PAGO_WEBHOOK_SECRET` e o proxy para encaminhar o segredo no
+header `X-Webhook-Secret`. OAuth do parceiro e split Marketplace ficam para a
+segunda etapa; até lá o snapshot de split permanece no banco para conciliação.

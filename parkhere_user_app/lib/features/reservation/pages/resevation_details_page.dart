@@ -111,7 +111,7 @@ class _ReservationDetailsPageState
                   leading: const Icon(Icons.lock_outline),
                   title: const Text('Realizar pagamento da permanência'),
                   subtitle: Text(
-                    'Disponível até 50 m do estacionamento. O excedente será calculado no checkout.',
+                    'Disponível até 70 m do estacionamento. O excedente será calculado no checkout.',
                   ),
                   trailing: FilledButton(
                     onPressed: () => _payHourlyReservation(reservation),
@@ -128,9 +128,8 @@ class _ReservationDetailsPageState
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => RoutePreviewPage(
-                      preCheckin: reservation.preCheckin,
-                    ),
+                    builder: (_) =>
+                        RoutePreviewPage(preCheckin: reservation.preCheckin),
                   ),
                 ),
                 icon: const Icon(Icons.route_outlined),

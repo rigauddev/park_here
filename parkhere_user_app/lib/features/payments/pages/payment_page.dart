@@ -11,6 +11,7 @@ import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
 import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/widgets/api_feedback.dart';
 import '../model/payment_method_enum.dart';
@@ -25,6 +26,7 @@ class PaymentPage extends ConsumerStatefulWidget {
   final bool checkoutPayment;
   final bool payNow;
   final bool requireParkingLocation;
+  final List<Map<String, dynamic>> contractedModules;
   final FutureOr<void> Function() onPaymentSuccess;
 
   const PaymentPage({
@@ -36,6 +38,7 @@ class PaymentPage extends ConsumerStatefulWidget {
     this.checkoutPayment = false,
     required this.payNow,
     this.requireParkingLocation = false,
+    this.contractedModules = const [],
     required this.onPaymentSuccess,
   });
 
@@ -157,6 +160,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final en = context.strings.isEnglish;
     final account = ref.watch(accountProvider);
     final activeMethod = account.activePaymentMethod;
 
@@ -288,6 +292,45 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              if (widget.contractedModules.isNotEmpty)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          en
+                              ? 'Partner module summary'
+                              : 'Resumo dos módulos do parceiro',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        for (final module in widget.contractedModules)
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              module['is_enabled'] == true
+                                  ? Icons.check_circle_outline
+                                  : Icons.lock_outline,
+                            ),
+                            title: Text(module['name'] as String? ?? ''),
+                            subtitle: Text(
+                              '${module['is_enabled'] == true ? (en ? 'Already enabled' : 'Já contratado/liberado') : (en ? 'Included in this request' : 'Incluído nesta solicitação')} · '
+                              '${en ? 'Amount' : 'Valor'}: R\$ ${((module['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                            ),
+                          ),
+                        const Divider(),
+                        Text(
+                          en
+                              ? 'Total for this purchase: the amount above. The server recalculates the final charge.'
+                              : 'Total desta contratação: o valor acima. A cobrança final é recalculada pelo servidor.',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               if (_quote != null && !widget.checkoutPayment)
                 Card(
                   child: Column(

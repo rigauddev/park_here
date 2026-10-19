@@ -310,8 +310,6 @@ class _PartnerManagementBody extends StatelessWidget {
       final price = (feature?['price'] as num? ?? 0).toDouble();
       final period = feature?['billing_period'] == 'annual'
           ? (context.strings.isEnglish ? 'year' : 'ano')
-          : feature?['billing_period'] == 'one_time'
-          ? (context.strings.isEnglish ? 'once' : 'única')
           : (context.strings.isEnglish ? 'month' : 'mês');
       return context.strings.isEnglish
           ? 'Optional add-on: R\$ ${price.toStringAsFixed(2)} / $period. Contact ParkHere to enable.'

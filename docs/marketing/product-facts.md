@@ -1,6 +1,6 @@
 # Fatos de produto para marketing
 
-- Nome em português: Estacione Aqui. Nome em inglês: Park Here.
+- Nome em português: Estacione Aqui. Nome em inglês: ParkHere.
 - O piloto atual é em Valença-BA.
 - Motoristas encontram estacionamentos, escolhem categoria de vaga, reservam,
   pagam e realizam check-in/checkout manual pelo app.

@@ -206,64 +206,102 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   Future<void> _openCitySelector(List<ParkingModel> currentParkings) async {
     final currentCity = ref.read(selectedCityProvider);
     final controller = TextEditingController(text: currentCity);
+    List<String> availableCities = _normalizedCityList(currentParkings);
+    try {
+      availableCities = await ref.read(citySuggestionsProvider('').future);
+    } catch (_) {
+      // Keep the cities already loaded with the parking list when the lookup
+      // service is temporarily unavailable.
+    }
+    if (!mounted) return;
 
     final selected = await showDialog<String>(
       context: context,
       builder: (context) {
-        final cities = _normalizedCityList(currentParkings);
-
         return Dialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 20),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    'Selecionar cidade',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    textInputAction: TextInputAction.search,
-                    decoration: const InputDecoration(
-                      labelText: 'Cidade',
-                      prefixIcon: Icon(Icons.location_city_outlined),
+          child: StatefulBuilder(
+            builder: (context, setDialogState) => Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Selecionar cidade',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    onSubmitted: (value) =>
-                        Navigator.pop(context, value.trim()),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (final city in cities)
-                        ActionChip(
-                          avatar: const Icon(Icons.place_outlined, size: 18),
-                          label: Text(city),
-                          onPressed: () => Navigator.pop(context, city),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      textInputAction: TextInputAction.search,
+                      decoration: const InputDecoration(
+                        labelText: 'Cidade',
+                        prefixIcon: Icon(Icons.location_city_outlined),
+                      ),
+                      onChanged: (value) async {
+                        final query = value.trim();
+                        if (query.isEmpty) {
+                          setDialogState(
+                            () => availableCities = _normalizedCityList(
+                              currentParkings,
+                            ),
+                          );
+                          return;
+                        }
+                        try {
+                          final result = await ref.read(
+                            citySuggestionsProvider(query).future,
+                          );
+                          if (context.mounted) {
+                            setDialogState(() => availableCities = result);
+                          }
+                        } catch (_) {
+                          if (context.mounted) {
+                            setDialogState(() => availableCities = const []);
+                          }
+                        }
+                      },
+                      onSubmitted: (value) =>
+                          Navigator.pop(context, value.trim()),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final city in availableCities)
+                          ActionChip(
+                            avatar: const Icon(Icons.place_outlined, size: 18),
+                            label: Text(city),
+                            onPressed: () => Navigator.pop(context, city),
+                          ),
+                      ],
+                    ),
+                    if (availableCities.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: Text(
+                          'Nenhuma cidade com estacionamento ativo. Você pode buscar outra cidade.',
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () =>
-                          Navigator.pop(context, controller.text.trim()),
-                      icon: const Icon(Icons.search),
-                      label: const Text('Buscar'),
+                      ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            Navigator.pop(context, controller.text.trim()),
+                        icon: const Icon(Icons.search),
+                        label: const Text('Buscar'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -299,8 +337,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       mapController.move(cityCenter, 12);
       return;
     }
-
-    mapController.move(userLocation ?? _valencaCenter, 12);
+    await ApiFeedback.show(
+      context,
+      'Nenhum estacionamento ativo foi encontrado em "$normalizedCity". Tente outra cidade.',
+    );
   }
 
   Future<void> openParkingDetails(

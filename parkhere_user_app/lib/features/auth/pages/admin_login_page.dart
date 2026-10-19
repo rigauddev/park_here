@@ -123,6 +123,21 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage> {
                           mfaStep ? 'Validar acesso' : 'Entrar na gestão',
                         ),
                       ),
+                      if (mfaStep)
+                        TextButton.icon(
+                          onPressed: loading
+                              ? null
+                              : () {
+                                  email.clear();
+                                  password.clear();
+                                  mfa.clear();
+                                  ref
+                                      .read(authProvider.notifier)
+                                      .resetLoginFlow();
+                                },
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('Cancelar acesso'),
+                        ),
                       TextButton(
                         onPressed: loading
                             ? null

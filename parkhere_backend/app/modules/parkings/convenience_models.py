@@ -17,6 +17,8 @@ class ParkingConvenienceProduct(BaseModel):
     description = Column(Text, nullable=True)
     price = Column(Float, nullable=False, default=0)
     barcode = Column(String(80), nullable=True, index=True)
+    # Null keeps legacy products usable without stock control.
+    stock_quantity = Column(Integer, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
 
 

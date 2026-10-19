@@ -43,6 +43,7 @@ from app.modules.reservations.service import (
     calculate_checkout_excess,
     expire_parking_reservations,
     physical_spot_type,
+    _utc_iso,
 )
 from app.modules.reservations.models import Reservation
 from app.modules.users.models.user_model import User
@@ -69,6 +70,26 @@ OWNER_PERMISSIONS = [
     "partner.pricing.manage",
     *DEFAULT_OPERATOR_PERMISSIONS,
 ]
+
+
+def _payment_terms(item: PartnerFeatureEntitlement | None) -> dict:
+    defaults = {
+        'monthly': {'minimum_months': 6, 'installments': 1, 'discounts': {}},
+        'annual': {'minimum_months': 12, 'installments': 1, 'discounts': {}},
+    }
+    try:
+        raw = json.loads(item.payment_terms or '{}') if item else {}
+    except json.JSONDecodeError:
+        raw = {}
+    result = {}
+    for period, default in defaults.items():
+        value = raw.get(period) or {}
+        result[period] = {
+            'minimum_months': max(int(value.get('minimum_months', default['minimum_months'])), default['minimum_months'] if period == 'monthly' else 12),
+            'installments': max(1, int(value.get('installments', 1))),
+            'discounts': {str(k): float(v) for k, v in (value.get('discounts') or {}).items()},
+        }
+    return result
 
 
 class PartnerOperatorCreateRequest(BaseModel):
@@ -165,8 +186,9 @@ class GuideServiceRequest(BaseModel):
 class PartnerFeatureActivationRequest(BaseModel):
     feature_key: str
     quantity: int = 1
-    billing_period: str
+    billing_period: str = 'monthly'
     payment_method: str
+    contract_months: int | None = None
     notes: str | None = None
 
 
@@ -325,6 +347,7 @@ async def get_my_partner_profile(
             'price': item.price if item else 0,
             'billing_period': item.billing_period if item else feature['default_billing_period'],
             'billing_prices': _feature_prices(item) if item else {},
+            'payment_terms': _payment_terms(item),
             'expires_at': item.expires_at.isoformat() + 'Z' if item and item.expires_at else None,
             'notes': item.notes if item else None,
             'requestable': feature['requestable'],
@@ -505,6 +528,7 @@ async def list_my_partner_feature_requests(
             'quantity': row.quantity,
             'total_price': row.total_price,
             'billing_period': row.billing_period,
+            'payment_terms': _payment_terms(row),
             'payment_method': row.payment_method,
             'has_receipt': bool(row.receipt_path),
             'status': row.status,
@@ -552,7 +576,7 @@ async def request_partner_feature(
     if data.feature_key not in {'additional_units', 'additional_services'} and is_enabled:
         raise HTTPException(status_code=409, detail='Esta funcionalidade já está liberada')
 
-    if data.billing_period not in {'monthly', 'annual', 'one_time'}:
+    if data.billing_period not in {'monthly', 'annual'}:
         raise HTTPException(status_code=422, detail='Escolha uma modalidade de cobrança válida')
     if data.payment_method not in {'credit_card', 'debit_card', 'pix'}:
         raise HTTPException(status_code=422, detail='Escolha Pix, débito ou crédito')
@@ -560,6 +584,19 @@ async def request_partner_feature(
     unit_price = float(prices.get(data.billing_period, unit_price if billing_period == data.billing_period else 0))
     if unit_price <= 0:
         raise HTTPException(status_code=409, detail='O valor desta modalidade ainda não foi configurado pela gestão do app')
+    terms = _payment_terms(entitlement)
+    selected_terms = terms[data.billing_period]
+    contract_months = int(data.contract_months or selected_terms['minimum_months'])
+    if data.billing_period == 'monthly':
+        contract_months = max(contract_months, 6)
+    else:
+        contract_months = max(contract_months, 12)
+    discount = float((selected_terms.get('discounts') or {}).get(data.payment_method, 0))
+    gross_total = unit_price * data.quantity
+    if data.billing_period == 'monthly':
+        gross_total *= contract_months
+    discounted_total = round(gross_total * (1 - discount / 100), 2)
+    installment_amount = round(discounted_total / selected_terms['installments'], 2)
 
     pending = await db.scalar(select(PartnerFeatureRequest).where(
         PartnerFeatureRequest.tenant_id == current_user.tenant_id,
@@ -575,8 +612,15 @@ async def request_partner_feature(
         requested_by=current_user.id,
         quantity=data.quantity,
         unit_price=unit_price,
-        total_price=round(unit_price * data.quantity, 2),
+        total_price=discounted_total,
         billing_period=data.billing_period,
+        payment_terms=json.dumps({
+            **selected_terms,
+            'contract_months': contract_months,
+            'discount_percentage': discount,
+            'gross_total': round(gross_total, 2),
+            'installment_amount': installment_amount,
+        }),
         payment_method=data.payment_method,
         status='pending_payment',
         notes=(data.notes or '').strip() or None,
@@ -593,6 +637,10 @@ async def request_partner_feature(
         'total_price': request.total_price,
         'billing_period': request.billing_period,
         'payment_method': request.payment_method,
+        'contract_months': contract_months,
+        'discount_percentage': discount,
+        'gross_total': round(gross_total, 2),
+        'installment_amount': installment_amount,
         'status': request.status,
         'created_at': request.created_at.isoformat() + 'Z',
     }
@@ -683,9 +731,11 @@ def _feature_prices(item: PartnerFeatureEntitlement | None) -> dict[str, float]:
         values = json.loads(item.billing_prices or '{}')
     except json.JSONDecodeError:
         values = {}
+    if 'monthly' not in values and 'one_time' in values:
+        values['monthly'] = values['one_time']
     if not values and item.price > 0:
         values[item.billing_period] = item.price
-    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual', 'one_time'}}
+    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual'}}
 
 
 @router.post('/me/documents', status_code=201)
@@ -1163,7 +1213,7 @@ async def list_partner_reservations(
             "spot_type": reservation.spot_type,
             "pricing_plan": reservation.pricing_plan,
             "route_minutes": reservation.route_minutes,
-            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
+            "hold_expires_at": _utc_iso(reservation.hold_expires_at),
             "base_amount": reservation.base_amount,
             "services_amount": reservation.services_amount,
             "platform_fee_amount": reservation.platform_fee_amount,
@@ -1176,7 +1226,7 @@ async def list_partner_reservations(
             "checkout_excess_amount": excess_amount,
             "checkout_grace_minutes": reservation.checkout_grace_minutes,
             "selected_services": _reservation_services(reservation),
-            "created_at": reservation.created_at.isoformat() + "Z",
+            "created_at": _utc_iso(reservation.created_at),
         })
     return payload
 
@@ -2169,27 +2219,21 @@ def _slot_payload(
             "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "route_minutes": reservation.route_minutes,
-            "created_at": reservation.created_at.isoformat() + "Z",
-            "checked_in_at": reservation.checked_in_at.isoformat() + "Z"
-            if reservation.checked_in_at
-            else None,
-            "arrival_estimate_at": (
+            "created_at": _utc_iso(reservation.created_at),
+            "checked_in_at": _utc_iso(reservation.checked_in_at),
+            "arrival_estimate_at": _utc_iso(
                 reservation.arrival_estimate_at
                 or reservation.created_at + timedelta(minutes=reservation.route_minutes)
-            ).isoformat() + "Z",
+            ),
             "is_manual_arrival": reservation.is_manual_arrival,
-            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
-            "cancelled_at": reservation.cancelled_at.isoformat() + "Z"
-            if reservation.cancelled_at
-            else None,
+            "hold_expires_at": _utc_iso(reservation.hold_expires_at),
+            "cancelled_at": _utc_iso(reservation.cancelled_at),
             "cancellation_fee_amount": reservation.cancellation_fee_amount,
             "cancellation_credit_amount": reservation.cancellation_credit_amount,
             "checkout_grace_minutes": reservation.checkout_grace_minutes,
             "checkout_excess_minutes": checkout_excess_minutes,
             "checkout_excess_amount": checkout_excess_amount,
-            "checkout_excess_paid_at": reservation.checkout_excess_paid_at.isoformat() + "Z"
-            if reservation.checkout_excess_paid_at
-            else None,
+            "checkout_excess_paid_at": _utc_iso(reservation.checkout_excess_paid_at),
         },
     }
 
@@ -2231,7 +2275,7 @@ def _checkout_excess_preview(
         ),
         0,
     )
-    grace_minutes = reservation.checkout_grace_minutes or 15
+    grace_minutes = reservation.checkout_grace_minutes or 10
     included_minutes = reservation.duration_hours * 60 + grace_minutes
     excess_minutes = max(elapsed_minutes - included_minutes, 0)
     if excess_minutes == 0:

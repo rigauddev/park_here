@@ -29,6 +29,9 @@ import '../../features/partner_management/providers/partner_operators_provider.d
 import '../../features/partner_management/pages/convenience_pos_page.dart';
 import '../../features/partner_management/pages/parking_convenience_page.dart';
 import '../../features/partner_management/providers/partner_parking_provider.dart';
+import '../../features/partner_management/providers/partner_profile_provider.dart';
+import '../../features/partner_management/models/partner_profile_model.dart';
+import '../../features/partner_management/pages/partner_feature_access_page.dart';
 
 enum _MainArea {
   menu,
@@ -744,7 +747,10 @@ class _WebMenu extends ConsumerWidget {
                 selectedArea: selectedArea,
                 onSelected: onSelected,
               ),
-            if (!isAdmin && isPartner && isPartnerOwner && !isGuide)
+            if (!isAdmin &&
+                isPartner &&
+                !isGuide &&
+                (isPartnerOwner || (isOperator && operatorHasShiftToday)))
               _MenuCategory(
                 expanded: expanded,
                 title: 'Conveniência',
@@ -754,11 +760,12 @@ class _WebMenu extends ConsumerWidget {
                     'Ponto de venda',
                     _MainArea.conveniencePos,
                   ),
-                  _MenuItem(
-                    Icons.inventory_2_outlined,
-                    'Produtos',
-                    _MainArea.convenienceProducts,
-                  ),
+                  if (isPartnerOwner)
+                    _MenuItem(
+                      Icons.inventory_2_outlined,
+                      'Produtos',
+                      _MainArea.convenienceProducts,
+                    ),
                 ],
                 selectedArea: selectedArea,
                 onSelected: onSelected,
@@ -1012,7 +1019,7 @@ class _MobileDrawer extends StatelessWidget {
                       ),
                   ],
                 ),
-                if (isPartnerOwner)
+                if (isPartnerOwner || (isOperator && operatorHasShiftToday))
                   _MobileMenuGroup(
                     title: 'Conveniência',
                     icon: Icons.storefront_outlined,
@@ -1022,11 +1029,13 @@ class _MobileDrawer extends StatelessWidget {
                         title: 'Ponto de venda',
                         onTap: () => onSelected(_MainArea.conveniencePos),
                       ),
-                      _MobileMenuItem(
-                        icon: Icons.inventory_2_outlined,
-                        title: 'Produtos',
-                        onTap: () => onSelected(_MainArea.convenienceProducts),
-                      ),
+                      if (isPartnerOwner)
+                        _MobileMenuItem(
+                          icon: Icons.inventory_2_outlined,
+                          title: 'Produtos',
+                          onTap: () =>
+                              onSelected(_MainArea.convenienceProducts),
+                        ),
                     ],
                   ),
               ] else if (isGuide) ...[
@@ -1273,14 +1282,22 @@ class _ConvenienceEntryPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final parkings = ref.watch(partnerParkingProvider);
+    final partner = ref.watch(partnerProfileProvider).asData?.value;
     return Scaffold(
       appBar: AppBar(title: Text(pos ? 'Ponto de venda' : 'Produtos')),
       body: parkings.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Text('Não foi possível carregar as unidades: $error'),
-        ),
+        error: (error, _) =>
+            partner != null && !partner.hasFeature('convenience_management')
+            ? _lockedModule(context, partner)
+            : Center(
+                child: Text('Não foi possível carregar as unidades: $error'),
+              ),
         data: (items) {
+          if (partner != null &&
+              !partner.hasFeature('convenience_management')) {
+            return _lockedModule(context, partner);
+          }
           final active = items.where((item) => item.id != null).toList();
           if (active.isEmpty) {
             return const Center(
@@ -1326,6 +1343,57 @@ class _ConvenienceEntryPage extends ConsumerWidget {
             },
           );
         },
+      ),
+    );
+  }
+
+  Widget _lockedModule(BuildContext context, PartnerProfileModel partner) {
+    final details = partner.featureDetails('convenience_management') ?? {};
+    final price = (details['price'] as num?)?.toDouble() ?? 0;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Card(
+          margin: const EdgeInsets.all(20),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.storefront_outlined, size: 52),
+                const SizedBox(height: 12),
+                Text(
+                  'Módulo de conveniência',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Venda produtos, controle estoque e gere comprovantes operacionais no caixa.',
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  price > 0
+                      ? 'A partir de R\$ ${price.toStringAsFixed(2)} por mês'
+                      : 'Valor definido pela gestão do sistema.',
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PartnerFeatureAccessPage(
+                        partner: partner,
+                        featureKey: 'convenience_management',
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_card),
+                  label: const Text('Adicionar ao plano'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
