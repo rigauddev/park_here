@@ -165,3 +165,34 @@ Future<void> checkoutOperationalReservation({
     token,
   );
 }
+
+Future<Map<String, dynamic>> fetchCashSession({required String token}) async {
+  return ApiService().getAuthorizedMap('/partners/cash-session', token);
+}
+
+Future<Map<String, dynamic>> openPartnerCashSession({
+  required String token,
+  required String parkingId,
+  double parkingOpeningCash = 0,
+  double convenienceOpeningCash = 0,
+}) async {
+  return ApiService().postAuthorized('/partners/cash-session', {
+    'parking_id': parkingId,
+    'parking_opening_cash': parkingOpeningCash,
+    'convenience_opening_cash': convenienceOpeningCash,
+  }, token);
+}
+
+Future<Map<String, dynamic>> closePartnerCashSession({
+  required String token,
+  double parkingClosingCash = 0,
+  double convenienceClosingCash = 0,
+  String? closingNotes,
+}) async {
+  return ApiService().postAuthorized('/partners/cash-session/close', {
+    'parking_closing_cash': parkingClosingCash,
+    'convenience_closing_cash': convenienceClosingCash,
+    if (closingNotes != null && closingNotes.trim().isNotEmpty)
+      'closing_notes': closingNotes.trim(),
+  }, token);
+}
