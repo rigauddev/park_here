@@ -37,6 +37,7 @@ from app.modules.partners.permission_profile_models import PartnerPermissionProf
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.platform_fees.models import PartnerFeatureEntitlement, PartnerFeatureRequest
+from app.modules.platform_fees.models import AdminAuditLog
 from app.modules.platform_fees.feature_catalog import feature_by_key, features_for_service_type
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.partners.document_models import PartnerDocument
@@ -98,6 +99,14 @@ def _payment_terms(item: PartnerFeatureEntitlement | None) -> dict:
             'discounts': {str(k): float(v) for k, v in (value.get('discounts') or {}).items()},
         }
     return result
+
+
+def _partner_audit(db: AsyncSession, actor: User, action: str, target_type: str, target_id: str, before: dict | None, after: dict | None):
+    db.add(AdminAuditLog(
+        actor_id=actor.id, tenant_id=actor.tenant_id, action=action,
+        target_type=target_type, target_id=target_id,
+        details=json.dumps({'before': before, 'after': after}, ensure_ascii=False, default=str),
+    ))
 
 
 class PartnerOperatorCreateRequest(BaseModel):
@@ -1279,6 +1288,7 @@ async def list_permission_profiles(
     await _ensure_partner_feature(db, current_user, 'team_management')
     rows = (await db.scalars(select(PartnerPermissionProfile).where(
         PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+        PartnerPermissionProfile.scope == 'partner',
         PartnerPermissionProfile.is_active.is_(True),
     ).order_by(PartnerPermissionProfile.name))).all()
     builtins = [{
@@ -1306,6 +1316,7 @@ async def create_permission_profile(
         raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
     profile = PartnerPermissionProfile(
         tenant_id=current_user.tenant_id,
+        scope='partner',
         name=data.name.strip(),
         permissions=json.dumps(sorted(set(data.permissions))),
     )
@@ -1316,7 +1327,64 @@ async def create_permission_profile(
         await db.rollback()
         raise HTTPException(status_code=409, detail="Já existe um perfil com este nome")
     await db.refresh(profile)
+    _partner_audit(db, current_user, 'permission_profile.created', 'permission_profile', profile.id, None, _permission_profile_payload(profile))
+    await db.commit()
     return _permission_profile_payload(profile)
+
+
+@router.put("/permission-profiles/{profile_id}")
+async def update_permission_profile(
+    profile_id: str,
+    data: PermissionProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    profile = await db.scalar(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.id == profile_id,
+        PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+        PartnerPermissionProfile.scope == 'partner',
+    ))
+    if profile is None:
+        raise HTTPException(status_code=404, detail='Perfil não encontrado')
+    invalid = [item for item in data.permissions if item not in OPERATOR_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    before = _permission_profile_payload(profile)
+    profile.name = data.name.strip()
+    profile.permissions = json.dumps(sorted(set(data.permissions)))
+    for user in (await db.scalars(select(User).where(User.permission_profile_id == profile.id))).all():
+        user.permissions = profile.permissions
+    _partner_audit(db, current_user, 'permission_profile.updated', 'permission_profile', profile.id, before, _permission_profile_payload(profile))
+    await db.commit()
+    await db.refresh(profile)
+    return {'before': before, 'after': _permission_profile_payload(profile)}
+
+
+@router.delete("/permission-profiles/{profile_id}")
+async def delete_permission_profile(
+    profile_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    profile = await db.scalar(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.id == profile_id,
+        PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+        PartnerPermissionProfile.scope == 'partner',
+    ))
+    if profile is None:
+        raise HTTPException(status_code=404, detail='Perfil não encontrado')
+    before = _permission_profile_payload(profile)
+    profile.is_active = False
+    profile.deleted_at = datetime.utcnow()
+    for user in (await db.scalars(select(User).where(User.permission_profile_id == profile.id))).all():
+        user.permission_profile_id = None
+        user.permissions = json.dumps(DEFAULT_OPERATOR_PERMISSIONS)
+    _partner_audit(db, current_user, 'permission_profile.deleted', 'permission_profile', profile.id, before, None)
+    await db.commit()
+    return {'deleted': True, 'before': before}
 
 
 @router.put("/operators/{operator_id}/permission-profile")
@@ -1340,6 +1408,7 @@ async def assign_operator_permission_profile(
         profile = await db.scalar(select(PartnerPermissionProfile).where(
             PartnerPermissionProfile.id == profile_id,
             PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+            PartnerPermissionProfile.scope == 'partner',
             PartnerPermissionProfile.is_active.is_(True),
         ))
         if profile is None:
@@ -1354,6 +1423,9 @@ async def assign_operator_permission_profile(
     if invalid:
         raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
     operator.permissions = json.dumps(sorted(set(permissions)))
+    _partner_audit(db, current_user, 'operator.permission_profile.assigned', 'user', operator.id, None, {
+        'profile_id': operator.permission_profile_id, 'permissions': sorted(set(permissions)),
+    })
     await db.commit()
     return _operator_response(operator)
 
@@ -2134,6 +2206,7 @@ def _permission_profile_payload(profile: PartnerPermissionProfile) -> dict:
     return {
         "id": profile.id,
         "name": profile.name,
+        "scope": profile.scope,
         "permissions": permissions if isinstance(permissions, list) else [],
         "is_active": bool(profile.is_active),
     }
