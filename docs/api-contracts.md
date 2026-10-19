@@ -1013,3 +1013,13 @@ do Mercado Pago e só então atualiza a transação e a reserva. Em produção,
 configure `MERCADO_PAGO_WEBHOOK_SECRET` e o proxy para encaminhar o segredo no
 header `X-Webhook-Secret`. OAuth do parceiro e split Marketplace ficam para a
 segunda etapa; até lá o snapshot de split permanece no banco para conciliação.
+
+### Checkout operacional
+
+Quando a reserva foi criada pela equipe do estacionamento (`is_manual_arrival=true`),
+o operador usa o checkout normal: envia a foto de saída em
+`POST /reservations/{id}/photos?kind=spot_exit` e conclui em
+`POST /reservations/{id}/checkout`. Para reservas criadas pelo cliente, a tela
+oferece duas ações: checkout normal, com foto e validação de pagamento, ou
+`POST /reservations/{id}/operator-checkout`, com foto da vaga liberada e motivo
+registrando que o cliente não realizou o checkout.
