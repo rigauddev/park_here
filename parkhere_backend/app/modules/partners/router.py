@@ -1811,7 +1811,16 @@ async def list_managed_parkings(
 ):
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'parking_management')
-    return await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
+    parkings = await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
+    # Operators need the unit list to open their cash before operational
+    # routes are unlocked. Keep the list read-only and restricted to their
+    # assignments; map/reservation/POS endpoints still require an open cash.
+    if current_user.role == UserRoleEnum.OPERATOR:
+        assigned_ids = set((await db.scalars(select(OperatorParkingAssignment.parking_id).where(
+            OperatorParkingAssignment.operator_id == current_user.id,
+        ))).all())
+        parkings = [parking for parking in parkings if parking.id in assigned_ids]
+    return parkings
 
 
 @router.post(
