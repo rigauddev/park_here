@@ -1048,3 +1048,18 @@ não há sessão).
 opcionalmente `closing_notes`. O retorno inclui os valores de abertura e
 fechamento e os horários da sessão. A sessão é vinculada ao operador e à
 unidade do turno, permitindo auditoria e fechamento independente dos caixas.
+
+### Perfis e regras de acesso
+
+Gestores de parceiros podem consultar e criar perfis em
+`/partners/permission-profiles`. Cada perfil contém permissões granulares de
+visualização, criação, edição, cancelamento, checkout, pagamentos e
+conveniência. `PUT /partners/operators/{id}/permission-profile` associa um
+perfil ao operador e grava uma cópia das permissões para auditoria. Os perfis
+`Operador` e `Gestor` são fornecidos como padrões; perfis personalizados podem
+ser criados pelo gestor.
+
+Administradores do sistema podem criar usuários administrativos em
+`POST /admin/platform-fees/system-users`. O usuário recebe o papel
+`system_admin_operator`, começa inativo e não pode autenticar até ser ativado
+por outro administrador. O e-mail é obrigatório e será a identidade do MFA.

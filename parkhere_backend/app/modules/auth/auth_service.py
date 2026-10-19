@@ -271,9 +271,7 @@ class AuthService:
         if account_type == "customer" and user.role != UserRoleEnum.CUSTOMER:
             return None
 
-        if account_type == "partner" and user.role in {
-            UserRoleEnum.CUSTOMER,
-        }:
+        if account_type == "partner" and user.role == UserRoleEnum.CUSTOMER:
             return None
 
         # A partner account is created in a pending state. It must not reach

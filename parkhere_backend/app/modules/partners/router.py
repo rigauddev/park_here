@@ -33,6 +33,7 @@ from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.partners.cash_session_models import PartnerCashSession
+from app.modules.partners.permission_profile_models import PartnerPermissionProfile
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.platform_fees.models import PartnerFeatureEntitlement, PartnerFeatureRequest
@@ -63,6 +64,12 @@ OPERATOR_PERMISSION_LABELS = {
     "checkin.own": "Realizar check-in de reservas criadas pelo operador",
     "checkout.own": "Realizar checkout de reservas criadas pelo operador",
     "payments.receive": "Receber pagamento no local",
+    "reservations.edit": "Editar reservas",
+    "reservations.delete": "Excluir/cancelar reservas",
+    "parking_map.edit": "Editar disponibilidade das vagas",
+    "convenience.view": "Visualizar conveniência",
+    "convenience.edit": "Cadastrar e editar produtos",
+    "convenience.delete": "Excluir produtos",
 }
 DEFAULT_OPERATOR_PERMISSIONS = list(OPERATOR_PERMISSION_LABELS.keys())
 OWNER_PERMISSIONS = [
@@ -119,6 +126,14 @@ class OperatorPackageRequestCreate(BaseModel):
 
 class OperatorParkingAssignmentRequest(BaseModel):
     parking_ids: list[str]
+
+class PermissionProfileRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    permissions: list[str] = Field(default_factory=list)
+
+class OperatorPermissionProfileRequest(BaseModel):
+    profile_id: str | None = None
+    permissions: list[str] | None = None
 
 class OperatorShiftRequest(BaseModel):
     operator_id: str | None = None
@@ -1098,6 +1113,7 @@ async def get_partner_parking_map(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    _require_operator_permission(current_user, 'parking_map.view')
     await _ensure_partner_feature(db, current_user, 'parking_operations')
     owned_query = select(Parking).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
@@ -1185,6 +1201,7 @@ async def list_partner_reservations(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    _require_operator_permission(current_user, 'reservations.view')
     await _ensure_any_partner_feature(
         db, current_user,
         ('parking_operations', 'cash_management_basic', 'dashboard', 'financial_management'),
@@ -1251,6 +1268,94 @@ async def get_partner_financial_report(
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'financial_management')
     return await list_partner_reservations(db, current_user)
+
+
+@router.get("/permission-profiles")
+async def list_permission_profiles(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    rows = (await db.scalars(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+        PartnerPermissionProfile.is_active.is_(True),
+    ).order_by(PartnerPermissionProfile.name))).all()
+    builtins = [{
+        'id': None, 'name': 'Operador',
+        'permissions': DEFAULT_OPERATOR_PERMISSIONS,
+        'is_active': True,
+    }, {
+        'id': None, 'name': 'Gestor',
+        'permissions': OWNER_PERMISSIONS,
+        'is_active': True,
+    }]
+    return builtins + [_permission_profile_payload(row) for row in rows]
+
+
+@router.post("/permission-profiles", status_code=201)
+async def create_permission_profile(
+    data: PermissionProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    invalid = [item for item in data.permissions if item not in OPERATOR_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    profile = PartnerPermissionProfile(
+        tenant_id=current_user.tenant_id,
+        name=data.name.strip(),
+        permissions=json.dumps(sorted(set(data.permissions))),
+    )
+    db.add(profile)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe um perfil com este nome")
+    await db.refresh(profile)
+    return _permission_profile_payload(profile)
+
+
+@router.put("/operators/{operator_id}/permission-profile")
+async def assign_operator_permission_profile(
+    operator_id: str,
+    data: OperatorPermissionProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    operator = await db.scalar(select(User).where(
+        User.id == operator_id, User.tenant_id == current_user.tenant_id,
+        User.role == UserRoleEnum.OPERATOR, User.deleted_at.is_(None),
+    ))
+    if operator is None:
+        raise HTTPException(status_code=404, detail="Operador não encontrado")
+    permissions = data.permissions
+    profile_id = data.profile_id
+    if profile_id:
+        profile = await db.scalar(select(PartnerPermissionProfile).where(
+            PartnerPermissionProfile.id == profile_id,
+            PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+            PartnerPermissionProfile.is_active.is_(True),
+        ))
+        if profile is None:
+            raise HTTPException(status_code=404, detail="Perfil de permissões não encontrado")
+        permissions = json.loads(profile.permissions or "[]")
+        operator.permission_profile_id = profile.id
+    else:
+        operator.permission_profile_id = None
+    if permissions is None:
+        raise HTTPException(status_code=422, detail="Informe um perfil ou permissões")
+    invalid = [item for item in permissions if item not in OPERATOR_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    operator.permissions = json.dumps(sorted(set(permissions)))
+    await db.commit()
+    return _operator_response(operator)
 
 
 @router.get("/operators", response_model=list[PartnerOperatorResponse])
@@ -2021,6 +2126,19 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
     )
 
 
+def _permission_profile_payload(profile: PartnerPermissionProfile) -> dict:
+    try:
+        permissions = json.loads(profile.permissions or "[]")
+    except json.JSONDecodeError:
+        permissions = []
+    return {
+        "id": profile.id,
+        "name": profile.name,
+        "permissions": permissions if isinstance(permissions, list) else [],
+        "is_active": bool(profile.is_active),
+    }
+
+
 def _schedule_local(value: datetime) -> datetime:
     """Schedule times are wall-clock times in Brazil; DB stores them as naive local values."""
     if value.tzinfo is None:
@@ -2082,24 +2200,36 @@ def _user_permissions(user: User) -> list[str]:
     }:
         return OWNER_PERMISSIONS
 
+    if user.role == UserRoleEnum.SYSTEM_ADMIN_OPERATOR:
+        return _operator_permissions(user)
+
     if user.role == UserRoleEnum.OPERATOR:
-        if user.permissions:
-            try:
-                values = json.loads(user.permissions)
-            except json.JSONDecodeError:
-                return DEFAULT_OPERATOR_PERMISSIONS
-
-            if isinstance(values, list):
-                return [
-                    permission
-                    for permission in values
-                    if isinstance(permission, str)
-                    and permission in OPERATOR_PERMISSION_LABELS
-                ]
-
-        return DEFAULT_OPERATOR_PERMISSIONS
+        return _operator_permissions(user)
 
     return []
+
+
+def _operator_permissions(user: User) -> list[str]:
+    if user.permissions:
+        try:
+            values = json.loads(user.permissions)
+        except json.JSONDecodeError:
+            values = DEFAULT_OPERATOR_PERMISSIONS
+        if isinstance(values, list):
+            return [item for item in values if isinstance(item, str) and item in OPERATOR_PERMISSION_LABELS]
+    return DEFAULT_OPERATOR_PERMISSIONS
+
+
+def _require_operator_permission(user: User, permission: str) -> None:
+    """Apply granular rules to operators while preserving manager access."""
+    if user.role != UserRoleEnum.OPERATOR:
+        return
+    if permission not in _user_permissions(user):
+        raise HTTPException(status_code=403, detail={
+            'code': 'permission_denied',
+            'permission': permission,
+            'message': 'Seu perfil não possui esta permissão.',
+        })
 
 
 def _is_valid_email(value: str) -> bool:

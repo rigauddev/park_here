@@ -29,6 +29,7 @@ from app.modules.partners.models import PartnerProfile
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.partners.guide_service_models import GuideService
 from app.core.email_service import EmailService
+from app.core.security import hash_password
 
 router = APIRouter(prefix='/admin/platform-fees', tags=['Platform fees'])
 
@@ -46,6 +47,13 @@ class PlatformFeeRequest(BaseModel):
 class UserActiveRequest(BaseModel):
     is_active: bool
     reason: str | None = Field(default=None, min_length=5, max_length=1000)
+
+class SystemAdminUserCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    email: str = Field(min_length=5, max_length=255)
+    cpf: str | None = None
+    role: str = 'system_admin_operator'
+    permissions: list[str] = Field(default_factory=list)
 
 
 class OperatorCapacityRequest(BaseModel):
@@ -87,6 +95,47 @@ class PartnerApprovalRequest(BaseModel):
 def _ensure_admin(user: User) -> None:
     if user.role != UserRoleEnum.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail='System administrator required')
+
+
+@router.get('/system-users')
+async def list_system_users(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    users = (await db.scalars(select(User).where(User.role.in_([
+        UserRoleEnum.SUPER_ADMIN, UserRoleEnum.SYSTEM_ADMIN_OPERATOR,
+    ])).order_by(User.created_at.desc()))).all()
+    return [{
+        'id': user.id, 'name': user.name, 'email': user.email,
+        'role': user.role.value, 'permissions': json.loads(user.permissions or '[]'),
+        'is_active': user.is_active, 'email_verified': user.email_verified,
+    } for user in users]
+
+
+@router.post('/system-users', status_code=201)
+async def create_system_user(
+    data: SystemAdminUserCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    email = data.email.strip().lower()
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        raise HTTPException(status_code=422, detail='Informe um e-mail válido para o MFA')
+    if data.role != UserRoleEnum.SYSTEM_ADMIN_OPERATOR.value:
+        raise HTTPException(status_code=422, detail='Perfil administrativo inválido')
+    if await db.scalar(select(User.id).where(User.email == email)):
+        raise HTTPException(status_code=409, detail='E-mail já cadastrado')
+    user = User(
+        name=data.name.strip(), firt_name=data.name.strip().split()[0],
+        email=email, password_hash=hash_password('Pending-Admin-Change-123!'),
+        role=UserRoleEnum.SYSTEM_ADMIN_OPERATOR, permissions=json.dumps(data.permissions),
+        is_active=False, email_verified=False,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    _audit(db, current_user, 'system_user_created', 'user', user.id, None, {'role': user.role.value})
+    await db.commit()
+    return {'id': user.id, 'name': user.name, 'email': user.email, 'role': user.role.value, 'is_active': False, 'email_verified': False}
 
 
 def _normalise_payment_terms(value: dict | None) -> dict:

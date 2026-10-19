@@ -32,6 +32,7 @@ class User(BaseModel):
 
     commission_percentage = Column(Float, nullable=True)
     permissions = Column(Text, nullable=True)
+    permission_profile_id = Column(String(36), ForeignKey("partner_permission_profiles.id"), nullable=True)
 
     is_active = Column(Boolean, default=True)
     deactivation_reason = Column(Text, nullable=True)

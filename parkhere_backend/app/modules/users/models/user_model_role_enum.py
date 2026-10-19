@@ -8,6 +8,7 @@ class UserRoleEnum(str, Enum):
     OPERATOR = "operator"
     TOUR_GUIDE = "tour_guide"
     SUPER_ADMIN = "super_admin"
+    SYSTEM_ADMIN_OPERATOR = "system_admin_operator"
 
 
 class CommissionType(str, Enum):
