@@ -1023,3 +1023,28 @@ o operador usa o checkout normal: envia a foto de saída em
 oferece duas ações: checkout normal, com foto e validação de pagamento, ou
 `POST /reservations/{id}/operator-checkout`, com foto da vaga liberada e motivo
 registrando que o cliente não realizou o checkout.
+### Caixa do turno do operador
+
+Os caixas de estacionamento e de conveniência usam a mesma sessão de turno,
+mas mantêm saldos separados. O operador deve abrir a sessão antes de acessar
+mapa de vagas, reservas ou ponto de venda. Ao fechar, as rotas operacionais
+retornam `403` até a abertura de uma nova sessão; escala, perfil, ajuda e conta
+de repasse continuam disponíveis.
+
+`GET /partners/cash-session` retorna a sessão aberta (`{"open": false}` quando
+não há sessão).
+
+`POST /partners/cash-session` recebe:
+
+```json
+{
+  "parking_id": "uuid",
+  "parking_opening_cash": 100.0,
+  "convenience_opening_cash": 50.0
+}
+```
+
+`POST /partners/cash-session/close` recebe os valores finais dos dois caixas e
+opcionalmente `closing_notes`. O retorno inclui os valores de abertura e
+fechamento e os horários da sessão. A sessão é vinculada ao operador e à
+unidade do turno, permitindo auditoria e fechamento independente dos caixas.

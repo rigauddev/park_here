@@ -32,6 +32,8 @@ import '../../features/partner_management/providers/partner_parking_provider.dar
 import '../../features/partner_management/providers/partner_profile_provider.dart';
 import '../../features/partner_management/models/partner_profile_model.dart';
 import '../../features/partner_management/pages/partner_feature_access_page.dart';
+import '../../features/partner_management/widgets/cash_session_dialog.dart';
+import '../../features/partner_management/providers/partner_operations_provider.dart';
 
 enum _MainArea {
   menu,
@@ -65,6 +67,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   bool _menuExpanded = true;
   DateTime? _lastBackPress;
   bool _operatorHasShiftToday = false;
+  bool _cashPromptShown = false;
 
   Future<bool> _handleBack() async {
     final now = DateTime.now();
@@ -112,6 +115,10 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           _selectedArea = _MainArea.shifts;
         }
       });
+      if (hasShiftToday && !_cashPromptShown) {
+        _cashPromptShown = true;
+        await _promptCashIfNeeded(shifts);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -120,6 +127,57 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           _selectedArea = _MainArea.shifts;
         }
       });
+    }
+  }
+
+  Future<List<Map<String, String>>> _cashParkingOptions(
+    List<Map<String, dynamic>> shifts,
+  ) async {
+    final ids = <String>{
+      for (final shift in shifts)
+        if (shift['parking_id'] is String) shift['parking_id'] as String,
+    };
+    final parkings = await ref.read(partnerParkingProvider.future);
+    return [
+      for (final parking in parkings)
+        if (parking.id != null && ids.contains(parking.id))
+          {'id': parking.id!, 'name': parking.name},
+    ];
+  }
+
+  Future<void> _promptCashIfNeeded(List<Map<String, dynamic>> shifts) async {
+    if (!mounted) return;
+    try {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) return;
+      final session = await fetchCashSession(token: token);
+      if (session['open'] == true || !mounted) return;
+      final options = await _cashParkingOptions(shifts);
+      if (!mounted || options.isEmpty) return;
+      await showCashSessionDialog(context, ref, parkingOptions: options, open: true);
+      if (mounted) setState(() {});
+    } catch (_) {
+      // A transient prompt error must not prevent access to the schedule page.
+    }
+  }
+
+  Future<void> _toggleCashSession() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      final session = await fetchCashSession(token: token);
+      if (!mounted) return;
+      if (session['open'] == true) {
+        await showCashSessionDialog(context, ref, parkingOptions: const [], open: false);
+      } else {
+        final shifts = await ref.read(partnerOperatorsProvider.notifier).fetchShifts();
+        final options = await _cashParkingOptions(shifts);
+        if (mounted) await showCashSessionDialog(context, ref, parkingOptions: options, open: true);
+      }
+      if (mounted) await _loadOperatorShiftAccess();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
     }
   }
 
@@ -169,6 +227,12 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       automaticallyImplyLeading: false,
       actions: isOperator
           ? [
+              if (_operatorHasShiftToday)
+                IconButton(
+                  tooltip: 'Abrir ou fechar caixas',
+                  onPressed: _toggleCashSession,
+                  icon: const Icon(Icons.point_of_sale_outlined),
+                ),
               IconButton(
                 tooltip: 'Atualizar acesso do turno',
                 onPressed: _loadOperatorShiftAccess,

@@ -144,8 +144,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         "code": code,
       });
 
-      final accessToken = response["access_token"] as String;
-      final refreshToken = response["refresh_token"] as String;
+      final accessToken = response["access_token"]?.toString();
+      final refreshToken = response["refresh_token"]?.toString();
+      if (accessToken == null || refreshToken == null) {
+        throw Exception("Resposta de autenticação incompleta");
+      }
       final tokenClaims = _decodeAccessClaims(accessToken);
       final role = response["role"] as String? ?? tokenClaims["role"];
       final tenantId =
@@ -156,14 +159,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           ? AuthAccountType.partner
           : AuthAccountType.customer;
 
-      await _storage.saveTokens(
-        accessToken,
-        refreshToken,
-        accountType: accountTypeName,
-        userEmail: state.userEmail,
-        role: role,
-        tenantId: tenantId,
-      );
       state = state.copyWith(
         status: AuthStatus.authenticated,
         accessToken: accessToken,
@@ -173,6 +168,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tenantId: tenantId,
         clearMfaToken: true,
       );
+      // Persistência é uma melhoria para a próxima abertura, mas não pode
+      // desfazer uma autenticação concluída (isso fazia o app voltar ao login
+      // no web/mobile quando o storage demorava ou falhava).
+      try {
+        await _storage.saveTokens(
+          accessToken,
+          refreshToken,
+          accountType: accountTypeName,
+          userEmail: state.userEmail,
+          role: role,
+          tenantId: tenantId,
+        );
+      } catch (_) {
+        // A sessão em memória permanece autenticada.
+      }
     } on ApiConnectionException {
       state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Não foi possível conectar com a API");

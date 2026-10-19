@@ -32,6 +32,7 @@ from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
+from app.modules.partners.cash_session_models import PartnerCashSession
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.platform_fees.models import PartnerFeatureEntitlement, PartnerFeatureRequest
@@ -138,6 +139,16 @@ class OperatorWorkProfileRequest(BaseModel):
     days_off: list[int] = []
     work_modality: str = "8h"
     bank_hours: float = 0
+
+class CashSessionOpenRequest(BaseModel):
+    parking_id: str
+    parking_opening_cash: float = Field(default=0, ge=0)
+    convenience_opening_cash: float = Field(default=0, ge=0)
+
+class CashSessionCloseRequest(BaseModel):
+    parking_closing_cash: float = Field(default=0, ge=0)
+    convenience_closing_cash: float = Field(default=0, ge=0)
+    closing_notes: str | None = None
 
 class ShiftSuggestionRequest(BaseModel):
     parking_id: str
@@ -1470,9 +1481,98 @@ async def assign_operator_parkings(operator_id: str, data: OperatorParkingAssign
     saved = (await db.scalars(select(OperatorParkingAssignment.parking_id).where(OperatorParkingAssignment.operator_id == operator_id))).all()
     return {"operator_id": operator_id, "parking_ids": saved}
 
+@router.get("/cash-session")
+async def current_cash_session(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail="Somente operadores possuem caixa de turno")
+    session = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).order_by(PartnerCashSession.opened_at.desc()))
+    if session is None:
+        return {"open": False}
+    return _cash_session_payload(session)
+
+
+@router.post("/cash-session", status_code=201)
+async def open_cash_session(
+    data: CashSessionOpenRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail="Somente operadores podem abrir o caixa")
+    parking = await db.scalar(select(Parking).where(
+        Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id,
+    ))
+    if parking is None:
+        raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
+    await _ensure_operator_on_parking_shift(db, current_user.id, parking.id)
+    existing = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).with_for_update())
+    if existing:
+        raise HTTPException(status_code=409, detail="Já existe um caixa aberto para este operador")
+    session = PartnerCashSession(
+        operator_id=current_user.id, parking_id=parking.id,
+        opened_at=datetime.utcnow(), status="open",
+        parking_opening_cash=data.parking_opening_cash,
+        convenience_opening_cash=data.convenience_opening_cash,
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return _cash_session_payload(session)
+
+
+@router.post("/cash-session/close")
+async def close_cash_session(
+    data: CashSessionCloseRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail="Somente operadores podem fechar o caixa")
+    session = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).with_for_update())
+    if session is None:
+        raise HTTPException(status_code=409, detail="Não existe caixa aberto para este operador")
+    session.status = "closed"
+    session.closed_at = datetime.utcnow()
+    session.parking_closing_cash = data.parking_closing_cash
+    session.convenience_closing_cash = data.convenience_closing_cash
+    session.closing_notes = data.closing_notes
+    await db.commit()
+    await db.refresh(session)
+    return _cash_session_payload(session)
+
+
+def _cash_session_payload(session: PartnerCashSession) -> dict:
+    return {
+        "id": session.id, "operator_id": session.operator_id,
+        "parking_id": session.parking_id, "status": session.status,
+        "opened_at": session.opened_at.isoformat(),
+        "closed_at": session.closed_at.isoformat() if session.closed_at else None,
+        "parking_opening_cash": session.parking_opening_cash,
+        "convenience_opening_cash": session.convenience_opening_cash,
+        "parking_closing_cash": session.parking_closing_cash,
+        "convenience_closing_cash": session.convenience_closing_cash,
+        "closing_notes": session.closing_notes,
+    }
+
+
 @router.get("/shifts")
 async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    await _ensure_parking_staff(db, current_user)
+    # A closed shift must still be visible so the operator can consult the
+    # schedule and open the next cash session. Operational endpoints enforce
+    # the cash-session requirement separately.
+    await _ensure_parking_profile(db, current_user)
     if current_user.role != UserRoleEnum.OPERATOR:
         await _ensure_partner_feature(db, current_user, 'team_management')
     query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id, User.deleted_at.is_(None))
@@ -2028,6 +2128,13 @@ async def _ensure_parking_staff(db: AsyncSession, user: User):
         raise HTTPException(status_code=403, detail="Tenant required")
 
     await _ensure_parking_profile(db, user)
+    if user.role == UserRoleEnum.OPERATOR:
+        open_cash = await db.scalar(select(PartnerCashSession.id).where(
+            PartnerCashSession.operator_id == user.id,
+            PartnerCashSession.status == "open",
+        ).limit(1))
+        if open_cash is None:
+            raise HTTPException(status_code=403, detail="Abra o caixa do turno para acessar a operação")
 
 
 async def _ensure_parking_profile(db: AsyncSession, user: User):
