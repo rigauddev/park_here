@@ -1,4 +1,7 @@
 import os
+import json
+import logging
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.modules.auth.router import router as auth_router
@@ -17,6 +20,27 @@ app = FastAPI(
     title="ParkHere SaaS API",
     version="1.0.0"
 )
+
+logger = logging.getLogger("parkhere.api")
+
+
+@app.middleware("http")
+async def structured_request_log(request, call_next):
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("api_request_failed", extra={"path": request.url.path, "method": request.method})
+        raise
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+    logger.info(json.dumps({
+        "event": "api_request",
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "duration_ms": elapsed_ms,
+    }, ensure_ascii=False))
+    return response
 
 app.add_middleware(
     CORSMiddleware,

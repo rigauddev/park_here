@@ -137,3 +137,18 @@ próprios. Isso evita misturar recebimentos de reservas com vendas de produtos e
 permite que cada operador feche somente o caixa do turno em que trabalha. O
 Financeiro e o dashboard consolidam os dois por origem (`parking` e
 `convenience`) e também oferecem filtros por unidade, período e origem.
+
+### Perfis, auditoria e observabilidade
+
+As roles continuam identificando o escopo de autenticação (`customer`, parceiro
+ou administrador), mas as permissões operacionais vêm do perfil associado ao
+usuário. Os perfis de parceiro e de gestão do app podem ser personalizados;
+alterações são soft delete e não removem o histórico. Ações administrativas e
+de perfil registram ator, alvo, estado anterior e estado posterior em
+`admin_audit_logs`.
+
+A API emite uma linha JSON por requisição com método, rota, status e duração.
+Em homologação local isso aparece no Docker; na VPS, o CloudWatch Agent pode
+coletar stdout/stderr do container e enviar para CloudWatch Logs. O MVP não
+embute credenciais AWS: a instância deve usar uma IAM Role com permissão mínima
+`logs:CreateLogStream`, `logs:PutLogEvents` e `logs:DescribeLogStreams`.

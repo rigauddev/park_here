@@ -26,6 +26,7 @@ from app.modules.parkings.models import Parking, ParkingService
 from app.modules.users.models.user_model import User
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.permission_profile_models import PartnerPermissionProfile
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.partners.guide_service_models import GuideService
 from app.core.email_service import EmailService
@@ -54,6 +55,22 @@ class SystemAdminUserCreateRequest(BaseModel):
     cpf: str | None = None
     role: str = 'system_admin_operator'
     permissions: list[str] = Field(default_factory=list)
+
+class SystemPermissionProfileRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    permissions: list[str] = Field(default_factory=list)
+
+SYSTEM_PERMISSION_LABELS = {
+    'partners.view': 'Visualizar parceiros',
+    'partners.edit': 'Editar parceiros',
+    'partners.delete': 'Desativar parceiros',
+    'customers.view': 'Visualizar clientes',
+    'customers.edit': 'Editar clientes',
+    'reports.view': 'Visualizar relatórios',
+    'support.manage': 'Atender suporte',
+    'fees.manage': 'Gerenciar taxas e planos',
+    'features.manage': 'Gerenciar funcionalidades',
+}
 
 
 class OperatorCapacityRequest(BaseModel):
@@ -95,6 +112,37 @@ class PartnerApprovalRequest(BaseModel):
 def _ensure_admin(user: User) -> None:
     if user.role != UserRoleEnum.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail='System administrator required')
+
+
+@router.get('/permission-profiles')
+async def list_system_permission_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    rows = (await db.scalars(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.scope == 'system',
+        PartnerPermissionProfile.is_active.is_(True),
+    ).order_by(PartnerPermissionProfile.name))).all()
+    return [{
+        'id': row.id, 'name': row.name, 'scope': row.scope,
+        'permissions': json.loads(row.permissions or '[]'), 'is_active': row.is_active,
+    } for row in rows]
+
+
+@router.post('/permission-profiles', status_code=201)
+async def create_system_permission_profile(data: SystemPermissionProfileRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    invalid = [item for item in data.permissions if item not in SYSTEM_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    row = PartnerPermissionProfile(
+        tenant_id=None, scope='system', name=data.name.strip(),
+        permissions=json.dumps(sorted(set(data.permissions))),
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    _audit(db, current_user, 'system.permission_profile.created', 'permission_profile', row.id, None, {'after': {'name': row.name, 'permissions': data.permissions}})
+    await db.commit()
+    return {'id': row.id, 'name': row.name, 'scope': row.scope, 'permissions': data.permissions, 'is_active': True}
 
 
 @router.get('/system-users')
