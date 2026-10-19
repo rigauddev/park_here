@@ -901,25 +901,63 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
                         style: TextStyle(color: Colors.red),
                       ),
                     ),
-                  FilledButton.icon(
-                    onPressed: canCheckout
-                        ? () {
-                            Navigator.pop(context);
-                            showDialog<void>(
-                              context: context,
-                              builder: (_) => _CheckoutPhotosDialog(
-                                reservationId: reservation.id,
-                                onCompleted: () {
-                                  ref.invalidate(partnerParkingMapProvider);
-                                  ref.invalidate(partnerReservationsProvider);
-                                },
-                              ),
-                            );
-                          }
-                        : null,
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Checkout'),
-                  ),
+                  if (canCheckout && reservation.isManualArrival)
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => _CheckoutPhotosDialog(
+                            reservationId: reservation.id,
+                            customerForgot: false,
+                            onCompleted: () {
+                              ref.invalidate(partnerParkingMapProvider);
+                              ref.invalidate(partnerReservationsProvider);
+                            },
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Registrar checkout'),
+                    ),
+                  if (canCheckout && !reservation.isManualArrival) ...[
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => _CheckoutPhotosDialog(
+                            reservationId: reservation.id,
+                            customerForgot: false,
+                            onCompleted: () {
+                              ref.invalidate(partnerParkingMapProvider);
+                              ref.invalidate(partnerReservationsProvider);
+                            },
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Registrar checkout'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => _CheckoutPhotosDialog(
+                            reservationId: reservation.id,
+                            customerForgot: true,
+                            onCompleted: () {
+                              ref.invalidate(partnerParkingMapProvider);
+                              ref.invalidate(partnerReservationsProvider);
+                            },
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.person_off_outlined),
+                      label: const Text('Registrar checkout do cliente'),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2170,10 +2208,12 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
 
 class _CheckoutPhotosDialog extends ConsumerStatefulWidget {
   final String reservationId;
+  final bool customerForgot;
   final VoidCallback onCompleted;
 
   const _CheckoutPhotosDialog({
     required this.reservationId,
+    required this.customerForgot,
     required this.onCompleted,
   });
 
@@ -2205,7 +2245,11 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
             defaultTargetPlatform == TargetPlatform.iOS);
 
     return AlertDialog(
-      title: const Text('Checkout com fotos'),
+      title: Text(
+        widget.customerForgot
+            ? 'Checkout do cliente sem registro'
+            : 'Checkout normal com fotos',
+      ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: SingleChildScrollView(
@@ -2213,8 +2257,10 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Registre uma foto da vaga liberada e informe o motivo da saída sem checkout.',
+              Text(
+                widget.customerForgot
+                    ? 'O cliente esqueceu de registrar o checkout. Fotografe a vaga liberada e registre o motivo.'
+                    : 'Registre as fotos da saída do veículo para concluir o checkout normal.',
                 style: TextStyle(color: AppTheme.textMuted),
               ),
               const SizedBox(height: 14),
@@ -2280,13 +2326,28 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
 
     setState(() => isSubmitting = true);
     try {
-      await ApiService().postAuthorizedMultipart(
-        '/reservations/${widget.reservationId}/operator-checkout',
-        token,
-        fields: {'reason': reasonController.text.trim()},
-        fileName: spotPhoto!.name,
-        bytes: await spotPhoto!.readAsBytes(),
-      );
+      final bytes = await spotPhoto!.readAsBytes();
+      if (widget.customerForgot) {
+        await ApiService().postAuthorizedMultipart(
+          '/reservations/${widget.reservationId}/operator-checkout',
+          token,
+          fields: {'reason': reasonController.text.trim()},
+          fileName: spotPhoto!.name,
+          bytes: bytes,
+        );
+      } else {
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/${widget.reservationId}/photos?kind=spot_exit',
+          token,
+          spotPhoto!.name,
+          bytes,
+        );
+        await ApiService().postAuthorized(
+          '/reservations/${widget.reservationId}/checkout',
+          {},
+          token,
+        );
+      }
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
