@@ -10,6 +10,8 @@ from app.core.dependencies import get_current_user
 from app.modules.payments.schemas import (
     CreatePaymentIntentRequest,
     PaymentIntentResponse,
+    TransparentOrderRequest,
+    TransparentOrderResponse,
 )
 from app.modules.payments.service import PaymentService
 from app.modules.users.models.user_model import User
@@ -36,11 +38,27 @@ async def mercado_pago_webhook(
     payment_id = str((payload.get("data") or {}).get("id") or payload.get("id") or "")
     if not payment_id:
         return {"received": True, "processed": False}
+    client = MercadoPagoClient()
     try:
-        provider_payment = await MercadoPagoClient().get_payment(payment_id)
-    except MercadoPagoError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    external_reference = provider_payment.get("external_reference")
+        provider_payment = await client.get_payment(payment_id)
+    except MercadoPagoError:
+        # Checkout Transparente Orders webhooks identify the order, while the
+        # legacy preference flow identifies a payment. Reconcile both shapes.
+        try:
+            provider_payment = await client.get_order(payment_id)
+        except MercadoPagoError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    order_transactions = provider_payment.get("transactions") or []
+    nested_payments = [
+        payment
+        for transaction in order_transactions
+        for payment in (transaction.get("payments") or [])
+    ]
+    payment_snapshot = nested_payments[0] if nested_payments else provider_payment
+    external_reference = (
+        payment_snapshot.get("external_reference")
+        or provider_payment.get("external_reference")
+    )
     transaction = await db.scalar(select(PaymentTransaction).where(
         PaymentTransaction.provider == "mercado_pago",
         PaymentTransaction.provider_payment_id == payment_id,
@@ -52,7 +70,13 @@ async def mercado_pago_webhook(
     if transaction is None:
         return {"received": True, "processed": False}
     transaction.provider_payment_id = payment_id
-    status = provider_payment.get("status")
+    status = payment_snapshot.get("status") or provider_payment.get("status")
+    provider_payment_id = str(payment_snapshot.get("id") or payment_id)
+    if transaction is None and provider_payment_id != payment_id:
+        transaction = await db.scalar(select(PaymentTransaction).where(
+            PaymentTransaction.provider == "mercado_pago",
+            PaymentTransaction.provider_payment_id == provider_payment_id,
+        ))
     if status in {"approved", "accredited"} and transaction.status != "paid":
         transaction.status = "paid"
         reservation = await db.scalar(select(Reservation).where(Reservation.id == transaction.reservation_id))
@@ -92,6 +116,21 @@ async def create_reservation_payment_intent(
         reservation_id,
         data,
         current_user,
+    )
+
+
+@router.post(
+    "/reservations/{reservation_id}/transparent-order",
+    response_model=TransparentOrderResponse,
+)
+async def create_transparent_order(
+    reservation_id: str,
+    data: TransparentOrderRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await PaymentService.create_transparent_order(
+        db, reservation_id, data, current_user
     )
 
 

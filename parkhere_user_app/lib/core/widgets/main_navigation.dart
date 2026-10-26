@@ -392,6 +392,10 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 icon: Icon(Icons.extension_outlined),
                 label: 'Módulos',
               ),
+              const NavigationDestination(
+                icon: Icon(Icons.admin_panel_settings_outlined),
+                label: 'Permissões',
+              ),
             ],
             if (!isAdmin && isOperator && !_operatorHasShiftToday) ...[
               const NavigationDestination(
@@ -554,7 +558,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isOperator,
     bool operatorHasShiftToday,
   ) {
-    if (isAdmin) return _adminSection.clamp(0, 5);
+    if (isAdmin) return _adminSection.clamp(0, 7);
     if (isGuide) return area == _MainArea.map ? 1 : 0;
     if (isOperator && !operatorHasShiftToday) {
       switch (area) {
@@ -679,7 +683,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       _selectedArea = area;
       if (ref.read(authProvider).role == 'super_admin' &&
           serviceTabIndex != null) {
-        _adminSection = serviceTabIndex.clamp(0, 5);
+        _adminSection = serviceTabIndex.clamp(0, 7);
       }
       if (serviceTabIndex != null) {
         _servicesInitialIndex = serviceTabIndex;
@@ -770,6 +774,12 @@ class _WebMenu extends ConsumerWidget {
                     'Clientes',
                     _MainArea.management,
                     serviceTabIndex: 5,
+                  ),
+                  _MenuItem(
+                    Icons.admin_panel_settings_outlined,
+                    'Perfis e permissões',
+                    _MainArea.management,
+                    serviceTabIndex: 7,
                   ),
                 ],
                 selectedArea: selectedArea,

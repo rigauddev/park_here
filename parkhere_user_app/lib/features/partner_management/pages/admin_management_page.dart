@@ -72,6 +72,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   List<Map<String, dynamic>> _partners = [];
   List<Map<String, dynamic>> _customers = [];
   List<Map<String, dynamic>> _emailTemplates = [];
+  List<Map<String, dynamic>> _systemPermissionProfiles = [];
   List<Map<String, dynamic>> _featureRows = [];
   String? _featureTenantId;
   bool _featureLoading = false;
@@ -84,7 +85,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   @override
   void initState() {
     super.initState();
-    _section = widget.initialSection.clamp(0, 6).toInt();
+    _section = widget.initialSection.clamp(0, 7).toInt();
     _load();
   }
 
@@ -147,6 +148,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         'Templates',
         () => _api.getAuthorized('/admin/platform-fees/email-templates', token),
       ),
+      safe(
+        'Perfis e permissões',
+        () => _api.getAuthorized(
+          '/admin/platform-fees/permission-profiles',
+          token,
+        ),
+      ),
     ]);
     if (!mounted) return;
     setState(() {
@@ -168,6 +176,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       }
       if (values[6] != null) {
         _emailTemplates = (values[6] as List).cast<Map<String, dynamic>>();
+      }
+      if (values[7] != null) {
+        _systemPermissionProfiles = (values[7] as List)
+            .cast<Map<String, dynamic>>();
       }
       if (_featureTenantId == null && _partners.isNotEmpty) {
         _featureTenantId = _partners.first['tenant_id'] as String?;
@@ -200,6 +212,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                   ('Parceiros', Icons.business_outlined),
                   ('Clientes', Icons.people_outline),
                   ('Templates', Icons.mark_email_read_outlined),
+                  ('Permissões', Icons.admin_panel_settings_outlined),
                 ])
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -214,6 +227,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                             'Parceiros',
                             'Clientes',
                             'Templates',
+                            'Permissões',
                           ].indexOf(item.$1),
                       avatar: Icon(item.$2, size: 18),
                       label: Text(item.$1),
@@ -226,6 +240,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                           'Parceiros',
                           'Clientes',
                           'Templates',
+                          'Permissões',
                         ].indexOf(item.$1),
                       ),
                     ),
@@ -515,6 +530,8 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         ];
       case 6:
         return _emailTemplateSection();
+      case 7:
+        return _systemPermissionSection();
       default:
         final cities =
             (_overview['cities'] as List?)?.cast<Map<String, dynamic>>() ??
@@ -2086,6 +2103,125 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     annualInstallments.dispose();
     annualCreditDiscount.dispose();
     annualDebitDiscount.dispose();
+  }
+
+  List<Widget> _systemPermissionSection() => [
+    const Text(
+      'Perfis e permissões da equipe',
+      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+    ),
+    const SizedBox(height: 8),
+    const Text(
+      'Defina o que cada usuário da gestão do sistema pode visualizar, editar ou administrar. O perfil master continua protegido no servidor.',
+    ),
+    const SizedBox(height: 12),
+    FilledButton.icon(
+      onPressed: _createSystemPermissionProfile,
+      icon: const Icon(Icons.add),
+      label: const Text('Criar perfil'),
+    ),
+    const SizedBox(height: 12),
+    if (_systemPermissionProfiles.isEmpty)
+      const Card(
+        child: ListTile(title: Text('Nenhum perfil personalizado cadastrado.')),
+      )
+    else
+      ..._systemPermissionProfiles.map(
+        (profile) => Card(
+          child: ListTile(
+            leading: const Icon(Icons.admin_panel_settings_outlined),
+            title: Text(profile['name'] as String? ?? 'Sem nome'),
+            subtitle: Text(
+              ((profile['permissions'] as List?)?.cast<String>() ?? const [])
+                  .join(' · '),
+            ),
+          ),
+        ),
+      ),
+  ];
+
+  Future<void> _createSystemPermissionProfile() async {
+    final nameController = TextEditingController();
+    final selected = <String>{};
+    const permissions = <String, String>{
+      'partners.view': 'Visualizar parceiros',
+      'partners.edit': 'Editar parceiros',
+      'partners.delete': 'Desativar parceiros',
+      'customers.view': 'Visualizar clientes',
+      'customers.edit': 'Editar clientes',
+      'reports.view': 'Visualizar relatórios',
+      'support.manage': 'Atender suporte',
+      'fees.manage': 'Gerenciar taxas e planos',
+      'features.manage': 'Gerenciar funcionalidades',
+    };
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Novo perfil administrativo'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nome do perfil',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ...permissions.entries.map(
+                    (entry) => CheckboxListTile(
+                      dense: true,
+                      value: selected.contains(entry.key),
+                      title: Text(entry.value),
+                      onChanged: (value) => setDialogState(() {
+                        if (value == true) {
+                          selected.add(entry.key);
+                        } else {
+                          selected.remove(entry.key);
+                        }
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || nameController.text.trim().isEmpty || !mounted) {
+      nameController.dispose();
+      return;
+    }
+    try {
+      final token = ref.read(authProvider).accessToken;
+      await _api.postAuthorized('/admin/platform-fees/permission-profiles', {
+        'name': nameController.text.trim(),
+        'permissions': selected.toList(),
+      }, token!);
+      nameController.dispose();
+      await _load();
+      if (mounted) {
+        ApiFeedback.show(context, 'Perfil criado com sucesso.', isError: false);
+      }
+    } catch (error) {
+      nameController.dispose();
+      if (mounted) ApiFeedback.show(context, error.toString());
+    }
   }
 
   List<Widget> _emailTemplateSection() => [

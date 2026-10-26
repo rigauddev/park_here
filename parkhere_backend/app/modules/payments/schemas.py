@@ -37,3 +37,24 @@ class PaymentIntentResponse(BaseModel):
     qr_code: str | None
     external_reference: str
     split: list[PaymentSplitResponse]
+
+
+class TransparentOrderRequest(BaseModel):
+    method: Literal["pix", "credit_card", "debit_card"] = "credit_card"
+    purpose: Literal["reservation", "checkout_excess"] = "reservation"
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+
+class TransparentOrderResponse(BaseModel):
+    transaction_id: str
+    reservation_id: str
+    provider: str
+    order_id: str
+    client_token: str | None = None
+    status: str
+    amount: float
+    method: str
+    external_reference: str
+    qr_code: str | None = None
+    qr_code_base64: str | None = None

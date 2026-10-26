@@ -312,3 +312,29 @@ O MVP permite escolher data e hora futuras quando a unidade está fechada e envi
 `arrival_estimate_at` para validação no servidor. Os lembretes push de 1 hora e
 30 minutos antes, com confirmação da pré-reserva, dependem da integração de
 notificações (FCM/APNs) e permanecem no próximo bloco de homologação.
+### Checkout Transparente Mercado Pago (homologação)
+
+O backend possui o endpoint `POST /payments/reservations/{id}/transparent-order`
+para iniciar um pedido no Orders API. Ele exige `PAYMENT_PROVIDER=mercado_pago`,
+usa chave de idempotência por transação e nunca recebe ou armazena número do
+cartão, validade ou CVV. A tokenização deve ser feita pelo SDK/Card Payment Brick
+no app e o resultado confirmado por webhook no backend. O endpoint é um bloco de
+homologação: o SDK nativo e o tratamento completo de Pix devem ser conectados
+antes de produção.
+
+O Checkout Transparente mantém o usuário no app, mas os dados sensíveis ficam no
+SDK do Mercado Pago. Consulte a [documentação oficial](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api/overview).
+
+### Reconhecimento facial (V2)
+
+O MVP continua usando validação manual e fotos no check-in/checkout. A futura
+detecção facial usará `google_mlkit_face_detection` somente em Android/iOS; Web
+não é suportado pelo plugin. A feature deve ficar atrás de flag, com fallback
+manual e consentimento específico. Referências: [plugin Flutter](https://pub.dev/packages/google_mlkit_face_detection)
+e [ML Kit](https://developers.google.com/ml-kit/vision/face-detection).
+
+### Maquininhas Android
+
+O APK atual não deve ser instalado diretamente em terminais de pagamento. O
+Mercado Pago Point Smart usa SmartApps/SDK, OAuth e homologação; deve ser um alvo
+Android separado, com modo PDV limitado. Consulte a [visão geral SmartApps](https://www.mercadopago.com.br/developers/pt/docs/smartapps/overview?scope=prod).

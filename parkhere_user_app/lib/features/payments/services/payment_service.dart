@@ -5,6 +5,29 @@ import '../../../core/services/api_service.dart';
 class PaymentService {
   final _api = ApiService();
 
+  /// Starts the provider order for a future Checkout Transparente SDK flow.
+  /// Card data is intentionally not accepted here; the Mercado Pago SDK must
+  /// tokenize it on the device and submit the token in its own secure step.
+  Future<Map<String, dynamic>> createTransparentOrder({
+    required String reservationId,
+    required PaymentMethod method,
+    required String accessToken,
+    String purpose = 'reservation',
+    double? latitude,
+    double? longitude,
+  }) {
+    return _api.postAuthorized(
+      '/payments/reservations/$reservationId/transparent-order',
+      {
+        'method': _methodName(method),
+        'purpose': purpose,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+      },
+      accessToken,
+    );
+  }
+
   Future<Map<String, dynamic>> reservationQuote(
     String reservationId,
     String accessToken,

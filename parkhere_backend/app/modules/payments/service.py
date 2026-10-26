@@ -19,6 +19,8 @@ from app.modules.payments.schemas import (
     CreatePaymentIntentRequest,
     PaymentIntentResponse,
     PaymentSplitResponse,
+    TransparentOrderRequest,
+    TransparentOrderResponse,
 )
 from app.modules.reservations.models import Reservation
 from app.modules.reservations.service import calculate_checkout_excess, _distance_meters
@@ -29,6 +31,78 @@ from app.modules.payments.mercado_pago_client import MercadoPagoClient, MercadoP
 
 
 class PaymentService:
+    @staticmethod
+    async def create_transparent_order(
+        db: AsyncSession,
+        reservation_id: str,
+        data: TransparentOrderRequest,
+        current_user: User,
+    ) -> TransparentOrderResponse:
+        """Start a Mercado Pago Checkout Transparente order.
+
+        The existing intent path remains the source of truth for reservation
+        amounts, fees and tenant checks. Mercado Pago's SDK must tokenize card
+        data on the client; this endpoint never accepts PAN or CVV.
+        """
+        if settings.PAYMENT_PROVIDER != "mercado_pago":
+            raise HTTPException(
+                status_code=503,
+                detail="Checkout Transparente requer PAYMENT_PROVIDER=mercado_pago",
+            )
+        intent = await PaymentService.create_reservation_payment_intent(
+            db,
+            reservation_id,
+            CreatePaymentIntentRequest(
+                method=data.method,
+                purpose=data.purpose,
+                latitude=data.latitude,
+                longitude=data.longitude,
+            ),
+            current_user,
+        )
+        transaction = await db.scalar(
+            select(PaymentTransaction).where(PaymentTransaction.id == intent.id)
+        )
+        if transaction is None:
+            raise HTTPException(status_code=500, detail="Transação de pagamento não criada")
+        reservation = await _get_reservation(db, reservation_id)
+        payer = await db.scalar(select(User).where(User.id == reservation.user_id))
+        payload = {
+            "type": "online",
+            "total_amount": round(float(transaction.gross_amount), 2),
+            "external_reference": transaction.external_reference,
+            "processing_mode": "manual",
+            "expiration_time": "PT2H",
+            "description": f"ParkHere - reserva {reservation.id}",
+            "payer": {"email": payer.email} if payer and payer.email else None,
+        }
+        payload = {key: value for key, value in payload.items() if value is not None}
+        idempotency_key = f"parkhere:{transaction.id}:{data.method}"[:128]
+        try:
+            order = await MercadoPagoClient().create_order(payload, idempotency_key)
+        except MercadoPagoError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        order_id = str(order.get("id") or "")
+        if not order_id:
+            raise HTTPException(status_code=502, detail="Mercado Pago não retornou o pedido")
+        transaction.provider_payment_id = order_id
+        transaction.checkout_url = None
+        transaction.qr_code = _extract_order_value(order, "qr_code")
+        await db.commit()
+        return TransparentOrderResponse(
+            transaction_id=transaction.id,
+            reservation_id=reservation_id,
+            provider="mercado_pago",
+            order_id=order_id,
+            client_token=order.get("client_token"),
+            status=str(order.get("status") or transaction.status),
+            amount=float(transaction.gross_amount),
+            method=data.method,
+            external_reference=transaction.external_reference,
+            qr_code=_extract_order_value(order, "qr_code"),
+            qr_code_base64=_extract_order_value(order, "qr_code_base64"),
+        )
+
     @staticmethod
     async def reservation_payment_quote(
         db: AsyncSession,
@@ -420,6 +494,24 @@ def _mock_checkout_url(external_reference: str) -> str:
 
 def _mock_pix_code(external_reference: str, amount: float) -> str:
     return f"00020126580014BR.GOV.BCB.PIX0136PARKHERE-{external_reference}-R${amount:.2f}"
+
+
+def _extract_order_value(order: dict, key: str) -> str | None:
+    """Read Pix values from the Orders response without exposing credentials."""
+    value = order.get(key)
+    if value:
+        return str(value)
+    for transaction in order.get("transactions") or []:
+        for payment in transaction.get("payments") or []:
+            value = payment.get(key)
+            if value:
+                return str(value)
+            point = payment.get("point_of_interaction") or {}
+            transaction_data = point.get("transaction_data") or {}
+            value = transaction_data.get(key)
+            if value:
+                return str(value)
+    return None
 
 
 def to_response(transaction: PaymentTransaction) -> PaymentIntentResponse:

@@ -1063,3 +1063,27 @@ Administradores do sistema podem criar usuários administrativos em
 `POST /admin/platform-fees/system-users`. O usuário recebe o papel
 `system_admin_operator`, começa inativo e não pode autenticar até ser ativado
 por outro administrador. O e-mail é obrigatório e será a identidade do MFA.
+# Checkout Transparente (homologação)
+
+`POST /payments/reservations/{reservation_id}/transparent-order`
+
+Request:
+
+```json
+{"method":"credit_card","purpose":"reservation","latitude":-13.37,"longitude":-39.07}
+```
+
+`method` aceita `pix`, `credit_card` e `debit_card`; `purpose` aceita
+`reservation` e `checkout_excess`. O endpoint nunca recebe número do cartão ou
+CVV. O app deve tokenizar os dados com o SDK do Mercado Pago e enviar o token
+somente na etapa de pagamento do SDK.
+
+Response:
+
+```json
+{"transaction_id":"...","reservation_id":"...","provider":"mercado_pago","order_id":"...","client_token":"...","status":"created","amount":10.0,"method":"credit_card","external_reference":"reservation:..."}
+```
+
+O resultado final é reconciliado por webhook; o cliente não pode marcar uma
+transação como paga. Em homologação, configure `PAYMENT_PROVIDER=mercado_pago`
+e credenciais apenas no backend.
