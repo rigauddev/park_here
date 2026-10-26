@@ -28,6 +28,13 @@ pelo adquirente/emissor durante cada autorização.
 5. Para recorrência, usa-se credencial/token de cartão armazenado pelo provedor; não se solicita nem armazena CVV para cobranças recorrentes.
 6. Antes da produção, revisar escopo PCI, antifraude, 3-D Secure, política de retenção, exclusão da carteira e fluxo de contestação com Mercado Pago e um assessor de compliance.
 
+O fluxo mobile recomendado pelo Mercado Pago é: backend cria uma Order em modo
+`manual` com `processing_mode=manual`, `total_amount`, `items`, `payer` e
+`X-Idempotency-Key`; o app recebe somente `orderId` e `clientToken`; o SDK
+`CardTransaction` tokeniza e processa o cartão contra essa Order. A ParkHere
+deve implementar o SDK nativo por plataforma antes de chamar o pagamento real.
+Referência: [Cartões em aplicações mobile](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/payment-integration/mobile/cards).
+
 ## Perfis
 
 Perfis `system` são administrados por superadministradores e controlam a equipe

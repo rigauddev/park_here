@@ -74,6 +74,11 @@ class PaymentService:
             "processing_mode": "manual",
             "expiration_time": "PT2H",
             "description": f"ParkHere - reserva {reservation.id}",
+            "items": [{
+                "title": f"ParkHere - reserva {reservation.id}",
+                "quantity": 1,
+                "unit_price": f"{float(transaction.gross_amount):.2f}",
+            }],
             "payer": {"email": payer.email} if payer and payer.email else None,
         }
         payload = {key: value for key, value in payload.items() if value is not None}
