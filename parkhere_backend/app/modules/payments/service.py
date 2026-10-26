@@ -59,6 +59,7 @@ class PaymentService:
                 longitude=data.longitude,
             ),
             current_user,
+            create_provider_checkout=False,
         )
         transaction = await db.scalar(
             select(PaymentTransaction).where(PaymentTransaction.id == intent.id)
@@ -134,6 +135,7 @@ class PaymentService:
         reservation_id: str,
         data: CreatePaymentIntentRequest,
         current_user: User,
+        create_provider_checkout: bool = True,
     ) -> PaymentIntentResponse:
         reservation = await _get_reservation(db, reservation_id)
         parking = await _get_parking(db, reservation.parking_id)
@@ -252,7 +254,7 @@ class PaymentService:
         checkout_url = _mock_checkout_url(external_reference)
         provider = "mock"
         provider_payment_id = None
-        if settings.PAYMENT_PROVIDER == "mercado_pago":
+        if settings.PAYMENT_PROVIDER == "mercado_pago" and create_provider_checkout:
             if data.method == "cash":
                 raise HTTPException(status_code=422, detail="Mercado Pago não processa dinheiro em espécie")
             try:
@@ -275,6 +277,10 @@ class PaymentService:
             provider_payment_id = str(preference.get("id")) if preference.get("id") else None
             if not checkout_url or not provider_payment_id:
                 raise HTTPException(status_code=502, detail="Mercado Pago não retornou a preferência de pagamento")
+            provider = "mercado_pago"
+        elif settings.PAYMENT_PROVIDER == "mercado_pago":
+            # Checkout Transparente creates its Order in the dedicated flow;
+            # do not create a legacy Checkout Pro preference here.
             provider = "mercado_pago"
 
         transaction = PaymentTransaction(
