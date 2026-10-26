@@ -101,8 +101,9 @@ cliente autenticado. A migration `fm1b2c3d4e5f` acrescenta metadados de exibiç�
 
 Os metadados mascarados ficam no banco por conta e sincronizam entre dispositivos.
 Esse registro ainda não é um cartão utilizável para cobrança: pagamentos reais
-exigem tokenização e armazenamento do token/referência pelo provedor. Não
-armazenar PAN completo ou CVV no app ou backend. Chaves Pix de recebimento são
+exigem tokenização e armazenamento do token/referência pelo provedor. A ParkHere
+não armazena PAN completo ou CVV; o CVV é informado somente no componente seguro
+durante a autorização e descartado em seguida. Chaves Pix de recebimento são
 exclusivas da conta de repasse do parceiro; clientes pagam por Pix gerado no
 checkout. Cartões adicionados antes deste endpoint existiam apenas no cache do
 aparelho e precisam ser cadastrados novamente uma vez; o cache antigo não é
