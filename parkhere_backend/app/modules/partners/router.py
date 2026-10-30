@@ -23,6 +23,7 @@ from app.modules.auth.auth_service import AuthService
 from app.modules.auth.schemas import PartnerSignupRequest
 from app.modules.customer_assets.models import Vehicle
 from app.modules.parkings.models import Parking, ParkingService
+from app.modules.parkings.convenience_models import ParkingConvenienceSale
 from app.modules.parkings.schemas import (
     ParkingManagementRequest,
     ParkingManagementResponse,
@@ -1318,6 +1319,95 @@ async def get_partner_financial_report(
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'financial_management')
     return await list_partner_reservations(db, current_user)
+
+
+@router.get('/financial-summary')
+async def get_partner_financial_summary(
+    period_days: int = 30,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Aggregated financial summary separating parking and convenience."""
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    now = datetime.utcnow()
+    start_time = None
+    if period_days > 0:
+        start_time = now - timedelta(days=period_days)
+
+    # 1. Parking / Reservations query
+    res_query = (
+        select(Reservation)
+        .join(Parking, Parking.id == Reservation.parking_id)
+        .where(Parking.tenant_id == current_user.tenant_id)
+    )
+    if start_time:
+        res_query = res_query.where(Reservation.created_at >= start_time)
+
+    reservations = (await db.scalars(res_query)).all()
+
+    parking_paid = [r for r in reservations if r.payment_status == 'paid']
+    parking_refunded = [r for r in reservations if r.payment_status in ('refunded', 'refunded_pending')]
+    parking_cancelled = [r for r in reservations if r.status == 'cancelled']
+
+    parking_revenue = sum(r.final_total or 0 for r in parking_paid)
+    parking_refunds = sum(r.final_total or 0 for r in parking_refunded)
+    parking_fees = sum(r.platform_fee_amount or 0 for r in parking_paid)
+    parking_net = round(parking_revenue - parking_refunds - parking_fees, 2)
+
+    # 2. Convenience sales query
+    conv_query = select(ParkingConvenienceSale).where(
+        ParkingConvenienceSale.tenant_id == current_user.tenant_id
+    )
+    if start_time:
+        conv_query = conv_query.where(ParkingConvenienceSale.created_at >= start_time)
+
+    conv_sales = (await db.scalars(conv_query)).all()
+
+    conv_completed = [s for s in conv_sales if getattr(s, 'status', 'completed') != 'cancelled']
+    conv_cancelled = [s for s in conv_sales if getattr(s, 'status', 'completed') == 'cancelled']
+
+    conv_revenue = sum(s.total_amount or 0 for s in conv_completed)
+    conv_discounts = sum(getattr(s, 'discount_total', 0) or 0 for s in conv_completed)
+    conv_cancelled_amount = sum(s.total_amount or 0 for s in conv_cancelled)
+    conv_net = round(conv_revenue - conv_cancelled_amount, 2)
+
+    # 3. Consolidated totals
+    total_gross = round(parking_revenue + conv_revenue, 2)
+    total_refunds = round(parking_refunds + conv_cancelled_amount, 2)
+    total_fees = round(parking_fees, 2)
+    total_net = round(total_gross - total_refunds - total_fees, 2)
+
+    return {
+        "period_days": period_days,
+        "parking": {
+            "paid_count": len(parking_paid),
+            "refunded_count": len(parking_refunded),
+            "cancelled_count": len(parking_cancelled),
+            "gross_revenue": round(parking_revenue, 2),
+            "refunds_amount": round(parking_refunds, 2),
+            "platform_fees": round(parking_fees, 2),
+            "net_revenue": parking_net,
+            "average_ticket": round(parking_revenue / len(parking_paid), 2) if parking_paid else 0.0,
+        },
+        "convenience": {
+            "completed_count": len(conv_completed),
+            "cancelled_count": len(conv_cancelled),
+            "gross_revenue": round(conv_revenue, 2),
+            "discounts_given": round(conv_discounts, 2),
+            "cancelled_amount": round(conv_cancelled_amount, 2),
+            "net_revenue": conv_net,
+            "average_ticket": round(conv_revenue / len(conv_completed), 2) if conv_completed else 0.0,
+        },
+        "consolidated": {
+            "total_gross_revenue": total_gross,
+            "total_refunds": total_refunds,
+            "total_platform_fees": total_fees,
+            "total_net_revenue": total_net,
+            "total_operations": len(parking_paid) + len(conv_completed),
+        },
+    }
 
 
 @router.get("/permission-profiles")

@@ -882,10 +882,65 @@ async def download_feature_request_receipt(
     return FileResponse(path, filename=path.name)
 
 
+DEFAULT_SYSTEM_EMAIL_TEMPLATES = [
+    {
+        "template_key": "reservation_confirmation",
+        "locale": "pt_BR",
+        "display_name": "Confirmação de Reserva",
+        "subject": "Sua reserva no ParkHere foi confirmada! [#{{reservation_id}}]",
+        "header_html": '<div style="background:#0F172A;padding:24px;text-align:center;color:#FFFFFF;"><h1 style="margin:0;font-size:22px;letter-spacing:1px;">ParkHere</h1><p style="margin:4px 0 0;font-size:13px;color:#94A3B8;">Mobilidade e Estacionamento Inteligente</p></div>',
+        "body_html": '<div style="padding:24px;font-family:sans-serif;color:#334155;line-height:1.6;"><h2 style="color:#0F172A;">Olá, {{customer_name}}!</h2><p>Sua vaga está garantida na unidade <strong>{{parking_name}}</strong>.</p><table style="width:100%;border-collapse:collapse;margin:18px 0;background:#F8FAFC;border-radius:8px;padding:12px;"><tr><td style="padding:8px;font-weight:bold;">Placa do Veículo:</td><td style="padding:8px;">{{vehicle_plate}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Previsão de Chegada:</td><td style="padding:8px;">{{arrival_time}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Tipo de Vaga:</td><td style="padding:8px;">{{spot_type}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Total:</td><td style="padding:8px;color:#16A34A;font-weight:bold;">R$ {{total_amount}}</td></tr></table><p>Apresente este comprovante ou o app na portaria para entrada expressa.</p></div>',
+        "footer_html": '<div style="background:#F1F5F9;padding:16px;text-align:center;font-size:12px;color:#64748B;"><p style="margin:0;">ParkHere Tecnologia e Estacionamentos · Valença, BA</p><p style="margin:4px 0 0;">Dúvidas? Entre em contato pelo app ou com nosso suporte.</p></div>',
+    },
+    {
+        "template_key": "reservation_confirmation",
+        "locale": "en",
+        "display_name": "Reservation Confirmation",
+        "subject": "Your ParkHere booking is confirmed! [#{{reservation_id}}]",
+        "header_html": '<div style="background:#0F172A;padding:24px;text-align:center;color:#FFFFFF;"><h1 style="margin:0;font-size:22px;letter-spacing:1px;">ParkHere</h1><p style="margin:4px 0 0;font-size:13px;color:#94A3B8;">Smart Parking & Mobility</p></div>',
+        "body_html": '<div style="padding:24px;font-family:sans-serif;color:#334155;line-height:1.6;"><h2 style="color:#0F172A;">Hello, {{customer_name}}!</h2><p>Your spot is reserved at <strong>{{parking_name}}</strong>.</p><table style="width:100%;border-collapse:collapse;margin:18px 0;background:#F8FAFC;border-radius:8px;padding:12px;"><tr><td style="padding:8px;font-weight:bold;">License Plate:</td><td style="padding:8px;">{{vehicle_plate}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Estimated Arrival:</td><td style="padding:8px;">{{arrival_time}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Total:</td><td style="padding:8px;color:#16A34A;font-weight:bold;">R$ {{total_amount}}</td></tr></table></div>',
+        "footer_html": '<div style="background:#F1F5F9;padding:16px;text-align:center;font-size:12px;color:#64748B;"><p style="margin:0;">ParkHere Technology · Need help? Contact customer support.</p></div>',
+    },
+    {
+        "template_key": "reservation_cancellation",
+        "locale": "pt_BR",
+        "display_name": "Cancelamento de Reserva",
+        "subject": "Confirmação de Cancelamento de Reserva [#{{reservation_id}}]",
+        "header_html": '<div style="background:#0F172A;padding:24px;text-align:center;color:#FFFFFF;"><h1 style="margin:0;font-size:22px;">ParkHere</h1></div>',
+        "body_html": '<div style="padding:24px;font-family:sans-serif;color:#334155;line-height:1.6;"><h2>Olá, {{customer_name}}</h2><p>Confirmamos o cancelamento da sua reserva no <strong>{{parking_name}}</strong>.</p><p>Motivo: {{cancel_reason}}</p><p>Caso tenha havido cobrança com direito a estorno, o valor de R$ {{refund_amount}} será creditado na sua forma de pagamento original conforme os termos da contratação.</p></div>',
+        "footer_html": '<div style="background:#F1F5F9;padding:16px;text-align:center;font-size:12px;color:#64748B;"><p style="margin:0;">ParkHere Tecnologia</p></div>',
+    },
+    {
+        "template_key": "checkout_receipt_pdf",
+        "locale": "pt_BR",
+        "display_name": "Recibo e Comprovante de Saída (PDF / Impressão)",
+        "subject": "Comprovante de Saída e Estadia ParkHere",
+        "header_html": '<div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:10px;"><h2 style="margin:0;">PARKHERE</h2><p style="margin:2px 0;font-size:12px;">Comprovante de Permanência e Recibo</p><p style="margin:2px 0;font-size:11px;">Unidade: {{parking_name}}</p></div>',
+        "body_html": '<div style="font-family:monospace;font-size:12px;padding:10px 0;"><p>RES: #{{reservation_id}}</p><p>PLACA: {{vehicle_plate}}</p><p>ENTRADA: {{checkin_time}}</p><p>SAÍDA:   {{checkout_time}}</p><p>TEMPO TOTAL: {{duration_formatted}}</p><hr style="border:none;border-top:1px dashed #000;margin:8px 0;"/><table style="width:100%;font-size:12px;"><tr><td>Subtotal Vaga:</td><td style="text-align:right;">R$ {{base_amount}}</td></tr><tr><td>Serviços Extras:</td><td style="text-align:right;">R$ {{services_amount}}</td></tr><tr><td>Excesso de Horas:</td><td style="text-align:right;">R$ {{excess_amount}}</td></tr><tr style="font-weight:bold;font-size:14px;"><td>TOTAL PAGO:</td><td style="text-align:right;">R$ {{total_paid}}</td></tr></table><p style="margin-top:8px;">Forma de Pagamento: {{payment_method}}</p></div>',
+        "footer_html": '<div style="text-align:center;border-top:2px dashed #000;padding-top:8px;font-size:10px;font-family:monospace;"><p style="margin:2px 0;">DOCUMENTO NÃO FISCAL</p><p style="margin:2px 0;">Obrigado pela preferência e boa viagem!</p><p style="margin:2px 0;">www.parkhere.app</p></div>',
+    },
+    {
+        "template_key": "convenience_receipt_pdf",
+        "locale": "pt_BR",
+        "display_name": "Cupom de Venda de Conveniência (PDF / Impressão)",
+        "subject": "Recibo de Compra na Loja de Conveniência",
+        "header_html": '<div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:10px;"><h2 style="margin:0;">PARKHERE CONVENIÊNCIA</h2><p style="margin:2px 0;font-size:12px;">{{parking_name}}</p></div>',
+        "body_html": '<div style="font-family:monospace;font-size:12px;padding:10px 0;"><p>CUPOM: #{{sale_id}}</p><p>DATA: {{issued_at}}</p><p>CPF CLIENTE: {{customer_cpf}}</p><hr style="border:none;border-top:1px dashed #000;margin:8px 0;"/><table style="width:100%;font-size:12px;"><thead><tr><th style="text-align:left;">Item</th><th style="text-align:center;">Qtd</th><th style="text-align:right;">Total</th></tr></thead><tbody>{{items_rows}}</tbody></table><hr style="border:none;border-top:1px dashed #000;margin:8px 0;"/><table style="width:100%;font-size:12px;"><tr><td>Subtotal:</td><td style="text-align:right;">R$ {{subtotal}}</td></tr><tr><td>Desconto:</td><td style="text-align:right;">- R$ {{discount_total}}</td></tr><tr style="font-weight:bold;font-size:14px;"><td>TOTAL:</td><td style="text-align:right;">R$ {{total_amount}}</td></tr><tr><td>Pagamento:</td><td style="text-align:right;">{{payment_method}}</td></tr><tr><td>Troco:</td><td style="text-align:right;">R$ {{change_amount}}</td></tr></table></div>',
+        "footer_html": '<div style="text-align:center;border-top:2px dashed #000;padding-top:8px;font-size:10px;font-family:monospace;"><p style="margin:2px 0;">CUPOM NÃO FISCAL</p><p style="margin:2px 0;">ParkHere - Volte Sempre!</p></div>',
+    },
+]
+
+
 @router.get('/email-templates')
 async def list_email_templates(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     _ensure_admin(current_user)
     rows = (await db.scalars(select(EmailTemplate).order_by(EmailTemplate.template_key, EmailTemplate.locale))).all()
+    if not rows:
+        for tpl in DEFAULT_SYSTEM_EMAIL_TEMPLATES:
+            new_row = EmailTemplate(**tpl)
+            db.add(new_row)
+        await db.commit()
+        rows = (await db.scalars(select(EmailTemplate).order_by(EmailTemplate.template_key, EmailTemplate.locale))).all()
     return [_email_template_payload(row) for row in rows]
 
 

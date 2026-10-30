@@ -26,6 +26,8 @@ const _operatorPermissionLabels = {
   'payments.receive': 'Receber pagamentos no local',
   'convenience.view': 'Visualizar conveniência',
   'convenience.sell': 'Operar PDV e caixa da conveniência',
+  'convenience.sales.cancel': 'Cancelar vendas no PDV',
+  'convenience.discount': 'Conceder descontos em produtos',
   'convenience.edit': 'Cadastrar e editar produtos',
   'convenience.delete': 'Excluir produtos',
 };
@@ -92,6 +94,8 @@ const _permissionModules = [
     items: [
       _PermissionItem('convenience.view', 'Ver catálogo e estoque da loja', 'Ver'),
       _PermissionItem('convenience.sell', 'Operar caixa e PDV da loja', 'Operar'),
+      _PermissionItem('convenience.sales.cancel', 'Cancelar vendas no PDV', 'Operar'),
+      _PermissionItem('convenience.discount', 'Conceder descontos em produtos', 'Operar'),
       _PermissionItem('convenience.edit', 'Cadastrar e editar produtos', 'Editar'),
       _PermissionItem('convenience.delete', 'Excluir produtos do catálogo', 'Excluir'),
     ],

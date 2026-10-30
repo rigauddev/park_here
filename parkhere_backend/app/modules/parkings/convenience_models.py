@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.db.base import BaseModel
@@ -46,6 +46,14 @@ class ParkingConvenienceSale(BaseModel):
     total_amount = Column(Float, nullable=False, default=0)
     cash_received = Column(Float, nullable=True)
     change_amount = Column(Float, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="completed")
+    customer_cpf = Column(String(14), nullable=True)
+    discount_total = Column(Float, nullable=False, default=0)
+    cancelled_at = Column(DateTime, nullable=True)
+    cancelled_by_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    cancel_reason = Column(String(200), nullable=True)
+
+    items = relationship("ParkingConvenienceSaleItem", back_populates="sale", cascade="all, delete-orphan")
 
 
 class ParkingConvenienceSaleItem(BaseModel):
@@ -56,3 +64,8 @@ class ParkingConvenienceSaleItem(BaseModel):
     quantity = Column(Integer, nullable=False, default=1)
     unit_price = Column(Float, nullable=False, default=0)
     total_price = Column(Float, nullable=False, default=0)
+    discount_percent = Column(Float, nullable=False, default=0)
+    discount_amount = Column(Float, nullable=False, default=0)
+
+    sale = relationship("ParkingConvenienceSale", back_populates="items")
+    product = relationship("ParkingConvenienceProduct")

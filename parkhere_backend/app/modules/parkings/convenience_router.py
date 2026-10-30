@@ -1,10 +1,13 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.security import verify_password
 from app.modules.parkings.convenience_models import (
     ParkingConvenienceCategory,
     ParkingConvenienceProduct,
@@ -15,6 +18,7 @@ from app.modules.parkings.models import Parking
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.router import _require_operator_permission, _user_permissions
 from app.modules.platform_fees.models import PartnerFeatureEntitlement
 from app.modules.platform_fees.feature_catalog import feature_by_key
 
@@ -62,12 +66,19 @@ class ConvenienceCategoryInput(BaseModel):
 class SaleItemInput(BaseModel):
     product_id: str
     quantity: int = Field(ge=1, le=999)
+    discount_percent: float = Field(default=0, ge=0, le=100)
 
 
 class ConvenienceSaleInput(BaseModel):
     items: list[SaleItemInput] = Field(min_length=1)
     payment_method: str = "cash"
     cash_received: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    customer_cpf: str | None = Field(default=None, max_length=14)
+
+
+class CancelSaleInput(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)
+    manager_password: str | None = None
 
 
 async def _unit(db: AsyncSession, parking_id: str, user: User) -> Parking:
@@ -85,7 +96,13 @@ async def _unit(db: AsyncSession, parking_id: str, user: User) -> Parking:
     return parking
 
 
-async def _ensure_access(db: AsyncSession, user: User, *, mutate: bool = False) -> None:
+async def _ensure_access(
+    db: AsyncSession,
+    user: User,
+    *,
+    mutate: bool = False,
+    operator_permission: str | None = None,
+) -> None:
     profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == user.tenant_id))
     feature = feature_by_key(profile.service_type if profile else None, 'convenience_management')
     entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
@@ -100,7 +117,10 @@ async def _ensure_access(db: AsyncSession, user: User, *, mutate: bool = False) 
             'message': 'O módulo de conveniências precisa ser contratado e liberado.',
         })
     if mutate and user.role == UserRoleEnum.OPERATOR:
-        raise HTTPException(status_code=403, detail='Somente o gestor pode alterar conveniências')
+        if operator_permission:
+            _require_operator_permission(user, operator_permission)
+        else:
+            raise HTTPException(status_code=403, detail='Somente o gestor pode alterar conveniências')
 
 
 @router.get("/{parking_id}/conveniences")
@@ -171,6 +191,7 @@ async def create_convenience_sale(
 ):
     await _unit(db, parking_id, current_user)
     await _ensure_access(db, current_user)
+    _require_operator_permission(current_user, 'convenience.sell')
     if data.payment_method not in {"cash", "pix", "credit_card", "debit_card"}:
         raise HTTPException(status_code=422, detail="Forma de pagamento inválida")
     product_ids = [item.product_id for item in data.items]
@@ -183,18 +204,26 @@ async def create_convenience_sale(
     if len(by_id) != len(set(product_ids)):
         raise HTTPException(status_code=404, detail="Produto não encontrado ou inativo")
     total = 0.0
+    total_discount = 0.0
     sale_items: list[ParkingConvenienceSaleItem] = []
     for item in data.items:
+        if item.discount_percent > 0:
+            _require_operator_permission(current_user, 'convenience.discount')
         product = by_id[item.product_id]
         if product.stock_quantity is not None and product.stock_quantity < item.quantity:
             raise HTTPException(status_code=409, detail=f"Estoque insuficiente para {product.name}")
-        line_total = round(float(product.price) * item.quantity, 2)
+        base_line = round(float(product.price) * item.quantity, 2)
+        discount_amount = round(base_line * (item.discount_percent / 100.0), 2) if item.discount_percent > 0 else 0.0
+        line_total = round(base_line - discount_amount, 2)
         total += line_total
+        total_discount += discount_amount
         sale_items.append(ParkingConvenienceSaleItem(
             product_id=product.id,
             quantity=item.quantity,
             unit_price=product.price,
             total_price=line_total,
+            discount_percent=item.discount_percent,
+            discount_amount=discount_amount,
         ))
     cash_received = data.cash_received
     if data.payment_method == "cash" and (cash_received is None or cash_received < total):
@@ -206,8 +235,11 @@ async def create_convenience_sale(
         operator_id=current_user.id,
         payment_method=data.payment_method,
         total_amount=round(total, 2),
+        discount_total=round(total_discount, 2),
         cash_received=cash_received,
         change_amount=change,
+        status="completed",
+        customer_cpf=data.customer_cpf.strip() if data.customer_cpf else None,
     )
     db.add(sale)
     await db.flush()
@@ -226,15 +258,150 @@ async def create_convenience_sale(
     return {
         "id": sale.id,
         "total_amount": sale.total_amount,
+        "discount_total": sale.discount_total,
         "payment_method": sale.payment_method,
         "cash_received": sale.cash_received,
         "change_amount": sale.change_amount,
+        "customer_cpf": sale.customer_cpf,
+        "status": sale.status,
         "receipt": {
             "number": sale.id,
             "issued_at": sale.created_at.isoformat() if sale.created_at else None,
             "is_fiscal": False,
+            "customer_cpf": sale.customer_cpf,
         },
-        "items": [{"product_id": item.product_id, "quantity": item.quantity} for item in sale_items],
+        "items": [
+            {
+                "product_id": item.product_id,
+                "quantity": item.quantity,
+                "discount_percent": item.discount_percent,
+                "discount_amount": item.discount_amount,
+            }
+            for item in sale_items
+        ],
+    }
+
+
+@router.get("/{parking_id}/convenience-sales")
+async def list_convenience_sales(
+    parking_id: str,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _unit(db, parking_id, current_user)
+    await _ensure_access(db, current_user)
+    _require_operator_permission(current_user, 'convenience.view')
+
+    sales = (await db.scalars(
+        select(ParkingConvenienceSale)
+        .where(
+            ParkingConvenienceSale.parking_id == parking_id,
+            ParkingConvenienceSale.tenant_id == current_user.tenant_id,
+        )
+        .options(
+            selectinload(ParkingConvenienceSale.items).selectinload(ParkingConvenienceSaleItem.product)
+        )
+        .order_by(desc(ParkingConvenienceSale.created_at))
+        .limit(min(limit, 100))
+    )).all()
+
+    return [
+        {
+            "id": s.id,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "status": s.status,
+            "payment_method": s.payment_method,
+            "total_amount": s.total_amount,
+            "discount_total": s.discount_total,
+            "cash_received": s.cash_received,
+            "change_amount": s.change_amount,
+            "customer_cpf": s.customer_cpf,
+            "operator_id": s.operator_id,
+            "cancelled_at": s.cancelled_at.isoformat() if s.cancelled_at else None,
+            "cancel_reason": s.cancel_reason,
+            "items": [
+                {
+                    "id": it.id,
+                    "product_id": it.product_id,
+                    "product_name": it.product.name if it.product else "Produto",
+                    "quantity": it.quantity,
+                    "unit_price": it.unit_price,
+                    "total_price": it.total_price,
+                    "discount_percent": it.discount_percent,
+                    "discount_amount": it.discount_amount,
+                }
+                for it in s.items
+            ],
+        }
+        for s in sales
+    ]
+
+
+@router.post("/{parking_id}/convenience-sales/{sale_id}/cancel")
+async def cancel_convenience_sale(
+    parking_id: str,
+    sale_id: str,
+    data: CancelSaleInput,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _unit(db, parking_id, current_user)
+    await _ensure_access(db, current_user)
+
+    user_perms = _user_permissions(current_user)
+    if current_user.role == UserRoleEnum.OPERATOR and "convenience.sales.cancel" not in user_perms:
+        if not data.manager_password:
+            raise HTTPException(
+                status_code=403,
+                detail="Operador sem permissão de cancelamento. Informe a senha de um gestor.",
+            )
+        managers = (await db.scalars(
+            select(User).where(
+                User.tenant_id == current_user.tenant_id,
+                User.role == UserRoleEnum.PARTNER_MANAGER,
+                User.is_active.is_(True),
+            )
+        )).all()
+        authorized = any(verify_password(data.manager_password, m.password_hash) for m in managers if m.password_hash)
+        if not authorized:
+            raise HTTPException(status_code=403, detail="Senha de gestor inválida.")
+
+    sale = await db.scalar(
+        select(ParkingConvenienceSale)
+        .where(
+            ParkingConvenienceSale.id == sale_id,
+            ParkingConvenienceSale.parking_id == parking_id,
+            ParkingConvenienceSale.tenant_id == current_user.tenant_id,
+        )
+        .options(selectinload(ParkingConvenienceSale.items))
+    )
+    if sale is None:
+        raise HTTPException(status_code=404, detail="Venda não encontrada")
+    if sale.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Esta venda já está cancelada")
+
+    # Estorno de estoque
+    for it in sale.items:
+        prod = await db.scalar(
+            select(ParkingConvenienceProduct).where(ParkingConvenienceProduct.id == it.product_id)
+        )
+        if prod and prod.stock_quantity is not None:
+            prod.stock_quantity += it.quantity
+
+    sale.status = "cancelled"
+    sale.cancelled_at = datetime.utcnow()
+    sale.cancelled_by_id = current_user.id
+    sale.cancel_reason = data.reason.strip()
+
+    await db.commit()
+    await db.refresh(sale)
+    return {
+        "id": sale.id,
+        "status": sale.status,
+        "cancelled_at": sale.cancelled_at.isoformat() if sale.cancelled_at else None,
+        "cancel_reason": sale.cancel_reason,
+        "message": "Venda cancelada com sucesso e estoque estornado.",
     }
 
 
@@ -246,7 +413,7 @@ async def create_convenience(
     current_user: User = Depends(get_current_user),
 ):
     await _unit(db, parking_id, current_user)
-    await _ensure_access(db, current_user, mutate=True)
+    await _ensure_access(db, current_user, mutate=True, operator_permission="convenience.edit")
     item = ParkingConvenienceProduct(parking_id=parking_id, **data.model_dump())
     db.add(item)
     await db.commit()
@@ -263,7 +430,7 @@ async def update_convenience(
     current_user: User = Depends(get_current_user),
 ):
     await _unit(db, parking_id, current_user)
-    await _ensure_access(db, current_user, mutate=True)
+    await _ensure_access(db, current_user, mutate=True, operator_permission="convenience.edit")
     item = await db.scalar(
         select(ParkingConvenienceProduct).where(
             ParkingConvenienceProduct.id == product_id,
@@ -287,7 +454,7 @@ async def deactivate_convenience(
     current_user: User = Depends(get_current_user),
 ):
     await _unit(db, parking_id, current_user)
-    await _ensure_access(db, current_user, mutate=True)
+    await _ensure_access(db, current_user, mutate=True, operator_permission="convenience.delete")
     item = await db.scalar(
         select(ParkingConvenienceProduct).where(
             ParkingConvenienceProduct.id == product_id,

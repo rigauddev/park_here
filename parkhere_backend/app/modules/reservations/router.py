@@ -210,3 +210,91 @@ async def approve_arrival(
     return await ReservationService.approve_arrival(
         db, reservation_id, data.decision, current_user
     )
+
+
+@router.get("/search-by-code")
+async def search_reservation_by_code(
+    code: str = Query(..., min_length=4, max_length=40),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search for a reservation created by staff/operator to preview before claiming."""
+    clean_code = code.strip()
+    query = (
+        select(Reservation, Parking.name)
+        .join(Parking, Parking.id == Reservation.parking_id)
+        .where(
+            (Reservation.id == clean_code) |
+            (Reservation.id.endswith(clean_code))
+        )
+    )
+    row = (await db.execute(query)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Nenhuma reserva encontrada com este código.")
+
+    res, parking_name = row
+    return {
+        "id": res.id,
+        "parking_id": res.parking_id,
+        "parking_name": parking_name,
+        "status": res.status.value if hasattr(res.status, 'value') else str(res.status),
+        "payment_status": res.payment_status.value if hasattr(res.payment_status, 'value') else str(res.payment_status),
+        "pricing_plan": res.pricing_plan.value if hasattr(res.pricing_plan, 'value') else str(res.pricing_plan),
+        "vehicle_plate": res.walk_in_plate or getattr(res, 'vehicle_plate', None),
+        "final_total": res.final_total,
+        "created_at": res.created_at.isoformat() if res.created_at else None,
+        "is_claimed": res.user_id is not None,
+        "is_mine": res.user_id == current_user.id,
+        "can_claim": res.user_id is None,
+    }
+
+
+@router.post("/associate")
+async def associate_reservation_to_customer(
+    code: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Claim a staff-created reservation and link it to the customer account."""
+    clean_code = code.strip()
+    query = (
+        select(Reservation, Parking)
+        .join(Parking, Parking.id == Reservation.parking_id)
+        .where(
+            (Reservation.id == clean_code) |
+            (Reservation.id.endswith(clean_code))
+        )
+    )
+    row = (await db.execute(query)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Reserva não encontrada.")
+
+    res, parking = row
+    if res.user_id is not None and res.user_id != current_user.id:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta reserva já está associada a outra conta de cliente.",
+        )
+
+    if res.user_id is None:
+        res.user_id = current_user.id
+        # Se houver placa e o cliente possuir o veículo cadastrado, vincula
+        if res.walk_in_plate:
+            from app.modules.customer_assets.models import Vehicle
+            veh = await db.scalar(
+                select(Vehicle).where(
+                    Vehicle.user_id == current_user.id,
+                    Vehicle.license_plate == res.walk_in_plate,
+                    Vehicle.is_active.is_(True),
+                )
+            )
+            if veh:
+                res.vehicle_id = veh.id
+
+        await db.commit()
+        await db.refresh(res)
+
+    res.parking_name = parking.name
+    res.parking_latitude = parking.latitude
+    res.parking_longitude = parking.longitude
+    return to_response(res)

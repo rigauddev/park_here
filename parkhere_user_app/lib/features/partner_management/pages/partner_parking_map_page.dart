@@ -950,11 +950,52 @@ class _FreeSlotReservationDialogState
   double? changeAmount;
   bool isSubmitting = false;
   bool customerAcceptedTerms = false;
+  Map<String, dynamic>? foundCustomer;
+  bool isSearchingPlate = false;
+  Timer? _plateDebounce;
 
   int get dailyDays {
     if (selectedDateRange == null) return 1;
     final diff = selectedDateRange!.end.difference(selectedDateRange!.start).inDays;
     return diff > 0 ? diff : 1;
+  }
+
+  void _onPlateChanged(String text) {
+    _plateDebounce?.cancel();
+    final clean = text.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();
+    if (clean.length < 7) {
+      if (foundCustomer != null) {
+        setState(() => foundCustomer = null);
+      }
+      return;
+    }
+    _plateDebounce = Timer(const Duration(milliseconds: 600), () async {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) return;
+      setState(() => isSearchingPlate = true);
+      try {
+        final res = await ApiService().getAuthorizedMap(
+          '/partners/customer-by-plate?plate=$clean',
+          token,
+        );
+        if (!mounted) return;
+        if (res['found'] == true) {
+          setState(() {
+            foundCustomer = res;
+            if (ownerPhoneController.text.trim().isEmpty &&
+                res['customer_phone'] != null) {
+              ownerPhoneController.text = res['customer_phone'].toString();
+            }
+          });
+        } else {
+          setState(() => foundCustomer = null);
+        }
+      } catch (_) {
+        if (mounted) setState(() => foundCustomer = null);
+      } finally {
+        if (mounted) setState(() => isSearchingPlate = false);
+      }
+    });
   }
 
   Future<void> _selectDailyPeriod() async {
@@ -987,6 +1028,7 @@ class _FreeSlotReservationDialogState
 
   @override
   void dispose() {
+    _plateDebounce?.cancel();
     cashReceivedController.dispose();
     arrivalTimeController.dispose();
     plateController.dispose();
@@ -1015,11 +1057,60 @@ class _FreeSlotReservationDialogState
                 controller: plateController,
                 enabled: !isSubmitting && createdReservationId == null,
                 textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
+                onChanged: _onPlateChanged,
+                decoration: InputDecoration(
                   labelText: 'Placa do veículo',
-                  prefixIcon: Icon(Icons.directions_car),
+                  prefixIcon: const Icon(Icons.directions_car),
+                  suffixIcon: isSearchingPlate
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : (foundCustomer != null
+                          ? const Icon(Icons.verified, color: Colors.green)
+                          : null),
                 ),
               ),
+              if (foundCustomer != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 4),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person, color: Colors.green, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cliente: ${foundCustomer!['customer_name']}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                            if (foundCustomer!['vehicle_model'] != null &&
+                                foundCustomer!['vehicle_model'].toString().isNotEmpty)
+                              Text(
+                                'Veículo: ${foundCustomer!['vehicle_model']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               TextField(
                 controller: ownerPhoneController,
                 enabled: !isSubmitting && createdReservationId == null,
@@ -1038,13 +1129,23 @@ class _FreeSlotReservationDialogState
                       '',
                     );
                     if (phone.length < 10) return;
+                    final plate = plateController.text.trim().toUpperCase();
+                    final resCode = createdReservationId != null
+                        ? 'Código da sua reserva: #${createdReservationId!.substring(createdReservationId!.length > 6 ? createdReservationId!.length - 6 : 0)}\n'
+                        : '';
+                    final message =
+                        'Olá! Sua reserva no ParkHere para o veículo $plate foi registrada.\n'
+                        '$resCode'
+                        'Baixe o aplicativo para acompanhar e gerenciar sua vaga:\n'
+                        '📱 Android (Google Play): https://play.google.com/store/apps/details?id=com.parkhere.app\n'
+                        '🍎 iOS (App Store): https://apps.apple.com/app/parkhere/id123456789';
                     final uri = Uri.parse(
-                      'https://wa.me/55$phone?text=${Uri.encodeComponent('Baixe o app ParkHere para acompanhar sua reserva: https://parkhere.app/download')}',
+                      'https://wa.me/55$phone?text=${Uri.encodeComponent(message)}',
                     );
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   },
                   icon: const Icon(Icons.share),
-                  label: const Text('Enviar link do app pelo WhatsApp'),
+                  label: const Text('Enviar comprovante e links das lojas via WhatsApp'),
                 ),
               ),
               SwitchListTile(
@@ -1155,7 +1256,7 @@ class _FreeSlotReservationDialogState
                     label: Text(
                       selectedDateRange == null
                           ? 'Selecionar período no calendário'
-                          : 'Alterar período (${dailyDays} ${dailyDays == 1 ? "diária" : "diárias"})',
+                          : 'Alterar período ($dailyDays ${dailyDays == 1 ? "diária" : "diárias"})',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1287,7 +1388,7 @@ class _FreeSlotReservationDialogState
                     label: Text(
                       selectedDateRange == null
                           ? 'Selecionar período no calendário'
-                          : 'Alterar período (${dailyDays} ${dailyDays == 1 ? "diária" : "diárias"})',
+                          : 'Alterar período ($dailyDays ${dailyDays == 1 ? "diária" : "diárias"})',
                     ),
                   ),
                   const SizedBox(height: 8),

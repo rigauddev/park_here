@@ -1084,6 +1084,37 @@ ao operador com registro em auditoria.
 O backend calcula `base_amount = daily_price * ceil(duration_hours / 24)`.
 O app móvel exibe o seletor de calendário (`showDateRangePicker`) exibindo as datas e a contagem de dias selecionados.
 
+### PDV de Conveniência: Vendas, Histórico, Desconto, CPF e Cancelamento
+
+1. `POST /partners/parking-management/{parking_id}/convenience-sales`:
+   - Aceita `customer_cpf` (opcional, até 14 caracteres) para emissão de comprovante com dados do cliente.
+   - Cada item aceita `discount_percent` (0 a 100%). Requer permissão `convenience.discount` para o operador conceder descontos.
+   - Retorna comprovante não fiscal com o total, desconto concedido, CPF e itens.
+
+2. `GET /partners/parking-management/{parking_id}/convenience-sales?limit=50`:
+   - Lista as últimas vendas da unidade, incluindo status (`completed`, `cancelled`), operador, CPF, total faturado, descontos e itens vendidos.
+
+3. `POST /partners/parking-management/{parking_id}/convenience-sales/{sale_id}/cancel`:
+   - Cancela a venda de conveniência e estorna automaticamente o estoque dos produtos.
+   - Permissão necessária: `convenience.sales.cancel`. Caso o operador não possua essa permissão, o endpoint exige `manager_password` para validação com a senha de um gestor da empresa.
+
+### Painel Financeiro Pro e Resumo Consolidado
+
+`GET /partners/financial-summary?period_days=30`:
+- Retorna os dados financeiros separados entre Estacionamento e Conveniência, além do Consolidado:
+  - `parking`: `paid_count`, `refunded_count`, `cancelled_count` (informativo, sem impacto no caixa), `gross_revenue`, `refunds_amount`, `platform_fees`, `net_revenue` e `average_ticket`.
+  - `convenience`: `completed_count`, `cancelled_count`, `gross_revenue`, `discounts_given`, `cancelled_amount` e `net_revenue`.
+  - `consolidated`: `total_gross_revenue`, `total_refunds`, `total_platform_fees`, `total_net_revenue` e `total_operations`.
+
+### Busca e Associação de Reserva por Código (Cliente)
+
+1. `GET /reservations/search-by-code?code={code}`:
+   - Permite que o motorista pesquise uma reserva feita pelo operador no balcão usando o código recebido por WhatsApp ou comprovante impresso.
+   - Retorna os detalhes da reserva, unidade, placa, valor e indicação `can_claim: true/false`.
+
+2. `POST /reservations/associate`:
+   - Recebe `code`. Associa a reserva à conta do cliente autenticado e vincula ao veículo cadastrado correspondente à placa.
+
 Administradores do sistema podem criar usuários administrativos em
 `POST /admin/platform-fees/system-users`. O usuário recebe o papel
 `system_admin_operator`, começa inativo e não pode autenticar até ser ativado

@@ -51,6 +51,17 @@ final partnerFinancialReportProvider =
       ];
     });
 
+final partnerFinancialSummaryProvider =
+    FutureProvider.family<Map<String, dynamic>, int>((ref, periodDays) async {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) throw Exception('Sessao expirada. Entre novamente.');
+
+      return ApiService().getAuthorizedMap(
+        '/partners/financial-summary?period_days=$periodDays',
+        token,
+      );
+    });
+
 Future<Map<String, dynamic>> createOperationalReservation({
   required String token,
   required String parkingId,
