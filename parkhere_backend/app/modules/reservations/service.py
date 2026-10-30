@@ -874,7 +874,8 @@ def _base_amount(
     if pricing_plan == "hourly":
         return first_hour + max(duration_hours - 1, 0) * additional_hour
     if pricing_plan == "daily":
-        return daily
+        days = max(ceil(duration_hours / 24), 1) if duration_hours > 0 else 1
+        return round(daily * days, 2)
     if pricing_plan == "weekly":
         return weekly
     return monthly

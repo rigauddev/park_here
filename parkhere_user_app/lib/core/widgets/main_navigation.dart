@@ -94,23 +94,41 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   Future<void> _loadOperatorShiftAccess() async {
     if (!ref.read(authProvider).isOperator) return;
     try {
+      final token = ref.read(authProvider).accessToken;
+      Map<String, dynamic> session = const {'open': false};
+      if (token != null) {
+        try {
+          session = await fetchCashSession(token: token);
+        } catch (_) {}
+      }
+      final isCashOpen = session['open'] == true;
+
       final shifts = await ref
           .read(partnerOperatorsProvider.notifier)
           .fetchShifts();
       final now = DateTime.now();
-      final hasActiveShift = shifts.any((shift) {
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final tomorrowStart = todayStart.add(const Duration(days: 1));
+
+      final hasActiveOrTodayShift = shifts.any((shift) {
         final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
         final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
-        return !now.isBefore(starts) && !now.isAfter(ends);
+        return starts.isBefore(tomorrowStart) && ends.isAfter(todayStart);
       });
+
+      final parkings = await ref.read(partnerParkingProvider.future);
+      final hasAssignedParking = parkings.isNotEmpty;
+
+      final canOperate = isCashOpen || hasActiveOrTodayShift || hasAssignedParking;
+
       if (!mounted) return;
       setState(() {
-        _operatorHasShiftToday = hasActiveShift;
-        if (!hasActiveShift && !_isOperatorAllowedArea(_selectedArea)) {
+        _operatorHasShiftToday = canOperate;
+        if (!canOperate && !_isOperatorAllowedArea(_selectedArea)) {
           _selectedArea = _MainArea.shifts;
         }
       });
-      if (hasActiveShift && !_cashPromptShown) {
+      if (canOperate && !isCashOpen && !_cashPromptShown) {
         _cashPromptShown = true;
         await _promptCashIfNeeded(shifts);
       }
@@ -128,21 +146,30 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   Future<List<Map<String, String>>> _cashParkingOptions(
     List<Map<String, dynamic>> shifts,
   ) async {
-    final ids = <String>{};
+    final parkings = await ref.read(partnerParkingProvider.future);
+    if (parkings.isEmpty) return const [];
+
+    final now = DateTime.now();
+    final activeShiftParkingIds = <String>{};
     for (final shift in shifts) {
       final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
       final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
       if (shift['parking_id'] is String &&
-          !DateTime.now().isBefore(starts) &&
-          !DateTime.now().isAfter(ends)) {
-        ids.add(shift['parking_id'] as String);
+          !now.isBefore(starts) &&
+          !now.isAfter(ends)) {
+        activeShiftParkingIds.add(shift['parking_id'] as String);
       }
     }
-    final parkings = await ref.read(partnerParkingProvider.future);
+
+    // Se houver turno ativo agora, prioriza as unidades do turno;
+    // caso contrário, disponibiliza todas as unidades autorizadas para o operador.
+    final availableParkings = activeShiftParkingIds.isNotEmpty
+        ? parkings.where((p) => p.id != null && activeShiftParkingIds.contains(p.id))
+        : parkings;
+
     return [
-      for (final parking in parkings)
-        if (parking.id != null && ids.contains(parking.id))
-          {'id': parking.id!, 'name': parking.name},
+      for (final parking in availableParkings)
+        if (parking.id != null) {'id': parking.id!, 'name': parking.name},
     ];
   }
 

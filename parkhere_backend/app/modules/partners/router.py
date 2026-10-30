@@ -58,17 +58,22 @@ PARTNER_DOCUMENT_TYPES = {'alvara', 'rg', 'cnh', 'insurance_policy'}
 
 FREE_OPERATOR_LIMIT = 2
 OPERATOR_PERMISSION_LABELS = {
-    "reservations.view": "Ver reservas recebidas",
+    "cash.view": "Visualizar caixa e movimentações do turno",
+    "cash.manage": "Abrir e fechar caixa e turno",
     "parking_map.view": "Ver patio de vagas",
+    "parking_map.edit": "Editar disponibilidade das vagas",
+    "reservations.view": "Ver reservas recebidas",
     "reservations.create": "Criar reserva operacional",
+    "reservations.edit": "Editar reservas",
+    "reservations.delete": "Excluir/cancelar reservas",
     "reservations.cancel_own": "Cancelar reservas criadas pelo operador",
     "checkin.own": "Realizar check-in de reservas criadas pelo operador",
     "checkout.own": "Realizar checkout de reservas criadas pelo operador",
     "payments.receive": "Receber pagamento no local",
-    "reservations.edit": "Editar reservas",
-    "reservations.delete": "Excluir/cancelar reservas",
-    "parking_map.edit": "Editar disponibilidade das vagas",
     "convenience.view": "Visualizar conveniência",
+    "convenience.sell": "Operar caixa e PDV da conveniência",
+    "convenience.sales.cancel": "Cancelar vendas no PDV da conveniência",
+    "convenience.discount": "Conceder descontos em produtos no PDV",
     "convenience.edit": "Cadastrar e editar produtos",
     "convenience.delete": "Excluir produtos",
 }
@@ -1204,6 +1209,42 @@ async def toggle_parking_slot_block(
     return {"slot_code": slot_code, "status": status}
 
 
+@router.get("/customer-by-plate")
+async def lookup_customer_by_plate(
+    plate: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Consulta se a placa já existe no sistema e retorna dados do cliente para vincular na reserva."""
+    await _ensure_parking_staff(db, current_user)
+    clean = re.sub(r"[\s-]", "", plate).upper()
+    if len(clean) < 7:
+        return {"found": False}
+
+    vehicle = await db.scalar(
+        select(Vehicle)
+        .where(func.upper(func.replace(func.replace(Vehicle.plate, "-", ""), " ", "")) == clean)
+        .limit(1)
+    )
+    if vehicle is None:
+        return {"found": False}
+
+    owner = await db.get(User, vehicle.user_id)
+    if owner is None:
+        return {"found": False}
+
+    return {
+        "found": True,
+        "user_id": owner.id,
+        "customer_name": owner.name,
+        "customer_phone": owner.phone,
+        "customer_email": owner.email,
+        "vehicle_id": vehicle.id,
+        "vehicle_plate": vehicle.plate,
+        "vehicle_model": f"{vehicle.brand or ''} {vehicle.model or ''}".strip(),
+    }
+
+
 @router.get("/reservations")
 async def list_partner_reservations(
     db: AsyncSession = Depends(get_db),
@@ -1688,12 +1729,30 @@ async def open_cash_session(
     if parking is None:
         raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
     await _ensure_operator_on_parking_shift(db, current_user.id, parking.id)
+    _require_operator_permission(current_user, 'cash.manage')
     existing = await db.scalar(select(PartnerCashSession).where(
         PartnerCashSession.operator_id == current_user.id,
         PartnerCashSession.status == "open",
     ).with_for_update())
     if existing:
         raise HTTPException(status_code=409, detail="Já existe um caixa aberto para este operador")
+
+    now_local = _now_schedule_local()
+    # Assegura que há um turno ativo registrado para o operador
+    active_shift = await db.scalar(select(OperatorWorkShift).where(
+        OperatorWorkShift.operator_id == current_user.id,
+        OperatorWorkShift.parking_id == parking.id,
+        OperatorWorkShift.starts_at <= now_local,
+        OperatorWorkShift.ends_at >= now_local,
+    ).limit(1))
+    if active_shift is None:
+        db.add(OperatorWorkShift(
+            operator_id=current_user.id,
+            parking_id=parking.id,
+            starts_at=now_local,
+            ends_at=now_local + timedelta(hours=8),
+        ))
+
     session = PartnerCashSession(
         operator_id=current_user.id, parking_id=parking.id,
         opened_at=datetime.utcnow(), status="open",
@@ -2249,8 +2308,18 @@ async def _ensure_operator_on_parking_shift(
         OperatorWorkShift.starts_at <= now,
         OperatorWorkShift.ends_at >= now,
     ).limit(1))
-    if shift_id is None:
-        raise HTTPException(status_code=403, detail="Você só pode operar esta unidade durante o seu turno escalado.")
+    if shift_id is not None:
+        return
+
+    # Se não houver turno exato agendado no minuto, permite se o operador estiver associado à unidade pelo gestor
+    assignment_id = await db.scalar(select(OperatorParkingAssignment.id).where(
+        OperatorParkingAssignment.operator_id == operator_id,
+        OperatorParkingAssignment.parking_id == parking_id,
+    ).limit(1))
+    if assignment_id is not None:
+        return
+
+    raise HTTPException(status_code=403, detail="Você só pode operar unidades para as quais foi autorizado ou escalado pelo gestor.")
 
 
 def _guide_service_payload(service: GuideService) -> dict:

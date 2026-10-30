@@ -338,3 +338,7 @@ e [ML Kit](https://developers.google.com/ml-kit/vision/face-detection).
 O APK atual não deve ser instalado diretamente em terminais de pagamento. O
 Mercado Pago Point Smart usa SmartApps/SDK, OAuth e homologação; deve ser um alvo
 Android separado, com modo PDV limitado. Consulte a [visão geral SmartApps](https://www.mercadopago.com.br/developers/pt/docs/smartapps/overview?scope=prod).
+
+
+## anotacoes
+Quando o operador do estacionamento, criar um reserva ao informar a placa consultar se a placa ja existe no sistema se ja existir retorna dados do cliente operador confirma se o cliente ja tem cadastro e qual nome, se quando o operador criar a reserva ja atrelar ao cliente. se nao segue o fluxo ja criado, que ao finalizar a reserva enviar via whatsapp, link da play store e link da apple store, com nuemro da reserva do cliente, para que ele ao instalar app criar cadastro possa  associar a reserva ao usuario dele, na tela de reserva deve ter capo buscar reserva, ele cola o codigo mostra a reaerva e tem botao de associar a reserva  caso a reserva tenha sido criada pelo o operador ou gestor do estacionamento 

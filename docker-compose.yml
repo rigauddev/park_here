@@ -32,7 +32,12 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: parkfinder
-    command: ["mysqld", "--host-cache-size=0"]
+    command: >
+      mysqld
+      --host-cache-size=0
+      --performance_schema=OFF
+      --innodb-buffer-pool-size=64M
+      --max-connections=40
     ports:
       - "3307:3306"
     volumes:
@@ -44,6 +49,7 @@ services:
       retries: 5
 
   web:
+    profiles: ["web"]
     platform: linux/amd64
     build:
       context: ./parkhere_user_app

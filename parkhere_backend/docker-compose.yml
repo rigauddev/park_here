@@ -26,6 +26,12 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: parkfinder
+    command: >
+      mysqld
+      --host-cache-size=0
+      --performance_schema=OFF
+      --innodb-buffer-pool-size=64M
+      --max-connections=40
     ports:
       - "3307:3306"
     volumes:

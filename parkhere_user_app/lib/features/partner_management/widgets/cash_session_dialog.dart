@@ -37,6 +37,7 @@ class _CashSessionDialogState extends ConsumerState<_CashSessionDialog> {
   String? _parkingId;
   bool _busy = false;
   String? _error;
+  bool _includeConvenience = false;
 
   @override
   void initState() {
@@ -77,13 +78,13 @@ class _CashSessionDialogState extends ConsumerState<_CashSessionDialog> {
           token: token,
           parkingId: _parkingId!,
           parkingOpeningCash: _money(_parking),
-          convenienceOpeningCash: _money(_convenience),
+          convenienceOpeningCash: _includeConvenience ? _money(_convenience) : 0,
         );
       } else {
         await closePartnerCashSession(
           token: token,
           parkingClosingCash: _money(_parking),
-          convenienceClosingCash: _money(_convenience),
+          convenienceClosingCash: _includeConvenience ? _money(_convenience) : 0,
           closingNotes: _notes.text,
         );
       }
@@ -99,7 +100,7 @@ class _CashSessionDialogState extends ConsumerState<_CashSessionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.open ? 'Abrir caixas do turno' : 'Fechar caixas do turno';
+    final title = widget.open ? 'Abrir turno e caixa' : 'Fechar turno e caixa';
     return AlertDialog(
       title: Text(title),
       content: SingleChildScrollView(
@@ -107,56 +108,90 @@ class _CashSessionDialogState extends ConsumerState<_CashSessionDialog> {
           width: 420,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 widget.open
-                    ? 'Informe os valores iniciais separados para estacionamento e conveniência.'
-                    : 'Informe os valores finais de cada caixa. Ao fechar, as funções operacionais ficam bloqueadas.',
+                    ? 'Informe o fundo de troco inicial para liberar as funções operacionais da unidade.'
+                    : 'Informe os valores finais em dinheiro apurados no encerramento deste turno.',
+                style: const TextStyle(color: Colors.black87),
               ),
-              if (widget.open && widget.parkingOptions.length > 1)
-                DropdownButtonFormField<String>(
-                  initialValue: _parkingId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Estacionamento'),
-                  items: [
-                    for (final item in widget.parkingOptions)
-                      DropdownMenuItem(
-                        value: item['id'],
-                        child: Text(item['name'] ?? item['id'] ?? ''),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() => _parkingId = value),
-                ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              if (widget.open && widget.parkingOptions.isNotEmpty) ...[
+                if (widget.parkingOptions.length > 1)
+                  DropdownButtonFormField<String>(
+                    initialValue: _parkingId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Unidade do turno',
+                      prefixIcon: Icon(Icons.local_parking),
+                    ),
+                    items: [
+                      for (final item in widget.parkingOptions)
+                        DropdownMenuItem(
+                          value: item['id'],
+                          child: Text(item['name'] ?? item['id'] ?? ''),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() => _parkingId = value),
+                  )
+                else
+                  InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Unidade do turno',
+                      prefixIcon: Icon(Icons.local_parking),
+                    ),
+                    child: Text(
+                      widget.parkingOptions.first['name'] ?? 'Estacionamento',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+              ],
               TextField(
                 controller: _parking,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
                   labelText: widget.open
-                      ? 'Valor inicial – estacionamento'
-                      : 'Valor final – estacionamento',
+                      ? 'Fundo de troco inicial (Estacionamento)'
+                      : 'Valor final em dinheiro (Estacionamento)',
                   prefixText: 'R\$ ',
+                  hintText: '0,00',
                 ),
               ),
-              TextField(
-                controller: _convenience,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: widget.open
-                      ? 'Valor inicial – conveniência'
-                      : 'Valor final – conveniência',
-                  prefixText: 'R\$ ',
-                ),
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Caixa separado para conveniência / loja'),
+                value: _includeConvenience,
+                onChanged: (val) => setState(() => _includeConvenience = val ?? false),
               ),
-              if (!widget.open)
+              if (_includeConvenience) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _convenience,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: widget.open
+                        ? 'Fundo de troco inicial (Conveniência)'
+                        : 'Valor final em dinheiro (Conveniência)',
+                    prefixText: 'R\$ ',
+                    hintText: '0,00',
+                  ),
+                ),
+              ],
+              if (!widget.open) ...[
+                const SizedBox(height: 12),
                 TextField(
                   controller: _notes,
                   maxLines: 2,
                   decoration: const InputDecoration(labelText: 'Observações (opcional)'),
                 ),
+              ],
               if (_error != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.only(top: 12),
                   child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                 ),
             ],

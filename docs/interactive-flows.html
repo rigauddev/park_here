@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ParkHere — Documentação Interativa de Fluxos e Regras de Negócio</title>
+  <style>
+    :root {
+      --primary: #0F52BA;
+      --primary-dark: #0A387E;
+      --accent: #00D2D3;
+      --bg: #F4F7FC;
+      --surface: #FFFFFF;
+      --text: #1E293B;
+      --text-muted: #64748B;
+      --border: #E2E8F0;
+      --success: #10B981;
+      --warning: #F59E0B;
+      --error: #EF4444;
+      --node-bg: #FFFFFF;
+      --shadow: 0 4px 12px rgba(15, 82, 186, 0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 320px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 20px;
+    }
+
+    .brand h1 { font-size: 1.1rem; font-weight: 700; color: var(--primary); }
+    .brand p { font-size: 0.75rem; color: var(--text-muted); }
+
+    .nav-list {
+      padding: 12px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      margin-bottom: 6px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .nav-item:hover {
+      background: rgba(15, 82, 186, 0.04);
+      border-color: rgba(15, 82, 186, 0.1);
+    }
+
+    .nav-item.active {
+      background: rgba(15, 82, 186, 0.08);
+      border-color: var(--primary);
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .nav-item .icon { font-size: 1.2rem; }
+
+    .nav-footer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      flex: 1;
+      text-align: center;
+    }
+
+    .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn:hover { background: #F1F5F9; }
+
+    /* Main Area */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .topbar {
+      padding: 16px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .topbar h2 { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+    .topbar-subtitle { font-size: 0.85rem; color: var(--text-muted); }
+
+    .scenario-filter {
+      display: flex;
+      gap: 8px;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .filter-btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+
+    .filter-btn.active {
+      background: var(--surface);
+      color: var(--primary);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    /* Content Area */
+    .viewport {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tree-canvas {
+      flex: 1;
+      padding: 32px;
+      overflow: auto;
+      background:
+        radial-gradient(circle, #CBD5E1 1px, transparent 1px);
+      background-size: 24px 24px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    /* Tree Node Styles */
+    .node-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+
+    .tree-node {
+      width: 280px;
+      background: var(--node-bg);
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      padding: 14px 18px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      z-index: 2;
+    }
+
+    .tree-node:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(15, 82, 186, 0.15);
+      border-color: var(--primary);
+    }
+
+    .tree-node.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(15, 82, 186, 0.2);
+    }
+
+    .tree-node.kind-start { border-left: 6px solid var(--primary); }
+    .tree-node.kind-action { border-left: 6px solid #6366F1; }
+    .tree-node.kind-decision { border-left: 6px solid var(--warning); border-radius: 10px; }
+    .tree-node.kind-success { border-left: 6px solid var(--success); }
+    .tree-node.kind-error { border-left: 6px solid var(--error); }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .node-tag {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .tag-start { background: #E0E7FF; color: var(--primary); }
+    .tag-action { background: #EDE9FE; color: #6366F1; }
+    .tag-decision { background: #FEF3C7; color: #B45309; }
+    .tag-success { background: #D1FAE5; color: #065F46; }
+    .tag-error { background: #FEE2E2; color: #991B1B; }
+
+    .node-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .node-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    /* Branching & Connectors */
+    .node-connector {
+      width: 2px;
+      height: 30px;
+      background: var(--border);
+      position: relative;
+    }
+
+    .node-connector.has-label::after {
+      content: attr(data-label);
+      position: absolute;
+      left: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.7rem;
+      font-weight: 700;
+      background: var(--surface);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .node-connector.label-yes::after { color: var(--success); border-color: var(--success); }
+    .node-connector.label-no::after { color: var(--error); border-color: var(--error); }
+
+    .branches-wrapper {
+      display: flex;
+      gap: 32px;
+      position: relative;
+      padding-top: 24px;
+    }
+
+    .branches-wrapper::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 140px;
+      right: 140px;
+      height: 2px;
+      background: var(--border);
+    }
+
+    .branch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+
+    .branch::before {
+      content: "";
+      position: absolute;
+      top: -24px;
+      width: 2px;
+      height: 24px;
+      background: var(--border);
+    }
+
+    .branch-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .branch-success .branch-label { background: #D1FAE5; color: var(--success); }
+    .branch-error .branch-label { background: #FEE2E2; color: var(--error); }
+
+    /* Side Detail Panel */
+    .detail-panel {
+      width: 380px;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .detail-title { font-size: 1.1rem; font-weight: 700; }
+    .detail-section-title { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; }
+
+    .detail-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    .code-box {
+      font-family: monospace;
+      font-size: 0.78rem;
+      background: #1E293B;
+      color: #F8FAFC;
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+
+    /* Modal Editor */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .modal.active { display: flex; }
+
+    .modal-content {
+      background: var(--surface);
+      width: 700px;
+      max-width: 90vw;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      max-height: 85vh;
+    }
+
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-body {
+      padding: 20px 24px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    textarea.editor-area {
+      width: 100%;
+      height: 380px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      resize: vertical;
+      background: #0F172A;
+      color: #38BDF8;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">P</div>
+      <div>
+        <h1>ParkHere Flow</h1>
+        <p>Documentação Interativa de Fluxos</p>
+      </div>
+    </div>
+
+    <nav class="nav-list" id="navList"></nav>
+
+    <div class="nav-footer">
+      <button class="btn" onclick="openEditor()">✏️ Editar JSON</button>
+      <button class="btn btn-primary" onclick="exportData()">💾 Exportar</button>
+    </div>
+  </aside>
+
+  <!-- Main Viewport -->
+  <main class="main-content">
+    <header class="topbar">
+      <div>
+        <h2 id="currentFlowTitle">Autenticação & Login</h2>
+        <div class="topbar-subtitle" id="currentFlowSubtitle">Regras de validação, senhas, MFA e renovação de token</div>
+      </div>
+
+      <div class="scenario-filter">
+        <button class="filter-btn active" onclick="setFilter('all')">Todos os Nós</button>
+        <button class="filter-btn" onclick="setFilter('success')">Caminho de Sucesso</button>
+        <button class="filter-btn" onclick="setFilter('error')">Tratamento de Erros</button>
+      </div>
+    </header>
+
+    <div class="viewport">
+      <div class="tree-canvas" id="canvas"></div>
+
+      <aside class="detail-panel" id="detailPanel">
+        <div class="detail-section-title">Nó Selecionado</div>
+        <h3 class="detail-title" id="detailNodeTitle">Selecione um passo</h3>
+        <div class="detail-box" id="detailNodeDesc">Clique em qualquer caixa do fluxograma para inspecionar endpoints, requisitos e comportamentos de erro.</div>
+
+        <div class="detail-section-title">Contrato / API</div>
+        <div class="code-box" id="detailEndpoint">GET /api/v1/...</div>
+
+        <div class="detail-section-title">Comportamento em Erro</div>
+        <div class="detail-box" id="detailErrorBehavior" style="border-left: 3px solid var(--error);">
+          Nenhum erro ativo no nó selecionado.
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Editor Modal -->
+  <div class="modal" id="editorModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Editar Estrutura de Fluxos (JSON)</h3>
+        <button class="btn" style="flex:none;" onclick="closeEditor()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;">
+          Edite os fluxos diretamente. Qualquer alteração atualizará a árvore interativa e o painel em tempo real.
+        </p>
+        <textarea class="editor-area" id="jsonInput"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="resetDefaultData()">Restaurar Padrão</button>
+        <button class="btn btn-primary" onclick="saveEditorData()">Aplicar Alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Database of Interactive Flows
+    const DEFAULT_FLOWS = [
+      {
+        id: "auth_login",
+        title: "1. Autenticação & Login",
+        subtitle: "Fluxo de login de motorista, operador e gestor",
+        icon: "🔐",
+        root: {
+          id: "step_login_input",
+          title: "Formulário de Login",
+          desc: "Usuário insere E-mail e Senha (ou telefone) no Flutter App ou Web.",
+          kind: "start",
+          endpoint: "POST /auth/login\nPayload: { email, password }",
+          errorBehavior: "Valida formato de e-mail e campo obrigatório de senha antes do envio.",
+          condition: {
+            question: "Credenciais e MFA corretos?",
+            success: {
+              id: "step_login_success",
+              title: "Sessão Aberta & Token JWT",
+              desc: "Retorna Access Token JWT e Refresh Token. Dados salvos com segurança em LocalStorage.",
+              kind: "success",
+              endpoint: "HTTP 200 OK\n{ access_token, refresh_token, user_role, tenant_id }",
+              errorBehavior: "Tokens armazenados com isolamento de chave.",
+              next: {
+                id: "step_role_router",
+                title: "Roteamento por Perfil",
+                desc: "Se OPERATOR: verifica turno ativo ou unidades vinculadas;\nSe PARTNER_MANAGER: abre Dashboard e Menu da Empresa;\nSe USER: abre busca de vagas e mapa.",
+                kind: "action",
+                endpoint: "GET /partners/profile ou GET /users/me",
+                errorBehavior: "Sessão sem tenant para operador exibe tela informativa para vincular com gestor."
+              }
+            },
+            failure: {
+              id: "step_login_error",
+              title: "Falha de Autenticação",
+              desc: "Retorna 401 Credenciais Inválidas ou 403 Conta Inativa.",
+              kind: "error",
+              endpoint: "HTTP 401 Unauthorized\n{ detail: 'E-mail ou senha incorretos' }",
+              errorBehavior: "Exibe feedback amigável no app (ApiFeedback) sem apagar dados do formulário nem revelar motivo interno de segurança."
+            }
+          }
+        }
+      },
+      {
+        id: "operator_permissions",
+        title: "2. Gestão de Operadores & Acessos",
+        subtitle: "Gestor concede unidades e permissões ao operador",
+        icon: "👥",
+        root: {
+          id: "step_manager_open_operator",
+          title: "Gestor seleciona Operador",
+          desc: "No menu Equipe e Operadores, o gestor clica no card do operador ('Gerenciar Acessos e Permissões').",
+          kind: "start",
+          endpoint: "GET /partners/operators\nRetorna lista com { id, name, permissions, active }",
+          errorBehavior: "Exige role PARTNER_MANAGER e feature 'team_management' ativa.",
+          next: {
+            id: "step_config_dialog",
+            title: "Configuração de Unidades & Permissões",
+            desc: "Gestor marca quais unidades o operador opera e seleciona permissões diretas (Caixa/Turno, Pátio, Check-in/Checkout, Reservas, PDV Conveniência).",
+            kind: "action",
+            endpoint: "PUT /partners/operators/{id}/parkings\nPUT /partners/operators/{id}/permission-profile",
+            errorBehavior: "Impede associar unidades pertencentes a outro tenant.",
+            condition: {
+              question: "Ao menos uma unidade e permissões válidas selecionadas?",
+              success: {
+                id: "step_operator_ready",
+                title: "Operador Autorizado",
+                desc: "Operador agora tem acesso liberado para selecionar a unidade autorizada e abrir turno com caixa.",
+                kind: "success",
+                endpoint: "HTTP 200 OK\nOperador atualizado com auditoria registrada.",
+                errorBehavior: "Mudança tem efeito imediato no próximo login ou sincronização de sessão."
+              },
+              failure: {
+                id: "step_operator_no_unit",
+                title: "Sem Unidade Associada",
+                desc: "Se o operador tentar abrir turno sem unidades vinculadas, o app avisa para solicitar associação ao gestor.",
+                kind: "error",
+                endpoint: "HTTP 403 Forbidden\n{ detail: 'Nenhuma unidade autorizada para este operador' }",
+                errorBehavior: "Mostra alerta orientando a contatar o administrador do estacionamento."
+              }
+            }
+          }
+        }
+      },
+      {
+        id: "shift_and_cash",
+        title: "3. Abertura de Turno & Caixa",
+        subtitle: "Fluxo unificado de abertura com fundo de troco",
+        icon: "💵",
+        root: {
+          id: "step_open_cash_prompt",
+          title: "Abertura do Turno (Fundo de Troco)",
+          desc: "Operador acessa o app. Se o caixa não estiver aberto, exibe diálogo com as unidades autorizadas.",
+          kind: "start",
+          endpoint: "GET /partners/cash-session (retorna { open: false })",
+          errorBehavior: "Se já tiver caixa aberto para o operador, pula direto para as funções operacionais.",
+          next: {
+            id: "step_cash_input",
+            title: "Preenchimento de Fundo Inicial",
+            desc: "Operador informa o valor inicial de estacionamento (ex: R$ 50,00). Checkbox opcional para conveniência se a unidade vender produtos.",
+            kind: "action",
+            endpoint: "POST /partners/cash-session\n{ parking_id, parking_opening_cash, convenience_opening_cash }",
+            errorBehavior: "Valores numéricos positivos com máscara de moeda.",
+            condition: {
+              question: "Operador escalado ou atribuído à unidade?",
+              success: {
+                id: "step_cash_open_success",
+                title: "Turno e Caixa Abertos",
+                desc: "Backend cria a sessão de caixa ('open') e registra o turno de trabalho ativo (OperatorWorkShift). Todas as abas operacionais são desbloqueadas.",
+                kind: "success",
+                endpoint: "HTTP 201 Created\n{ session_id, opened_at, status: 'open' }",
+                errorBehavior: "Turno formalmente vinculado ao operador no histórico financeiro."
+              },
+              failure: {
+                id: "step_cash_unauthorized",
+                title: "Acesso Negado à Unidade",
+                desc: "Se o operador tentar abrir caixa em unidade que não pertence às suas atribuições, o sistema bloqueia.",
+                kind: "error",
+                endpoint: "HTTP 403 Forbidden\n'Você só pode operar unidades para as quais foi autorizado ou escalado.'",
+                errorBehavior: "Exibe mensagem explicativa solicitando associação pelo gestor."
+              }
+            }
+          }
+        }
+      },
+      {
+        id: "daily_reservation",
+        title: "4. Criação de Reserva Diária com Calendário",
+        subtitle: "Seleção de período de diárias e cálculo automático",
+        icon: "📅",
+        root: {
+          id: "step_slot_click",
+          title: "Operador clica em Vaga Livre no Pátio",
+          desc: "No mapa operacional de vagas, o operador clica em uma vaga disponível e seleciona 'Criar Reserva'.",
+          kind: "start",
+          endpoint: "Tela: PartnerParkingMapPage\nModal: _FreeSlotReservationDialog",
+          errorBehavior: "Exige vaga com status 'available' e permissão 'reservations.create'.",
+          next: {
+            id: "step_select_daily_plan",
+            title: "Seleção da Modalidade Diária",
+            desc: "Operador seleciona a modalidade 'Diária'. O app exibe o botão com ícone de calendário 'Selecionar período'.",
+            kind: "action",
+            endpoint: "Dropdown: pricingPlan = 'daily'",
+            errorBehavior: "Atualiza o cálculo para valor base por diária.",
+            next: {
+              id: "step_calendar_picker",
+              title: "Seleção de Datas no Calendário",
+              desc: "Abre o DateRangePicker nativo. O operador escolhe data de entrada e de saída (ex: 3 dias).",
+              kind: "action",
+              endpoint: "showDateRangePicker(start, end)",
+              errorBehavior: "Data final não pode ser anterior à data inicial.",
+              condition: {
+                question: "Período selecionado válido?",
+                success: {
+                  id: "step_daily_summary",
+                  title: "Resumo com Contagem de Dias",
+                  desc: "Exibe card destacado: 'Período: DD/MM até DD/MM (3 dias selecionados) - Total: R$ 150,00 (3 x R$ 50,00)'.",
+                  kind: "success",
+                  endpoint: "POST /reservations/pre-checkin\n{ duration_hours: 72, pricing_plan: 'daily', arrival_estimate_at }",
+                  errorBehavior: "Backend calcula base_amount = daily_price * days automaticamente."
+                },
+                failure: {
+                  id: "step_daily_empty",
+                  title: "Período Padrão (1 diária)",
+                  desc: "Se o operador não abrir o calendário, assume 1 diária padrão com chegada hoje.",
+                  kind: "error",
+                  endpoint: "duration_hours: 24, days: 1",
+                  errorBehavior: "Permite seguir sem bloqueio desnecessário."
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        id: "mercado_pago_transparent",
+        title: "5. Checkout Transparente Mercado Pago",
+        subtitle: "Tokenização sem salvar CVV e reconciliação segura",
+        icon: "💳",
+        root: {
+          id: "step_mp_order",
+          title: "Criação do Pedido (Order Manual)",
+          desc: "Backend cria a Order no Mercado Pago com processamento 'manual' e idempotência via X-Idempotency-Key.",
+          kind: "start",
+          endpoint: "POST /payments/mercadopago/transparent-order\n{ reservation_id, customer_email, total_amount }",
+          errorBehavior: "Gera Idempotency-Key única por tentativa; evita cobranças duplicadas.",
+          next: {
+            id: "step_mp_sdk_token",
+            title: "Tokenização pelo SDK Mercado Pago",
+            desc: "O app mobile abre o componente oficial CardTransaction. O CVV é coletado apenas na memória do SDK e descartado imediatamente.",
+            kind: "action",
+            endpoint: "Mercado Pago SDK -> Token do Cartão gerado",
+            errorBehavior: "CVV e PAN completo NUNCA passam pelo backend ParkHere (PCI compliance).",
+            condition: {
+              question: "Cartão autorizado pela adquirente?",
+              success: {
+                id: "step_mp_success",
+                title: "Pagamento Aprovado & Webhook",
+                desc: "Mercado Pago autoriza o pagamento. Webhook reconcilia status 'paid' no banco e libera o comprovante.",
+                kind: "success",
+                endpoint: "POST /payments/mercadopago/webhook\nStatus: approved -> Reservation: paid",
+                errorBehavior: "Snapshot das taxas da plataforma e do parceiro gravadas para auditoria."
+              },
+              failure: {
+                id: "step_mp_rejected",
+                title: "Pagamento Recusado",
+                desc: "Emissor recusa por saldo insuficiente ou antifraude. App exibe mensagem clara para tentar outro cartão.",
+                kind: "error",
+                endpoint: "HTTP 402 Payment Required\n{ detail: 'Cartão recusado pelo banco emissor' }",
+                errorBehavior: "Não armazena token inválido nem bloqueia o motorista para tentar Pix ou outro meio."
+              }
+            }
+          }
+        }
+      }
+    ];
+
+    let currentFlows = JSON.parse(localStorage.getItem('parkhere_flows_data') || 'null') || DEFAULT_FLOWS;
+    let activeFlowIndex = 0;
+    let currentFilter = 'all';
+
+    function init() {
+      renderNav();
+      renderCurrentFlow();
+    }
+
+    function renderNav() {
+      const list = document.getElementById('navList');
+      list.innerHTML = '';
+      currentFlows.forEach((flow, idx) => {
+        const item = document.createElement('div');
+        item.className = `nav-item ${idx === activeFlowIndex ? 'active' : ''}`;
+        item.onclick = () => selectFlow(idx);
+        item.innerHTML = `
+          <span class="icon">${flow.icon || '📌'}</span>
+          <div>
+            <div style="font-size:0.9rem;">${flow.title}</div>
+            <div style="font-size:0.75rem; color:var(--text-muted);">${flow.subtitle || ''}</div>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function selectFlow(index) {
+      activeFlowIndex = index;
+      renderNav();
+      renderCurrentFlow();
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+      renderCurrentFlow();
+    }
+
+    function renderCurrentFlow() {
+      const flow = currentFlows[activeFlowIndex];
+      document.getElementById('currentFlowTitle').textContent = flow.title;
+      document.getElementById('currentFlowSubtitle').textContent = flow.subtitle || '';
+
+      const canvas = document.getElementById('canvas');
+      canvas.innerHTML = '';
+
+      if (flow.root) {
+        const rootContainer = renderNodeRecursive(flow.root);
+        canvas.appendChild(rootContainer);
+        // Select first node by default
+        selectNode(flow.root);
+      }
+    }
+
+    function renderNodeRecursive(node, connectorLabel = null) {
+      const container = document.createElement('div');
+      container.className = 'node-container';
+
+      if (connectorLabel) {
+        const conn = document.createElement('div');
+        conn.className = `node-connector has-label ${connectorLabel.toLowerCase().includes('sim') || connectorLabel.toLowerCase().includes('correto') ? 'label-yes' : 'label-no'}`;
+        conn.setAttribute('data-label', connectorLabel);
+        container.appendChild(conn);
+      }
+
+      // Render the node itself
+      const el = document.createElement('div');
+      el.className = `tree-node kind-${node.kind || 'action'}`;
+      el.onclick = (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.tree-node').forEach(n => n.classList.remove('selected'));
+        el.classList.add('selected');
+        selectNode(node);
+      };
+
+      const tagClass = `tag-${node.kind || 'action'}`;
+      const tagLabel = {
+        start: 'Início do Fluxo',
+        action: 'Ação / Etapa',
+        decision: 'Condicional / Decisão',
+        success: 'Sucesso',
+        error: 'Tratamento de Erro'
+      }[node.kind] || 'Etapa';
+
+      el.innerHTML = `
+        <div class="node-header">
+          <span class="node-tag ${tagClass}">${tagLabel}</span>
+        </div>
+        <div class="node-title">${node.title}</div>
+        <div class="node-desc">${node.desc}</div>
+      `;
+      container.appendChild(el);
+
+      // Render branches (decision) or next
+      if (node.condition) {
+        const branches = document.createElement('div');
+        branches.className = 'branches-wrapper';
+
+        if (node.condition.success && (currentFilter === 'all' || currentFilter === 'success')) {
+          const bSuccess = document.createElement('div');
+          bSuccess.className = 'branch branch-success';
+          bSuccess.appendChild(renderNodeRecursive(node.condition.success, 'SIM / CORRETO'));
+          branches.appendChild(bSuccess);
+        }
+
+        if (node.condition.failure && (currentFilter === 'all' || currentFilter === 'error')) {
+          const bError = document.createElement('div');
+          bError.className = 'branch branch-error';
+          bError.appendChild(renderNodeRecursive(node.condition.failure, 'NÃO / ERRO'));
+          branches.appendChild(bError);
+        }
+
+        container.appendChild(branches);
+      } else if (node.next) {
+        const conn = document.createElement('div');
+        conn.className = 'node-connector';
+        container.appendChild(conn);
+        container.appendChild(renderNodeRecursive(node.next));
+      }
+
+      return container;
+    }
+
+    function selectNode(node) {
+      document.getElementById('detailNodeTitle').textContent = node.title;
+      document.getElementById('detailNodeDesc').textContent = node.desc || 'Sem descrição adicional.';
+      document.getElementById('detailEndpoint').textContent = node.endpoint || 'Ação local de interface / sem chamada direta de API';
+      document.getElementById('detailErrorBehavior').textContent = node.errorBehavior || 'Nenhum erro reportado neste passo.';
+    }
+
+    // Modal Editor
+    function openEditor() {
+      document.getElementById('jsonInput').value = JSON.stringify(currentFlows, null, 2);
+      document.getElementById('editorModal').classList.add('active');
+    }
+
+    function closeEditor() {
+      document.getElementById('editorModal').classList.remove('active');
+    }
+
+    function saveEditorData() {
+      try {
+        const parsed = JSON.parse(document.getElementById('jsonInput').value);
+        if (Array.isArray(parsed)) {
+          currentFlows = parsed;
+          localStorage.setItem('parkhere_flows_data', JSON.stringify(parsed));
+          renderNav();
+          renderCurrentFlow();
+          closeEditor();
+          alert('Fluxos atualizados com sucesso!');
+        } else {
+          alert('O JSON deve ser uma lista de fluxos.');
+        }
+      } catch (err) {
+        alert('Erro ao processar JSON: ' + err.message);
+      }
+    }
+
+    function resetDefaultData() {
+      if (confirm('Deseja restaurar os fluxos originais do ParkHere?')) {
+        currentFlows = DEFAULT_FLOWS;
+        localStorage.removeItem('parkhere_flows_data');
+        renderNav();
+        renderCurrentFlow();
+        closeEditor();
+      }
+    }
+
+    function exportData() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentFlows, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", "parkhere_fluxos_interativos.json");
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    init();
+  </script>
+</body>
+</html>
+

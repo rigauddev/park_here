@@ -1041,9 +1041,14 @@ não há sessão).
 {
   "parking_id": "uuid",
   "parking_opening_cash": 100.0,
-  "convenience_opening_cash": 50.0
+  "convenience_opening_cash": 0.0
 }
 ```
+
+Regras da Abertura de Caixa e Turno:
+- O operador pode abrir o caixa se tiver um turno escalado ativo ou se estiver associado àquela unidade (`OperatorParkingAssignment`) pelo gestor.
+- Ao abrir o caixa, se não houver um `OperatorWorkShift` aberto, o sistema cria o turno automaticamente, garantindo que o operador não fique bloqueado na operação.
+- `convenience_opening_cash` é opcional (default 0); o operador pode operar apenas com o fundo de estacionamento sem a obrigatoriedade de caixas separados confusos.
 
 `POST /partners/cash-session/close` recebe os valores finais dos dois caixas e
 opcionalmente `closing_notes`. O retorno inclui os valores de abertura e
@@ -1053,12 +1058,31 @@ unidade do turno, permitindo auditoria e fechamento independente dos caixas.
 ### Perfis e regras de acesso
 
 Gestores de parceiros podem consultar e criar perfis em
-`/partners/permission-profiles`. Cada perfil contém permissões granulares de
-visualização, criação, edição, cancelamento, checkout, pagamentos e
-conveniência. `PUT /partners/operators/{id}/permission-profile` associa um
-perfil ao operador e grava uma cópia das permissões para auditoria. Os perfis
-`Operador` e `Gestor` são fornecidos como padrões; perfis personalizados podem
-ser criados pelo gestor.
+`/partners/permission-profiles` ou definir diretamente as permissões do operador
+no diálogo de gerenciamento de equipe. Cada perfil e operador contém permissões granulares:
+- `cash.manage`: Abrir e fechar caixa e turno operacional.
+- `parking_map.view`: Visualizar mapa de vagas.
+- `parking_map.edit`: Editar disponibilidade e bloqueio de vagas.
+- `reservations.view`: Ver reservas recebidas.
+- `reservations.create`: Criar reserva operacional.
+- `checkin.own`: Realizar check-in de veículos.
+- `checkout.own`: Realizar checkout de veículos.
+- `payments.receive`: Receber pagamentos no local.
+- `convenience.sell`: Operar PDV e caixa da conveniência.
+- `convenience.view`: Visualizar conveniência.
+- `reservations.cancel_own`: Cancelar reserva própria.
+- `reservations.edit`: Editar reservas.
+- `reservations.delete`: Excluir reservas.
+- `convenience.edit` / `convenience.delete`: Manutenção de produtos.
+
+`PUT /partners/operators/{id}/permission-profile` associa permissões ou perfil
+ao operador com registro em auditoria.
+
+### Reserva Operacional Diária com Calendário
+
+`POST /reservations/pre-checkin` aceita `pricing_plan="daily"` com `duration_hours = days * 24`.
+O backend calcula `base_amount = daily_price * ceil(duration_hours / 24)`.
+O app móvel exibe o seletor de calendário (`showDateRangePicker`) exibindo as datas e a contagem de dias selecionados.
 
 Administradores do sistema podem criar usuários administrativos em
 `POST /admin/platform-fees/system-users`. O usuário recebe o papel

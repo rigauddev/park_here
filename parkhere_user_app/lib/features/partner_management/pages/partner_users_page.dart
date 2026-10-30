@@ -12,20 +12,91 @@ import '../providers/partner_operators_provider.dart';
 import '../providers/partner_parking_provider.dart';
 
 const _operatorPermissionLabels = {
-  'reservations.view': 'Ver reservas',
-  'parking_map.view': 'Patio de vagas',
-  'reservations.create': 'Criar reserva',
-  'reservations.cancel_own': 'Cancelar reserva criada por ele',
-  'checkin.own': 'Check-in das reservas dele',
-  'checkout.own': 'Checkout das reservas dele',
-  'payments.receive': 'Receber pagamento',
+  'cash.view': 'Visualizar caixa e movimentações',
+  'cash.manage': 'Abrir e fechar caixa e turno',
+  'parking_map.view': 'Visualizar pátio de vagas',
+  'parking_map.edit': 'Bloquear e liberar vagas',
+  'reservations.view': 'Visualizar reservas',
+  'reservations.create': 'Criar reservas operacionais',
   'reservations.edit': 'Editar reservas',
   'reservations.delete': 'Excluir/cancelar reservas',
-  'parking_map.edit': 'Editar disponibilidade das vagas',
+  'reservations.cancel_own': 'Cancelar reserva criada por ele',
+  'checkin.own': 'Realizar check-in de veículos',
+  'checkout.own': 'Realizar checkout de veículos',
+  'payments.receive': 'Receber pagamentos no local',
   'convenience.view': 'Visualizar conveniência',
+  'convenience.sell': 'Operar PDV e caixa da conveniência',
   'convenience.edit': 'Cadastrar e editar produtos',
   'convenience.delete': 'Excluir produtos',
 };
+
+class _PermissionItem {
+  final String key;
+  final String label;
+  final String actionType; // Ver, Criar, Editar, Excluir, Operar
+
+  const _PermissionItem(this.key, this.label, this.actionType);
+}
+
+class _PermissionModule {
+  final String name;
+  final IconData icon;
+  final List<_PermissionItem> items;
+
+  const _PermissionModule({
+    required this.name,
+    required this.icon,
+    required this.items,
+  });
+}
+
+const _permissionModules = [
+  _PermissionModule(
+    name: 'Reservas & Pré-reservas',
+    icon: Icons.calendar_today_outlined,
+    items: [
+      _PermissionItem('reservations.view', 'Ver reservas recebidas', 'Ver'),
+      _PermissionItem('reservations.create', 'Criar reserva manual', 'Criar'),
+      _PermissionItem('reservations.edit', 'Editar dados de reservas', 'Editar'),
+      _PermissionItem('reservations.delete', 'Excluir / cancelar reservas', 'Excluir'),
+      _PermissionItem('checkin.own', 'Realizar check-in de veículos', 'Operar'),
+      _PermissionItem('checkout.own', 'Realizar checkout de veículos', 'Operar'),
+    ],
+  ),
+  _PermissionModule(
+    name: 'Pátio de Vagas (Mapa)',
+    icon: Icons.local_parking_outlined,
+    items: [
+      _PermissionItem('parking_map.view', 'Ver mapa e ocupação de vagas', 'Ver'),
+      _PermissionItem('parking_map.edit', 'Bloquear e liberar vagas', 'Editar'),
+    ],
+  ),
+  _PermissionModule(
+    name: 'Turno & Caixa',
+    icon: Icons.point_of_sale_outlined,
+    items: [
+      _PermissionItem('cash.view', 'Ver saldo e movimentações do turno', 'Ver'),
+      _PermissionItem('cash.manage', 'Abrir e fechar caixa / turno', 'Operar'),
+    ],
+  ),
+  _PermissionModule(
+    name: 'Pagamentos no Local',
+    icon: Icons.payments_outlined,
+    items: [
+      _PermissionItem('payments.receive', 'Receber pagamentos (Dinheiro, Cartão, Pix)', 'Operar'),
+    ],
+  ),
+  _PermissionModule(
+    name: 'Conveniência & Loja',
+    icon: Icons.storefront_outlined,
+    items: [
+      _PermissionItem('convenience.view', 'Ver catálogo e estoque da loja', 'Ver'),
+      _PermissionItem('convenience.sell', 'Operar caixa e PDV da loja', 'Operar'),
+      _PermissionItem('convenience.edit', 'Cadastrar e editar produtos', 'Editar'),
+      _PermissionItem('convenience.delete', 'Excluir produtos do catálogo', 'Excluir'),
+    ],
+  ),
+];
 
 class PartnerUsersPage extends ConsumerWidget {
   const PartnerUsersPage({super.key});
@@ -340,26 +411,23 @@ class _OperatorCard extends StatelessWidget {
         ),
         isThreeLine: true,
         onTap: onConfigure,
-        trailing: SizedBox(
-          width: 160,
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              Chip(
-                label: Text(operator.isActive ? 'Ativo' : 'Inativo'),
-                backgroundColor: operator.isActive
-                    ? AppTheme.success.withValues(alpha: 0.1)
-                    : Colors.grey.withValues(alpha: 0.1),
-                side: BorderSide.none,
-              ),
-              Chip(
-                label: Text('${operator.permissions.length} permissoes'),
-                side: BorderSide.none,
-              ),
-            ],
-          ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Chip(
+              label: Text(operator.isActive ? 'Ativo' : 'Inativo'),
+              backgroundColor: operator.isActive
+                  ? AppTheme.success.withValues(alpha: 0.1)
+                  : Colors.grey.withValues(alpha: 0.1),
+              side: BorderSide.none,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.manage_accounts_outlined, color: AppTheme.primary),
+              tooltip: 'Gerenciar acessos e permissões',
+              onPressed: onConfigure,
+            ),
+          ],
         ),
       ),
     );
@@ -378,6 +446,7 @@ class _OperatorAssignmentDialog extends ConsumerStatefulWidget {
 class _OperatorAssignmentDialogState
     extends ConsumerState<_OperatorAssignmentDialog> {
   final selected = <String>{};
+  final selectedPermissions = <String>{};
   List<Map<String, dynamic>> profiles = [];
   String? selectedProfileId;
   bool loadingAssignments = true;
@@ -386,6 +455,11 @@ class _OperatorAssignmentDialogState
   @override
   void initState() {
     super.initState();
+    selectedPermissions.addAll(
+      widget.operator.permissions.isNotEmpty
+          ? widget.operator.permissions
+          : _operatorPermissionLabels.keys,
+    );
     _loadAssignments();
     _loadProfiles();
   }
@@ -399,8 +473,8 @@ class _OperatorAssignmentDialogState
       final rows = data.cast<Map<String, dynamic>>();
       final matches = rows.where((profile) {
         final permissions = (profile['permissions'] as List<dynamic>? ?? []).cast<String>();
-        return permissions.toSet().difference(widget.operator.permissions.toSet()).isEmpty &&
-            permissions.length == widget.operator.permissions.length;
+        return permissions.toSet().difference(selectedPermissions).isEmpty &&
+            permissions.length == selectedPermissions.length;
       }).toList();
       setState(() { profiles = rows; selectedProfileId = matches.isEmpty ? null : matches.first['id'] as String?; });
     } catch (_) {}
@@ -486,7 +560,7 @@ class _OperatorAssignmentDialogState
                     contentPadding: EdgeInsets.zero,
                   ),
               const Divider(),
-              if (profiles.isNotEmpty)
+              if (profiles.isNotEmpty) ...[
                 DropdownButtonFormField<String?>(
                   initialValue: selectedProfileId,
                   isExpanded: true,
@@ -496,11 +570,35 @@ class _OperatorAssignmentDialogState
                     for (final profile in profiles.where((item) => item['id'] != null))
                       DropdownMenuItem<String?>(value: profile['id'] as String, child: Text(profile['name'].toString())),
                   ],
-                  onChanged: savingAssignments ? null : (value) => setState(() => selectedProfileId = value),
+                  onChanged: savingAssignments ? null : (value) {
+                    setState(() {
+                      selectedProfileId = value;
+                      if (value != null) {
+                        final found = profiles.firstWhere((p) => p['id'] == value, orElse: () => {});
+                        final list = (found['permissions'] as List<dynamic>? ?? []).cast<String>();
+                        selectedPermissions.clear();
+                        selectedPermissions.addAll(list);
+                      }
+                    });
+                  },
                 ),
-              if (profiles.isNotEmpty) const SizedBox(height: 8),
+                const SizedBox(height: 12),
+              ],
+              _PermissionMatrixWidget(
+                selectedPermissions: selectedPermissions,
+                enabled: !savingAssignments,
+                onChanged: (newSet) {
+                  setState(() {
+                    selectedPermissions.clear();
+                    selectedPermissions.addAll(newSet);
+                    selectedProfileId = null;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
               const Text(
                 'O e-mail e o CPF são apenas para consulta. Os turnos são gerenciados na tela Escalas.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
           ),
@@ -549,7 +647,7 @@ class _OperatorAssignmentDialogState
       if (token != null) {
         await ApiService().putAuthorized('/partners/operators/${widget.operator.id}/permission-profile', {
           'profile_id': selectedProfileId,
-          if (selectedProfileId == null) 'permissions': widget.operator.permissions,
+          'permissions': selectedPermissions.toList(),
         }, token);
       }
       if (mounted) {
@@ -650,30 +748,16 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
                   validator: FormValidators.password,
                 ),
                 const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Permissoes',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
+                _PermissionMatrixWidget(
+                  selectedPermissions: selectedPermissions,
+                  enabled: !isSaving,
+                  onChanged: (newSet) {
+                    setState(() {
+                      selectedPermissions.clear();
+                      selectedPermissions.addAll(newSet);
+                    });
+                  },
                 ),
-                const SizedBox(height: 6),
-                for (final entry in _operatorPermissionLabels.entries)
-                  CheckboxListTile(
-                    value: selectedPermissions.contains(entry.key),
-                    onChanged: (value) {
-                      setState(() {
-                        if (value ?? false) {
-                          selectedPermissions.add(entry.key);
-                        } else {
-                          selectedPermissions.remove(entry.key);
-                        }
-                      });
-                    },
-                    title: Text(entry.value),
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                  ),
                 const SizedBox(height: 12),
                 CheckboxListTile(
                   value: acceptedTerms,
@@ -749,5 +833,146 @@ class _CreateOperatorDialogState extends ConsumerState<_CreateOperatorDialog> {
 
   Future<void> _message(String text) async {
     await ApiFeedback.show(context, text);
+  }
+}
+
+class _PermissionMatrixWidget extends StatelessWidget {
+  final Set<String> selectedPermissions;
+  final bool enabled;
+  final ValueChanged<Set<String>> onChanged;
+
+  const _PermissionMatrixWidget({
+    required this.selectedPermissions,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  Color _badgeColor(String type) => switch (type) {
+    'Ver' => Colors.blue.shade100,
+    'Criar' => Colors.green.shade100,
+    'Editar' => Colors.orange.shade100,
+    'Excluir' => Colors.red.shade100,
+    _ => Colors.purple.shade100,
+  };
+
+  Color _badgeTextColor(String type) => switch (type) {
+    'Ver' => Colors.blue.shade900,
+    'Criar' => Colors.green.shade900,
+    'Editar' => Colors.orange.shade900,
+    'Excluir' => Colors.red.shade900,
+    _ => Colors.purple.shade900,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Permissões (Ver / Criar / Editar / Excluir)',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: enabled
+                      ? () => onChanged({..._operatorPermissionLabels.keys})
+                      : null,
+                  child: const Text('Todas', style: TextStyle(fontSize: 11)),
+                ),
+                TextButton(
+                  onPressed: enabled
+                      ? () {
+                          final readOnlyKeys = <String>{};
+                          for (final mod in _permissionModules) {
+                            for (final item in mod.items) {
+                              if (item.actionType == 'Ver') readOnlyKeys.add(item.key);
+                            }
+                          }
+                          onChanged(readOnlyKeys);
+                        }
+                      : null,
+                  child: const Text('Só Leitura', style: TextStyle(fontSize: 11)),
+                ),
+                TextButton(
+                  onPressed: enabled ? () => onChanged({}) : null,
+                  child: const Text('Limpar', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        for (final module in _permissionModules) ...[
+          Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
+            child: ExpansionTile(
+              initiallyExpanded: true,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+              childrenPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              leading: Icon(module.icon, size: 20, color: AppTheme.primary),
+              title: Text(
+                module.name,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              subtitle: Text(
+                '${module.items.where((i) => selectedPermissions.contains(i.key)).length} de ${module.items.length} liberadas',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
+              children: [
+                for (final item in module.items)
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: selectedPermissions.contains(item.key),
+                    onChanged: enabled
+                        ? (val) {
+                            final updated = Set<String>.from(selectedPermissions);
+                            if (val == true) {
+                              updated.add(item.key);
+                            } else {
+                              updated.remove(item.key);
+                            }
+                            onChanged(updated);
+                          }
+                        : null,
+                    title: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _badgeColor(item.actionType),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.actionType.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: _badgeTextColor(item.actionType),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(item.label, style: const TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }

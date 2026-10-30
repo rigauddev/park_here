@@ -1,6 +1,7 @@
 import '../utils/manual_arrival.dart';
 import 'dart:async';
 
+import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -942,12 +943,39 @@ class _FreeSlotReservationDialogState
   _OperationalPricingPlan pricingPlan = _OperationalPricingPlan.hourly;
   _OperationalPayTiming payTiming = _OperationalPayTiming.checkout;
   TimeOfDay arrivalTime = TimeOfDay.now();
+  DateTimeRange? selectedDateRange;
   String? pixQrCode;
   String? pendingPixPaymentId;
   double? finalTotal;
   double? changeAmount;
   bool isSubmitting = false;
   bool customerAcceptedTerms = false;
+
+  int get dailyDays {
+    if (selectedDateRange == null) return 1;
+    final diff = selectedDateRange!.end.difference(selectedDateRange!.start).inDays;
+    return diff > 0 ? diff : 1;
+  }
+
+  Future<void> _selectDailyPeriod() async {
+    final now = DateTime.now();
+    final initialStart = selectedDateRange?.start ?? now;
+    final initialEnd = selectedDateRange?.end ?? now.add(const Duration(days: 1));
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: now.subtract(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 180)),
+      initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
+      helpText: 'Selecione o período da diária',
+      cancelText: 'Cancelar',
+      confirmText: 'Confirmar período',
+    );
+    if (picked != null) {
+      setState(() {
+        selectedDateRange = picked;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -1119,10 +1147,46 @@ class _FreeSlotReservationDialogState
                           });
                         },
                 ),
+                if (pricingPlan == _OperationalPricingPlan.daily) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: isSubmitting ? null : _selectDailyPeriod,
+                    icon: const Icon(Icons.date_range),
+                    label: Text(
+                      selectedDateRange == null
+                          ? 'Selecionar período no calendário'
+                          : 'Alterar período (${dailyDays} ${dailyDays == 1 ? "diária" : "diárias"})',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.softCyan.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today, size: 18, color: AppTheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            selectedDateRange == null
+                                ? 'Período padrão: 1 diária selecionada'
+                                : '${DateFormat("dd/MM/yyyy").format(selectedDateRange!.start)} até ${DateFormat("dd/MM/yyyy").format(selectedDateRange!.end)} ($dailyDays ${dailyDays == 1 ? "dia" : "dias"} selecionados)',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 _OperationalPricePreview(
                   plan: pricingPlan,
                   pricing: widget.pricing,
+                  days: pricingPlan == _OperationalPricingPlan.daily ? dailyDays : 1,
                 ),
                 const SizedBox(height: 12),
                 SegmentedButton<_OperationalPayTiming>(
@@ -1215,10 +1279,46 @@ class _FreeSlotReservationDialogState
                           }
                         },
                 ),
+                if (pricingPlan == _OperationalPricingPlan.daily) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: isSubmitting ? null : _selectDailyPeriod,
+                    icon: const Icon(Icons.date_range),
+                    label: Text(
+                      selectedDateRange == null
+                          ? 'Selecionar período no calendário'
+                          : 'Alterar período (${dailyDays} ${dailyDays == 1 ? "diária" : "diárias"})',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.softCyan.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today, size: 18, color: AppTheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            selectedDateRange == null
+                                ? 'Período padrão: 1 diária selecionada'
+                                : '${DateFormat("dd/MM/yyyy").format(selectedDateRange!.start)} até ${DateFormat("dd/MM/yyyy").format(selectedDateRange!.end)} ($dailyDays ${dailyDays == 1 ? "dia" : "dias"} selecionados)',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 _OperationalPricePreview(
                   plan: pricingPlan,
                   pricing: widget.pricing,
+                  days: pricingPlan == _OperationalPricingPlan.daily ? dailyDays : 1,
                 ),
               ],
               if (mode == _OperationalReservationMode.paidReservation &&
@@ -1424,10 +1524,12 @@ class _FreeSlotReservationDialogState
               spotCode: widget.slotCode,
               spotType: widget.slotType,
               pricingPlan: pricingPlan.apiValue,
-              durationHours: 1,
-              arrivalEstimateAt: arrivalNow
-                  ? DateTime.now()
-                  : _arrivalDateTime(),
+              durationHours: pricingPlan == _OperationalPricingPlan.daily
+                  ? dailyDays * 24
+                  : 1,
+              arrivalEstimateAt: (pricingPlan == _OperationalPricingPlan.daily && selectedDateRange != null)
+                  ? selectedDateRange!.start
+                  : (arrivalNow ? DateTime.now() : _arrivalDateTime()),
               arrivalNow: arrivalNow,
               plate: plate,
               ownerPhone: phone,
@@ -1519,21 +1621,33 @@ class _FreeSlotReservationDialogState
 class _OperationalPricePreview extends StatelessWidget {
   final _OperationalPricingPlan plan;
   final Map<String, double> pricing;
+  final int days;
 
-  const _OperationalPricePreview({required this.plan, required this.pricing});
+  const _OperationalPricePreview({
+    required this.plan,
+    required this.pricing,
+    this.days = 1,
+  });
 
   @override
   Widget build(BuildContext context) {
     final value = pricing[plan.apiValue];
+    String text;
+    if (value == null) {
+      text = 'Não configurado para este tipo de vaga';
+    } else if (plan == _OperationalPricingPlan.daily && days > 1) {
+      final total = value * days;
+      text = 'R\$ ${total.toStringAsFixed(2)} ($days diárias x R\$ ${value.toStringAsFixed(2)})';
+    } else {
+      text = 'R\$ ${value.toStringAsFixed(2)}';
+    }
     return InputDecorator(
       decoration: const InputDecoration(
         labelText: 'Valor cadastrado para esta modalidade',
         prefixIcon: Icon(Icons.sell_outlined),
       ),
       child: Text(
-        value == null
-            ? 'Não configurado para este tipo de vaga'
-            : 'R\$ ${value.toStringAsFixed(2)}',
+        text,
         style: TextStyle(
           color: value == null ? AppTheme.textMuted : AppTheme.primary,
           fontWeight: FontWeight.w700,
