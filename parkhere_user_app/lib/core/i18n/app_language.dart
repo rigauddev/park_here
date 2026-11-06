@@ -26,7 +26,9 @@ class AppLanguageNotifier extends StateNotifier<Locale> {
 
   Future<void> setLanguage(Locale locale) async {
     final language = locale.languageCode == 'en' ? 'en' : 'pt';
-    _setLocale(language == 'en' ? const Locale('en') : const Locale('pt', 'BR'));
+    _setLocale(
+      language == 'en' ? const Locale('en') : const Locale('pt', 'BR'),
+    );
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_key, language);
   }
@@ -39,5 +41,4 @@ class AppLanguageNotifier extends StateNotifier<Locale> {
   bool get isEnglish => _currentLocale.languageCode == 'en';
 }
 
-String appNameFor(Locale locale) =>
-    locale.languageCode == 'en' ? 'Park Here' : 'Estacione Aqui';
+String appNameFor(Locale locale) => 'ServiceHub';

@@ -18,7 +18,7 @@ from app.modules.users.user_router import router as user_router
 from app.modules.rentals.router import router as rentals_router
 
 app = FastAPI(
-    title="ParkHere SaaS API",
+    title="ServiceHub SaaS API",
     version="1.0.0"
 )
 
