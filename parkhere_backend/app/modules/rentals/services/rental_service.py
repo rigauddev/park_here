@@ -8,11 +8,76 @@ from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from ..models import (
     RentalCompany, RentalVehicle, RentalReservation, RentalCheckin,
-    RentalCheckout, RentalPlan, RentalMaintenance,
+    RentalCheckout, RentalPlan, RentalMaintenance, RentalItem, RentalContract, RentalFine,
 )
 from app.modules.parkings.models import Parking
 
 class RentalService:
+    DEFAULT_TERMS = (
+        "O cliente declara que receberá o veículo nas condições registradas na vistoria, "
+        "respeitará o período contratado, os limites de quilometragem e devolverá o veículo "
+        "à locadora para a vistoria final."
+    )
+
+    @staticmethod
+    async def list_items(db: AsyncSession, company_id: str, current_user: User):
+        company = await RentalService.company(db, company_id, current_user)
+        result = await db.scalars(select(RentalItem).where(
+            RentalItem.company_id == company.id, RentalItem.is_active.is_(True)
+        ).order_by(RentalItem.name))
+        return result.all()
+
+    @staticmethod
+    async def create_item(db: AsyncSession, data, current_user: User):
+        company = await RentalService.company(db, data.company_id, current_user)
+        if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail="Sem permissão para cadastrar itens")
+        row = RentalItem(**data.model_dump())
+        db.add(row); await db.commit(); await db.refresh(row); return row
+
+    @staticmethod
+    async def get_contract(db: AsyncSession, reservation_id: str, current_user: User):
+        reservation = await RentalService.get_reservation(db, reservation_id, current_user)
+        contract = await db.scalar(select(RentalContract).where(RentalContract.reservation_id == reservation.id))
+        if contract is None:
+            contract = RentalContract(reservation_id=reservation.id, terms_text=RentalService.DEFAULT_TERMS)
+            db.add(contract); await db.commit(); await db.refresh(contract)
+        return contract
+
+    @staticmethod
+    async def accept_contract(db: AsyncSession, reservation_id: str, role: str, current_user: User):
+        contract = await RentalService.get_contract(db, reservation_id, current_user)
+        now = datetime.now(timezone.utc)
+        if role == "customer":
+            if current_user.role != UserRoleEnum.CUSTOMER:
+                raise HTTPException(status_code=403, detail="Somente o cliente pode aceitar como cliente")
+            contract.customer_accepted_at = now
+        else:
+            if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.OPERATOR, UserRoleEnum.SUPER_ADMIN}:
+                raise HTTPException(status_code=403, detail="Sem permissão para aceitar o contrato")
+            contract.partner_accepted_at = now
+        contract.status = "accepted" if contract.customer_accepted_at and contract.partner_accepted_at else "partially_accepted"
+        await db.commit(); await db.refresh(contract); return contract
+
+    @staticmethod
+    async def list_fines(db: AsyncSession, current_user: User):
+        stmt = select(RentalFine).order_by(RentalFine.occurred_at.desc())
+        if current_user.role == UserRoleEnum.CUSTOMER:
+            stmt = stmt.join(RentalReservation).where(RentalReservation.user_id == current_user.id)
+        elif current_user.role != UserRoleEnum.SUPER_ADMIN:
+            stmt = stmt.join(RentalReservation).where(RentalReservation.tenant_id == current_user.tenant_id)
+        return (await db.scalars(stmt)).all()
+
+    @staticmethod
+    async def create_fine(db: AsyncSession, data, current_user: User):
+        if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.OPERATOR, UserRoleEnum.SUPER_ADMIN}:
+            raise HTTPException(status_code=403, detail="Somente a equipe da locadora pode registrar multas")
+        reservation = await RentalService.get_reservation(db, data.reservation_id, current_user)
+        if reservation.vehicle_id != data.vehicle_id:
+            raise HTTPException(status_code=422, detail="Veículo não pertence à reserva")
+        row = RentalFine(**data.model_dump())
+        db.add(row); await db.commit(); await db.refresh(row); return row
+
     @staticmethod
     async def list_plans(db: AsyncSession, company_id: str, current_user: User):
         company = await RentalService.company(db, company_id, current_user)

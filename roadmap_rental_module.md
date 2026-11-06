@@ -90,6 +90,14 @@
 - [ ] Itens configuráveis de check-in/check-out por locadora.
 - [ ] Cobrança de multas associada à reserva e ao meio de pagamento.
 
+## Bloco MVP em execução
+
+- [x] Catálogo de itens opcionais por locadora.
+- [x] Termo versionado por reserva e aceite separado do cliente/parceiro.
+- [x] Registro de multas vinculado ao veículo e à reserva.
+- [ ] Gerar PDF do contrato com vistoria e aceites.
+- [ ] Job diário para consultar/associar multas externas.
+
 ## Regras de negócio a validar para o contrato
 
 Como referência de produto, a diária deve ser contada em 24 horas a partir da

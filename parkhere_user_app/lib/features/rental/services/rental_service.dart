@@ -63,6 +63,40 @@ class RentalService {
     return response.cast<Map<String, dynamic>>();
   }
 
+  Future<List<Map<String, dynamic>>> items(
+    String companyId,
+    String token,
+  ) async {
+    final response = await _api.getAuthorized(
+      '/rentals/companies/$companyId/items',
+      token,
+    );
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> contract(
+    String reservationId,
+    String token,
+  ) => _api.getAuthorizedMap(
+    '/rentals/reservations/$reservationId/contract',
+    token,
+  );
+
+  Future<Map<String, dynamic>> acceptContract({
+    required String reservationId,
+    required String role,
+    required String token,
+  }) => _api.postAuthorized(
+    '/rentals/reservations/$reservationId/contract/accept',
+    {'role': role},
+    token,
+  );
+
+  Future<List<Map<String, dynamic>>> fines(String token) async {
+    final response = await _api.getAuthorized('/rentals/fines', token);
+    return response.cast<Map<String, dynamic>>();
+  }
+
   Future<List<Map<String, dynamic>>> reservations(String token) async {
     final response = await _api.getAuthorized('/rentals/reservations', token);
     return response.cast<Map<String, dynamic>>();

@@ -114,3 +114,48 @@ class MaintenanceCreate(BaseModel):
 class MaintenanceOut(MaintenanceCreate):
     model_config = ConfigDict(from_attributes=True)
     id: str
+
+
+class RentalItemCreate(BaseModel):
+    company_id: str
+    name: str = Field(min_length=2, max_length=100)
+    category: str = Field(default="accessory", min_length=2, max_length=40)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class RentalItemOut(RentalItemCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    is_active: bool
+
+
+class RentalContractOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    reservation_id: str
+    version: str
+    terms_text: str
+    status: str
+    customer_accepted_at: datetime | None = None
+    partner_accepted_at: datetime | None = None
+    pdf_path: str | None = None
+
+
+class ContractAccept(BaseModel):
+    role: str = Field(pattern=r"^(customer|partner)$")
+
+
+class FineCreate(BaseModel):
+    reservation_id: str
+    vehicle_id: str
+    fine_type: str = Field(min_length=2, max_length=40)
+    occurred_at: datetime
+    amount: float = Field(gt=0)
+    evidence_url: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class FineOut(FineCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    status: str

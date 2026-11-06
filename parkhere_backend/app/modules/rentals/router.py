@@ -28,6 +28,14 @@ async def list_plans(company_id: str, db: AsyncSession = Depends(get_db), curren
 async def create_plan(data: RentalPlanCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.create_plan(db, data, current_user)
 
+@router.get("/companies/{company_id}/items", response_model=list[RentalItemOut])
+async def list_items(company_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.list_items(db, company_id, current_user)
+
+@router.post("/items", response_model=RentalItemOut, status_code=201)
+async def create_item(data: RentalItemCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.create_item(db, data, current_user)
+
 @router.get("/vehicles/{vehicle_id}/maintenance", response_model=list[MaintenanceOut])
 async def list_maintenance(vehicle_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.list_maintenance(db, vehicle_id, current_user)
@@ -35,6 +43,22 @@ async def list_maintenance(vehicle_id: str, db: AsyncSession = Depends(get_db), 
 @router.post("/maintenance", response_model=MaintenanceOut, status_code=201)
 async def create_maintenance(data: MaintenanceCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.create_maintenance(db, data, current_user)
+
+@router.get("/reservations/{reservation_id}/contract", response_model=RentalContractOut)
+async def get_contract(reservation_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.get_contract(db, reservation_id, current_user)
+
+@router.post("/reservations/{reservation_id}/contract/accept", response_model=RentalContractOut)
+async def accept_contract(reservation_id: str, data: ContractAccept, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.accept_contract(db, reservation_id, data.role, current_user)
+
+@router.get("/fines", response_model=list[FineOut])
+async def list_fines(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.list_fines(db, current_user)
+
+@router.post("/fines", response_model=FineOut, status_code=201)
+async def create_fine(data: FineCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.create_fine(db, data, current_user)
 
 @router.post("/vehicles", response_model=VehicleOut, status_code=201)
 async def create_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):

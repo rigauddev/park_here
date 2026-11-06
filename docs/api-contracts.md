@@ -1272,3 +1272,15 @@ Planos, veículos e manutenções permanecem em tabelas próprias do módulo de
 locação. Contrato/assinatura digital, cobrança de multas e integração de
 pagamento serão blocos posteriores e reutilizarão o serviço central de
 pagamentos.
+
+Blocos operacionais adicionais:
+
+- `GET /rentals/companies/{company_id}/items` e `POST /rentals/items` mantêm
+  o catálogo de itens opcionais da locadora (cadeirinha, tanque, acessórios).
+- `GET /rentals/reservations/{reservation_id}/contract` cria/retorna o termo
+  versionado da reserva; `POST .../contract/accept` registra aceite do
+  cliente ou do parceiro. O PDF será gerado em etapa posterior, sem expor
+  dados de cartão.
+- `GET /rentals/fines` lista multas por escopo de usuário/tenant e
+  `POST /rentals/fines` registra uma ocorrência vinculada à reserva e ao
+  veículo, para cobrança posterior pelo módulo central.
