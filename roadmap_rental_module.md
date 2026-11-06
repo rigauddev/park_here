@@ -90,5 +90,16 @@
 - [ ] Itens configuráveis de check-in/check-out por locadora.
 - [ ] Cobrança de multas associada à reserva e ao meio de pagamento.
 
+## Regras de negócio a validar para o contrato
+
+Como referência de produto, a diária deve ser contada em 24 horas a partir da
+retirada, com tolerância configurável por unidade; horas excedentes, limite de
+quilometragem, combustível, condutor adicional, vistoria e devolução devem
+aparecer no resumo antes da confirmação. Essas regras serão parametrizadas por
+locadora e não copiadas de forma fixa de terceiros. A referência pública da
+Localiza descreve exatamente esses pontos de operação (diária, tolerância,
+horas extras, vistoria e quilometragem), que serão usados apenas como benchmark
+de UX e requisitos, com validação jurídica própria antes da publicação.
+
 ---
 *Este roadmap será mantido como artefato permanente e pode ser consultado a qualquer momento.*
