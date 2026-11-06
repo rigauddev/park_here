@@ -38,6 +38,7 @@ class ManagedParkingServiceModel {
   final String? id;
   final String code;
   final String name;
+  final String? description;
   final double price;
   final bool isActive;
 
@@ -45,6 +46,7 @@ class ManagedParkingServiceModel {
     this.id,
     required this.code,
     required this.name,
+    this.description,
     required this.price,
     required this.isActive,
   });
@@ -54,13 +56,20 @@ class ManagedParkingServiceModel {
       id: json['id'] as String?,
       code: json['code'] as String,
       name: json['name'] as String,
+      description: json['description'] as String?,
       price: (json['price'] as num).toDouble(),
       isActive: json['is_active'] as bool? ?? true,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'code': code, 'name': name, 'price': price, 'is_active': isActive};
+    return {
+      'code': code,
+      'name': name,
+      'description': description,
+      'price': price,
+      'is_active': isActive,
+    };
   }
 }
 
@@ -69,6 +78,10 @@ class ManagedParkingModel {
   final String? id;
   final String name;
   final String address;
+  final String? street;
+  final String? number;
+  final String? neighborhood;
+  final String? postalCode;
   final String city;
   final double lat;
   final double lng;
@@ -91,6 +104,7 @@ class ManagedParkingModel {
   final ParkingAreaPricingModel coveredPricing;
   final List<ManagedParkingServiceModel> services;
   final Map<String, Map<String, String>?> operatingHours;
+  final String workRegime;
   final Map<String, ParkingAreaPricingModel> categoryPricing;
 
   const ManagedParkingModel({
@@ -98,6 +112,10 @@ class ManagedParkingModel {
     this.id,
     required this.name,
     required this.address,
+    this.street,
+    this.number,
+    this.neighborhood,
+    this.postalCode,
     required this.city,
     required this.lat,
     required this.lng,
@@ -120,6 +138,7 @@ class ManagedParkingModel {
     required this.coveredPricing,
     required this.services,
     this.operatingHours = const {},
+    this.workRegime = 'commercial',
     this.categoryPricing = const {},
   });
 
@@ -129,6 +148,10 @@ class ManagedParkingModel {
       id: json['id'] as String?,
       name: json['name'] as String,
       address: json['address'] as String,
+      street: json['street'] as String?,
+      number: json['number'] as String?,
+      neighborhood: json['neighborhood'] as String?,
+      postalCode: json['postal_code'] as String?,
       city: json['city'] as String? ?? 'Valenca',
       lat: (json['lat'] as num).toDouble(),
       lng: (json['lng'] as num).toDouble(),
@@ -142,6 +165,7 @@ class ManagedParkingModel {
       pickupSpots: json['pickup_spots'] as int? ?? 0,
       hasVipSpots: json['has_vip_spots'] as bool? ?? false,
       has24hGate: json['has_24h_gate'] as bool? ?? false,
+      workRegime: json['work_regime'] as String? ?? 'commercial',
       hasSecuritySystem: json['has_security_system'] as bool? ?? false,
       wantsAutomaticAccess: json['wants_automatic_access'] as bool? ?? false,
       hasAutomaticAccess: json['has_automatic_access'] as bool? ?? false,
@@ -182,6 +206,10 @@ class ManagedParkingModel {
     return {
       'name': name,
       'address': address,
+      'street': street,
+      'number': number,
+      'neighborhood': neighborhood,
+      'postal_code': postalCode,
       'city': city,
       'lat': lat,
       'lng': lng,
@@ -196,6 +224,7 @@ class ManagedParkingModel {
       'pickup_spots': pickupSpots,
       'has_vip_spots': hasVipSpots,
       'has_24h_gate': has24hGate,
+      'work_regime': workRegime,
       'has_security_system': hasSecuritySystem,
       'wants_automatic_access': wantsAutomaticAccess,
       'has_automatic_access': hasAutomaticAccess,

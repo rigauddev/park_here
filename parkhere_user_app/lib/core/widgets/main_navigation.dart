@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/account/pages/vehicles_page.dart';
 import '../../features/account/pages/wallet_page.dart';
+import '../../features/help/pages/help_center_page.dart';
 import '../../features/auth/pages/login_page.dart';
 import '../../features/auth/pages/profile_page.dart';
 import '../../features/parking_search/pages/home_map_page.dart';
@@ -11,11 +12,13 @@ import '../../features/parking_search/models/parking_model.dart';
 import '../../features/parking_search/providers/parking_provider.dart';
 import '../../features/partner_management/pages/partner_financial_page.dart';
 import '../../features/partner_management/pages/partner_management_home_page.dart';
+import '../../features/rental/pages/rental_companies_page.dart';
 import '../../features/partner_management/pages/partner_parking_map_page.dart';
 import '../../features/partner_management/pages/partner_reservations_page.dart';
 import '../../features/partner_management/pages/partner_users_page.dart';
 import '../../features/reservation/pages/reservation_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../i18n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../../features/partner_management/pages/parking_dashboard_page.dart';
 import '../../features/partner_management/pages/guide_affiliations_page.dart';
@@ -24,6 +27,14 @@ import '../../features/partner_management/pages/guide_services_page.dart';
 import '../../features/partner_management/pages/admin_management_page.dart';
 import '../../features/partner_management/pages/partner_shifts_page.dart';
 import '../../features/partner_management/providers/partner_operators_provider.dart';
+import '../../features/partner_management/pages/convenience_pos_page.dart';
+import '../../features/partner_management/pages/parking_convenience_page.dart';
+import '../../features/partner_management/providers/partner_parking_provider.dart';
+import '../../features/partner_management/providers/partner_profile_provider.dart';
+import '../../features/partner_management/models/partner_profile_model.dart';
+import '../../features/partner_management/pages/partner_feature_access_page.dart';
+import '../../features/partner_management/widgets/cash_session_dialog.dart';
+import '../../features/partner_management/providers/partner_operations_provider.dart';
 
 enum _MainArea {
   menu,
@@ -38,6 +49,9 @@ enum _MainArea {
   financial,
   dashboard,
   profile,
+  help,
+  conveniencePos,
+  convenienceProducts,
 }
 
 class MainNavigation extends ConsumerStatefulWidget {
@@ -54,6 +68,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   bool _menuExpanded = true;
   DateTime? _lastBackPress;
   bool _operatorHasShiftToday = false;
+  bool _cashPromptShown = false;
 
   Future<bool> _handleBack() async {
     final now = DateTime.now();
@@ -80,35 +95,147 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   Future<void> _loadOperatorShiftAccess() async {
     if (!ref.read(authProvider).isOperator) return;
     try {
+      final token = ref.read(authProvider).accessToken;
+      Map<String, dynamic> session = const {'open': false};
+      if (token != null) {
+        try {
+          session = await fetchCashSession(token: token);
+        } catch (_) {}
+      }
+      final isCashOpen = session['open'] == true;
+
       final shifts = await ref
           .read(partnerOperatorsProvider.notifier)
           .fetchShifts();
       final now = DateTime.now();
-      final hasActiveShift = shifts.any((shift) {
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final tomorrowStart = todayStart.add(const Duration(days: 1));
+
+      final hasActiveOrTodayShift = shifts.any((shift) {
         final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
         final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
-        return !starts.isAfter(now) && !ends.isBefore(now);
+        return starts.isBefore(tomorrowStart) && ends.isAfter(todayStart);
       });
+
+      final parkings = await ref.read(partnerParkingProvider.future);
+      final hasAssignedParking = parkings.isNotEmpty;
+
+      final canOperate = isCashOpen || hasActiveOrTodayShift || hasAssignedParking;
+
       if (!mounted) return;
       setState(() {
-        _operatorHasShiftToday = hasActiveShift;
-        if (!hasActiveShift && !_isOperatorAllowedArea(_selectedArea)) {
+        _operatorHasShiftToday = canOperate;
+        if (!canOperate && !_isOperatorAllowedArea(_selectedArea)) {
           _selectedArea = _MainArea.shifts;
         }
       });
+      if (canOperate && !isCashOpen && !_cashPromptShown) {
+        _cashPromptShown = true;
+        await _promptCashIfNeeded(shifts);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _operatorHasShiftToday = false;
-        _selectedArea = _MainArea.shifts;
+        if (!_isOperatorAllowedArea(_selectedArea)) {
+          _selectedArea = _MainArea.shifts;
+        }
       });
+    }
+  }
+
+  Future<List<Map<String, String>>> _cashParkingOptions(
+    List<Map<String, dynamic>> shifts,
+  ) async {
+    final parkings = await ref.read(partnerParkingProvider.future);
+    if (parkings.isEmpty) return const [];
+
+    final now = DateTime.now();
+    final activeShiftParkingIds = <String>{};
+    for (final shift in shifts) {
+      final starts = DateTime.parse(shift['starts_at'] as String).toLocal();
+      final ends = DateTime.parse(shift['ends_at'] as String).toLocal();
+      if (shift['parking_id'] is String &&
+          !now.isBefore(starts) &&
+          !now.isAfter(ends)) {
+        activeShiftParkingIds.add(shift['parking_id'] as String);
+      }
+    }
+
+    // Se houver turno ativo agora, prioriza as unidades do turno;
+    // caso contrário, disponibiliza todas as unidades autorizadas para o operador.
+    final availableParkings = activeShiftParkingIds.isNotEmpty
+        ? parkings.where((p) => p.id != null && activeShiftParkingIds.contains(p.id))
+        : parkings;
+
+    return [
+      for (final parking in availableParkings)
+        if (parking.id != null) {'id': parking.id!, 'name': parking.name},
+    ];
+  }
+
+  Future<void> _promptCashIfNeeded(List<Map<String, dynamic>> shifts) async {
+    if (!mounted) return;
+    try {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) return;
+      final session = await fetchCashSession(token: token);
+      if (session['open'] == true || !mounted) return;
+      final options = await _cashParkingOptions(shifts);
+      if (!mounted || options.isEmpty) return;
+      await showCashSessionDialog(
+        context,
+        ref,
+        parkingOptions: options,
+        open: true,
+      );
+      if (mounted) setState(() {});
+    } catch (_) {
+      // A transient prompt error must not prevent access to the schedule page.
+    }
+  }
+
+  Future<void> _toggleCashSession() async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      final session = await fetchCashSession(token: token);
+      if (!mounted) return;
+      if (session['open'] == true) {
+        await showCashSessionDialog(
+          context,
+          ref,
+          parkingOptions: const [],
+          open: false,
+        );
+      } else {
+        final shifts = await ref
+            .read(partnerOperatorsProvider.notifier)
+            .fetchShifts();
+        final options = await _cashParkingOptions(shifts);
+        if (mounted) {
+          await showCashSessionDialog(
+            context,
+            ref,
+            parkingOptions: options,
+            open: true,
+          );
+        }
+      }
+      if (mounted) await _loadOperatorShiftAccess();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
     }
   }
 
   bool _isOperatorAllowedArea(_MainArea area) =>
       area == _MainArea.shifts ||
       area == _MainArea.profile ||
-      area == _MainArea.wallet;
+      area == _MainArea.wallet ||
+      area == _MainArea.help;
 
   @override
   Widget build(BuildContext context) {
@@ -147,8 +274,15 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     );
     final topBar = AppBar(
       title: const Text('ParkHere'),
+      automaticallyImplyLeading: false,
       actions: isOperator
           ? [
+              if (_operatorHasShiftToday)
+                IconButton(
+                  tooltip: 'Abrir ou fechar caixas',
+                  onPressed: _toggleCashSession,
+                  icon: const Icon(Icons.point_of_sale_outlined),
+                ),
               IconButton(
                 tooltip: 'Atualizar acesso do turno',
                 onPressed: _loadOperatorShiftAccess,
@@ -162,7 +296,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
               icon: Icon(_menuExpanded ? Icons.menu_open : Icons.menu),
               onPressed: () => setState(() => _menuExpanded = !_menuExpanded),
             )
-          : null,
+          : Builder(
+              builder: (context) => IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onPressed: () => Scaffold.of(context).openDrawer(),
+              ),
+            ),
     );
 
     if (isWebLayout) {
@@ -280,12 +420,11 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 icon: Icon(Icons.extension_outlined),
                 label: 'Módulos',
               ),
-            ] else if (!isPartner)
               const NavigationDestination(
-                icon: Icon(Icons.menu),
-                selectedIcon: Icon(Icons.menu_open),
-                label: 'Menu',
+                icon: Icon(Icons.admin_panel_settings_outlined),
+                label: 'Permissões',
               ),
+            ],
             if (!isAdmin && isOperator && !_operatorHasShiftToday) ...[
               const NavigationDestination(
                 icon: Icon(Icons.calendar_month_outlined),
@@ -381,6 +520,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool operatorHasShiftToday,
     int adminSection,
   ) {
+    if (area == _MainArea.help) return const HelpCenterPage();
     if (isAdmin) return AdminManagementPage(initialSection: adminSection);
     if (isOperator && !operatorHasShiftToday && !_isOperatorAllowedArea(area)) {
       return const PartnerShiftsPage();
@@ -428,6 +568,12 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             : const PartnerParkingMapPage();
       case _MainArea.profile:
         return const ProfilePage();
+      case _MainArea.help:
+        return const HelpCenterPage();
+      case _MainArea.conveniencePos:
+        return const _ConvenienceEntryPage(pos: true);
+      case _MainArea.convenienceProducts:
+        return const _ConvenienceEntryPage(pos: false);
     }
   }
 
@@ -440,7 +586,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     bool isOperator,
     bool operatorHasShiftToday,
   ) {
-    if (isAdmin) return _adminSection.clamp(0, 5);
+    if (isAdmin) return _adminSection.clamp(0, 7);
     if (isGuide) return area == _MainArea.map ? 1 : 0;
     if (isOperator && !operatorHasShiftToday) {
       switch (area) {
@@ -450,6 +596,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           return 1;
         case _MainArea.wallet:
           return 2;
+        case _MainArea.help:
+          return 1;
         default:
           return 0;
       }
@@ -464,6 +612,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         case _MainArea.wallet:
         case _MainArea.profile:
           return 2;
+        case _MainArea.help:
+          return 2;
         default:
           return 0;
       }
@@ -473,25 +623,30 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.menu:
         return isPartner ? 0 : 0;
       case _MainArea.map:
-        return isPartner ? 1 : 2;
-      case _MainArea.services:
         return isPartner ? 1 : 1;
+      case _MainArea.services:
+        return isPartner ? 1 : 0;
       case _MainArea.vehicles:
       case _MainArea.wallet:
-        return isPartner ? 4 : 2;
+        return isPartner ? 4 : 3;
       case _MainArea.management:
-        return isPartner ? 0 : 2;
+        return isPartner ? 0 : 3;
       case _MainArea.users:
       case _MainArea.shifts:
-        return isPartner ? 0 : 2;
+        return isPartner ? 0 : 3;
       case _MainArea.financial:
-        return isPartner ? 3 : 2;
+        return isPartner ? 3 : 3;
       case _MainArea.dashboard:
-        return isPartner ? 0 : 2;
+        return isPartner ? 0 : 3;
       case _MainArea.profile:
-        return isPartner ? 4 : 4;
+        return isPartner ? 4 : 3;
+      case _MainArea.help:
+        return isPartner ? 4 : 3;
       case _MainArea.reservations:
-        return isPartner ? 2 : 3;
+        return isPartner ? 2 : 2;
+      case _MainArea.conveniencePos:
+      case _MainArea.convenienceProducts:
+        return isPartner ? 0 : 0;
     }
   }
 
@@ -537,13 +692,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 
     switch (index) {
       case 0:
-        return isPartner ? _MainArea.management : _MainArea.menu;
+        return isPartner ? _MainArea.management : _MainArea.services;
       case 1:
-        return isPartner ? _MainArea.map : _MainArea.services;
+        return isPartner ? _MainArea.map : _MainArea.map;
       case 2:
-        return isPartner ? _MainArea.reservations : _MainArea.map;
+        return isPartner ? _MainArea.reservations : _MainArea.reservations;
       case 3:
-        return isPartner ? _MainArea.financial : _MainArea.reservations;
+        return isPartner ? _MainArea.financial : _MainArea.profile;
       case 4:
         return _MainArea.profile;
       default:
@@ -556,7 +711,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       _selectedArea = area;
       if (ref.read(authProvider).role == 'super_admin' &&
           serviceTabIndex != null) {
-        _adminSection = serviceTabIndex.clamp(0, 5);
+        _adminSection = serviceTabIndex.clamp(0, 7);
       }
       if (serviceTabIndex != null) {
         _servicesInitialIndex = serviceTabIndex;
@@ -648,6 +803,12 @@ class _WebMenu extends ConsumerWidget {
                     _MainArea.management,
                     serviceTabIndex: 5,
                   ),
+                  _MenuItem(
+                    Icons.admin_panel_settings_outlined,
+                    'Perfis e permissões',
+                    _MainArea.management,
+                    serviceTabIndex: 7,
+                  ),
                 ],
                 selectedArea: selectedArea,
                 onSelected: onSelected,
@@ -656,17 +817,11 @@ class _WebMenu extends ConsumerWidget {
             if (expanded)
               Text('ParkHere', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 18),
-            if (!isAdmin)
+            if (!isAdmin && isPartner && !isGuide)
               _MenuCategory(
                 expanded: expanded,
-                title: 'Navegação',
+                title: 'Gestão',
                 items: [
-                  if (isPartner && (isPartnerOwner || isGuide))
-                    _MenuItem(
-                      Icons.dashboard_outlined,
-                      'Dashboard',
-                      _MainArea.dashboard,
-                    ),
                   if (isPartner && isPartnerOwner)
                     _MenuItem(
                       Icons.business_center_outlined,
@@ -678,34 +833,6 @@ class _WebMenu extends ConsumerWidget {
                       Icons.schedule_outlined,
                       'Escalas',
                       _MainArea.shifts,
-                    ),
-                  if (isGuide)
-                    _MenuItem(
-                      Icons.local_parking_outlined,
-                      'Estacionamentos',
-                      _MainArea.map,
-                    )
-                  else if (!isPartner || !isOperator || operatorHasShiftToday)
-                    _MenuItem(
-                      isPartner
-                          ? Icons.local_parking_outlined
-                          : Icons.map_outlined,
-                      isPartner ? 'Mapa de vagas' : 'Mapa',
-                      _MainArea.map,
-                    ),
-                  if (isGuide)
-                    _MenuItem(
-                      Icons.tour_outlined,
-                      'Meus serviços',
-                      _MainArea.services,
-                    ),
-                  if (isPartner &&
-                      !isGuide &&
-                      (!isOperator || operatorHasShiftToday))
-                    _MenuItem(
-                      Icons.confirmation_number_outlined,
-                      'Reservas recebidas',
-                      _MainArea.reservations,
                     ),
                   if (isPartner && isPartnerOwner && !isGuide)
                     _MenuItem(
@@ -719,6 +846,84 @@ class _WebMenu extends ConsumerWidget {
                       'Financeiro Pro',
                       _MainArea.financial,
                     ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin && isPartner && !isGuide)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Operacional',
+                items: [
+                  if (!isOperator || operatorHasShiftToday)
+                    _MenuItem(
+                      Icons.local_parking_outlined,
+                      'Mapa de vagas',
+                      _MainArea.map,
+                    ),
+                  if (!isOperator || operatorHasShiftToday)
+                    _MenuItem(
+                      Icons.confirmation_number_outlined,
+                      'Reservas',
+                      _MainArea.reservations,
+                    ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin &&
+                isPartner &&
+                !isGuide &&
+                (isPartnerOwner || (isOperator && operatorHasShiftToday)))
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Conveniência',
+                items: [
+                  _MenuItem(
+                    Icons.point_of_sale_outlined,
+                    'Ponto de venda',
+                    _MainArea.conveniencePos,
+                  ),
+                  if (isPartnerOwner)
+                    _MenuItem(
+                      Icons.inventory_2_outlined,
+                      'Produtos',
+                      _MainArea.convenienceProducts,
+                    ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin && !isPartner)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Navegação',
+                items: [
+                  _MenuItem(Icons.map_outlined, 'Mapa', _MainArea.map),
+                  _MenuItem(
+                    Icons.confirmation_number_outlined,
+                    'Reservas',
+                    _MainArea.reservations,
+                  ),
+                ],
+                selectedArea: selectedArea,
+                onSelected: onSelected,
+              ),
+            if (!isAdmin && isPartner && isGuide)
+              _MenuCategory(
+                expanded: expanded,
+                title: 'Navegação',
+                items: [
+                  _MenuItem(
+                    Icons.local_parking_outlined,
+                    'Estacionamentos',
+                    _MainArea.map,
+                  ),
+                  _MenuItem(
+                    Icons.tour_outlined,
+                    'Meus serviços',
+                    _MainArea.services,
+                  ),
                 ],
                 selectedArea: selectedArea,
                 onSelected: onSelected,
@@ -783,6 +988,21 @@ class _WebMenu extends ConsumerWidget {
                 selectedArea: selectedArea,
                 onSelected: onSelected,
               ),
+            _MenuCategory(
+              expanded: expanded,
+              title: context.strings.isEnglish ? 'Support' : 'Ajuda',
+              items: [
+                _MenuItem(
+                  Icons.help_outline,
+                  context.strings.isEnglish
+                      ? 'Help center'
+                      : 'Central de ajuda',
+                  _MainArea.help,
+                ),
+              ],
+              selectedArea: selectedArea,
+              onSelected: onSelected,
+            ),
             if (!expanded)
               IconButton(
                 tooltip: 'Sair',
@@ -875,59 +1095,85 @@ class _MobileDrawer extends StatelessWidget {
                 onTap: () => onSelected(_MainArea.management, 3),
               ),
             ] else ...[
-              if (isPartner && (isPartnerOwner || isGuide))
-                ListTile(
-                  leading: const Icon(Icons.business_center_outlined),
-                  title: const Text('Minha empresa'),
-                  onTap: () => onSelected(_MainArea.management),
+              if (isPartner && !isGuide) ...[
+                _MobileMenuGroup(
+                  title: 'Gestão',
+                  icon: Icons.business_center_outlined,
+                  children: [
+                    if (isPartnerOwner)
+                      _MobileMenuItem(
+                        icon: Icons.business_center_outlined,
+                        title: 'Minha empresa',
+                        onTap: () => onSelected(_MainArea.management),
+                      ),
+                    if (isPartnerOwner)
+                      _MobileMenuItem(
+                        icon: Icons.group_outlined,
+                        title: 'Usuários',
+                        onTap: () => onSelected(_MainArea.users),
+                      ),
+                    if (isPartnerOwner)
+                      _MobileMenuItem(
+                        icon: Icons.lock_outline,
+                        title: 'Financeiro',
+                        onTap: () => onSelected(_MainArea.financial),
+                      ),
+                    _MobileMenuItem(
+                      icon: Icons.calendar_month_outlined,
+                      title: 'Escala',
+                      onTap: () => onSelected(_MainArea.shifts),
+                    ),
+                  ],
                 ),
-              if (isPartner && isOperator)
-                ListTile(
-                  leading: const Icon(Icons.calendar_month_outlined),
-                  title: const Text('Minha escala'),
-                  onTap: () => onSelected(_MainArea.shifts),
+                _MobileMenuGroup(
+                  title: 'Operacional',
+                  icon: Icons.local_parking_outlined,
+                  children: [
+                    if (!isOperator || operatorHasShiftToday)
+                      _MobileMenuItem(
+                        icon: Icons.local_parking_outlined,
+                        title: 'Mapa de vagas',
+                        onTap: () => onSelected(_MainArea.map),
+                      ),
+                    if (!isOperator || operatorHasShiftToday)
+                      _MobileMenuItem(
+                        icon: Icons.confirmation_number_outlined,
+                        title: 'Reservas',
+                        onTap: () => onSelected(_MainArea.reservations),
+                      ),
+                  ],
                 ),
-              if (isPartner &&
-                  !isGuide &&
-                  (!isOperator || operatorHasShiftToday))
-                ListTile(
-                  leading: const Icon(Icons.confirmation_number_outlined),
-                  title: const Text('Reservas recebidas'),
-                  onTap: () => onSelected(_MainArea.reservations),
-                ),
-              if (isPartner && isPartnerOwner && !isGuide)
-                ListTile(
-                  leading: const Icon(Icons.group_outlined),
-                  title: const Text('Usuários'),
-                  onTap: () => onSelected(_MainArea.users),
-                ),
-              if (isPartner &&
-                  !isGuide &&
-                  (!isOperator || operatorHasShiftToday))
-                ListTile(
-                  leading: const Icon(Icons.local_parking_outlined),
-                  title: const Text('Mapa de vagas'),
-                  onTap: () => onSelected(_MainArea.map),
-                ),
-              if (isGuide)
+                if (isPartnerOwner || (isOperator && operatorHasShiftToday))
+                  _MobileMenuGroup(
+                    title: 'Conveniência',
+                    icon: Icons.storefront_outlined,
+                    children: [
+                      _MobileMenuItem(
+                        icon: Icons.point_of_sale_outlined,
+                        title: 'Ponto de venda',
+                        onTap: () => onSelected(_MainArea.conveniencePos),
+                      ),
+                      if (isPartnerOwner)
+                        _MobileMenuItem(
+                          icon: Icons.inventory_2_outlined,
+                          title: 'Produtos',
+                          onTap: () =>
+                              onSelected(_MainArea.convenienceProducts),
+                        ),
+                    ],
+                  ),
+              ] else if (isGuide) ...[
                 ListTile(
                   leading: const Icon(Icons.local_parking_outlined),
                   title: const Text('Estacionamentos'),
                   onTap: () => onSelected(_MainArea.map),
                 ),
-              if (isGuide)
                 ListTile(
                   leading: const Icon(Icons.tour_outlined),
                   title: const Text('Meus serviços'),
                   onTap: () => onSelected(_MainArea.services),
                 ),
-              if (isPartner && isPartnerOwner && !isGuide)
-                ListTile(
-                  leading: const Icon(Icons.lock_outline),
-                  title: const Text('Financeiro Pro'),
-                  onTap: () => onSelected(_MainArea.financial),
-                )
-              else if (!isPartner) ...[
+              ] else ...[
                 ListTile(
                   leading: const Icon(Icons.local_parking),
                   title: const Text('Estacionamento'),
@@ -982,6 +1228,13 @@ class _MobileDrawer extends StatelessWidget {
                 ],
               ),
             ],
+            ListTile(
+              leading: const Icon(Icons.help_outline),
+              title: Text(
+                context.strings.isEnglish ? 'Help center' : 'Central de ajuda',
+              ),
+              onTap: () => onSelected(_MainArea.help),
+            ),
           ],
         ),
       ),
@@ -1047,6 +1300,51 @@ class _MenuCategory extends StatelessWidget {
   }
 }
 
+class _MobileMenuGroup extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<_MobileMenuItem> children;
+
+  const _MobileMenuGroup({
+    required this.title,
+    required this.icon,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      initiallyExpanded: true,
+      leading: Icon(icon),
+      title: Text(title),
+      childrenPadding: const EdgeInsets.only(left: 16),
+      children: children,
+    );
+  }
+}
+
+class _MobileMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _MobileMenuItem({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, size: 21),
+      title: Text(title),
+      onTap: onTap,
+    );
+  }
+}
+
 class _MenuItem {
   final IconData icon;
   final String label;
@@ -1065,7 +1363,7 @@ class _MenuHubPage extends StatelessWidget {
       appBar: AppBar(title: const Text('Menu')),
       body: ListView(
         padding: const EdgeInsets.all(20),
-        children: const [
+        children: [
           _MenuActionCard(
             icon: Icons.directions_car_outlined,
             title: 'Veículos',
@@ -1084,7 +1382,142 @@ class _MenuHubPage extends StatelessWidget {
             subtitle: 'Acompanhe reservas ativas e histórico',
             page: ReservationPage(),
           ),
+          _MenuActionCard(
+            icon: Icons.help_outline,
+            title: context.strings.isEnglish
+                ? 'Help center'
+                : 'Central de ajuda',
+            subtitle: context.strings.isEnglish
+                ? 'Answers and guidance for using the app'
+                : 'Respostas e orientações para usar o app',
+            page: const HelpCenterPage(),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ConvenienceEntryPage extends ConsumerWidget {
+  final bool pos;
+
+  const _ConvenienceEntryPage({required this.pos});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final parkings = ref.watch(partnerParkingProvider);
+    final partner = ref.watch(partnerProfileProvider).asData?.value;
+    return Scaffold(
+      appBar: AppBar(title: Text(pos ? 'Ponto de venda' : 'Produtos')),
+      body: parkings.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) =>
+            partner != null && !partner.hasFeature('convenience_management')
+            ? _lockedModule(context, partner)
+            : Center(
+                child: Text('Não foi possível carregar as unidades: $error'),
+              ),
+        data: (items) {
+          if (partner != null &&
+              !partner.hasFeature('convenience_management')) {
+            return _lockedModule(context, partner);
+          }
+          final active = items.where((item) => item.id != null).toList();
+          if (active.isEmpty) {
+            return const Center(
+              child: Text(
+                'Cadastre uma unidade antes de acessar a conveniência.',
+              ),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: active.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final parking = active[index];
+              return Card(
+                child: ListTile(
+                  leading: Icon(
+                    pos
+                        ? Icons.point_of_sale_outlined
+                        : Icons.inventory_2_outlined,
+                  ),
+                  title: Text(parking.name),
+                  subtitle: Text(parking.address),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    final id = parking.id!;
+                    final page = pos
+                        ? ConveniencePosPage(
+                            parkingId: id,
+                            parkingName: parking.name,
+                          )
+                        : ParkingConveniencePage(
+                            parkingId: id,
+                            parkingName: parking.name,
+                          );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => page),
+                    );
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _lockedModule(BuildContext context, PartnerProfileModel partner) {
+    final details = partner.featureDetails('convenience_management') ?? {};
+    final price = (details['price'] as num?)?.toDouble() ?? 0;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Card(
+          margin: const EdgeInsets.all(20),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.storefront_outlined, size: 52),
+                const SizedBox(height: 12),
+                Text(
+                  'Módulo de conveniência',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Venda produtos, controle estoque e gere comprovantes operacionais no caixa.',
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  price > 0
+                      ? 'A partir de R\$ ${price.toStringAsFixed(2)} por mês'
+                      : 'Valor definido pela gestão do sistema.',
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PartnerFeatureAccessPage(
+                        partner: partner,
+                        featureKey: 'convenience_management',
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_card),
+                  label: const Text('Adicionar ao plano'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1098,7 +1531,7 @@ class _ServicesHubPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       initialIndex: initialIndex,
       child: Scaffold(
         appBar: AppBar(
@@ -1110,6 +1543,7 @@ class _ServicesHubPage extends StatelessWidget {
               Tab(icon: Icon(Icons.local_car_wash), text: 'Lava jato'),
               Tab(icon: Icon(Icons.hotel_outlined), text: 'Hotéis'),
               Tab(icon: Icon(Icons.tour_outlined), text: 'Passeios'),
+              Tab(icon: Icon(Icons.directions_car_filled), text: 'Locação'),
             ],
           ),
         ),
@@ -1119,6 +1553,7 @@ class _ServicesHubPage extends StatelessWidget {
             _CarWashServicesList(),
             _PromotionServicesList(serviceType: _PromotionServiceType.hotel),
             _PromotionServicesList(serviceType: _PromotionServiceType.tourism),
+            RentalCompaniesPage(),
           ],
         ),
       ),
@@ -1184,6 +1619,12 @@ class _ParkingServiceCard extends StatelessWidget {
             const Icon(Icons.star, color: Colors.amber, size: 18),
             Text(parking.rating.toStringAsFixed(1)),
           ],
+        ),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HomeMapPage(initialParkingId: parking.id),
+          ),
         ),
       ),
     );

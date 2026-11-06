@@ -17,6 +17,9 @@
 - Fazer check-in ao chegar.
 - Fazer checkout e receber valor final.
 - Reportar incidente em uma reserva.
+- Consultar a Central de Ajuda, com busca por perguntas sobre reservas,
+  pagamentos, check-in/checkout e operação; conteúdos disponíveis em português
+  e inglês.
 
 ## Estacionamento
 
@@ -33,6 +36,15 @@
 - Configurar servicos adicionais.
 - Cadastrar taxas repassadas pela plataforma por tipo de servico.
 - Controlar vagas disponiveis.
+- Cadastrar produtos de conveniência por unidade, com categoria,
+  subcategoria, descrição e preço. Esses produtos são separados dos serviços
+  extras contratados na reserva.
+  O módulo é um add-on pago (`convenience_management`) e fica bloqueado até a
+  contratação/liberação pela gestão do app; somente gestores podem alterar os
+  produtos.
+- O catálogo mantém categorias e subcategorias reutilizáveis por tenant. Cada
+  produto pode ter código de barras, que o operador pesquisa no caixa; o caixa
+  registra venda, forma de pagamento, valor recebido e troco.
 - Validar check-in e checkout manualmente na portaria.
 - Consultar reservas ativas, expiradas, canceladas e finalizadas.
 - Ver no mapa operacional a previsao de chegada das pre-reservas recebidas.
@@ -55,6 +67,33 @@
 
 ## Servicos Adicionais
 
+## Locação de veículos (módulo ServiceHub)
+
+O módulo de locação é uma categoria de parceiro independente da operação de
+estacionamento. Uma empresa aprovada cadastra unidades e veículos com tarifa
+diária; o cliente escolhe o período, recebe o total calculado pelo backend,
+confirma a reserva e realiza check-in/checkout com quilometragem, fotos, itens e
+ocorrências. A locação usa os mesmos princípios de autenticação, aprovação,
+termos, pagamentos e auditoria, mas mantém suas tabelas próprias para não
+misturar veículos alugáveis com veículos dos clientes ou vagas.
+
+Status iniciais: `pending`, `checked_in`, `completed`. Veículos passam por
+`available` → `reserved` → `available`. A integração Mercado Pago permanece
+pausada neste bloco; a reserva deve ser ligada ao fluxo de pagamento existente
+quando o Checkout Transparente for retomado.
+
+Uma empresa pode contratar estacionamento, locação veicular e guia turístico na
+mesma conta. O gestor alterna entre módulos pelo painel e pode marcar uma
+unidade como matriz ou filial. A locadora possui tabelas, menu, permissões,
+veículos, reservas e filtros próprios; ela não depende de uma vaga ou de uma
+reserva de estacionamento. `parent_unit_id`/`parent_service_type` registram uma
+relação organizacional opcional com qualquer serviço, e `parent_parking_id`
+permanece como compatibilidade para a matriz de estacionamento legada.
+
+Tipos de veículo disponíveis no cadastro: carro, SUV, picape, van, motocicleta,
+scooter, bicicleta, ônibus, caminhão, motorhome e carro elétrico. O catálogo é
+extensível por código, mas o app lista apenas tipos ativos e traduzidos.
+
 Servicos iniciais:
 
 - Lava-jato.
@@ -68,6 +107,9 @@ Regras:
 - Servico adicional deve pertencer a um estacionamento.
 - Lava-jato parceiro pode se cadastrar na plataforma, mas a lavagem contratada pelo app deve ser executada no local do estacionamento.
 - Hoteis, restaurantes e turismo entram como divulgacao/ofertas locais, nao bloqueiam vaga.
+- Reserva confirmada e paga exibe a ação de rota até o local. O módulo de hotéis
+  deve reutilizar a mesma ação para reservas de hospedagem, com destino,
+  horário de chegada e confirmação dentro do fluxo de serviços.
 - Servico pode ter preco fixo ou regra propria futura.
 - Servico contratado deve ser registrado na reserva para faturamento e operacao.
 - Taxa da plataforma deve ser calculada por configuracao administrativa, nao hard-coded no app.
@@ -120,3 +162,32 @@ solicitacao persistida e aprovacao manual. A API aplica os limites e os
 entitlements. Compra automatica, conciliacao, vigencia e webhook permanecem
 pendentes do Mercado Pago. Pacotes de operadores continuam no fluxo de cotas
 existente; cada unidade adiciona dois operadores conforme a regra atual.
+
+### Conveniência: estoque e operação
+
+O módulo de conveniência é um add-on pago e separado dos serviços extras da
+reserva. O gestor cadastra categorias, produtos, preço e, opcionalmente,
+`stock_quantity`; estoque nulo mantém o produto sem controle de quantidade.
+Operadores com turno ativo acessam somente o Ponto de venda, pesquisam por nome
+ou código de barras e registram vendas; não editam nem removem produtos. Cada
+venda reduz o estoque quando controlado e gera comprovante operacional não
+fiscal, além de alimentar os registros de caixa/financeiro.
+
+### Taxas administrativas
+
+Toda taxa deve identificar o serviço ao qual se aplica (`service_type`) e
+possui rótulo e descrição em português e inglês. A tela de gestão exibe ambos
+conforme o idioma selecionado pelo administrador, evitando taxas genéricas ou
+sem contexto.
+# Módulos pagos e conveniência
+
+Módulos bloqueados abrem uma página de benefícios antes da contratação. O
+parceiro escolhe somente plano mensal recorrente (compromisso mínimo de seis
+meses) ou anual. A gestão do app configura preços, limite de parcelas e
+descontos por Pix, crédito e débito; a API recalcula o total e o app só libera
+o módulo após confirmação do pagamento e da análise prevista pelo fluxo.
+
+Filiais/unidades adicionais usam o mesmo fluxo e destacam gestão centralizada,
+separação operacional e relatórios consolidados ou por unidade. Conveniência é
+um módulo pago com produtos, categorias, estoque, PDV, troco, fechamento de
+caixa e comprovante operacional não fiscal.

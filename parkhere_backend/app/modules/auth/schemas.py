@@ -1,7 +1,7 @@
 import re
 
 from typing import Literal
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 PARTNER_SERVICE_TYPES = {
@@ -40,6 +40,12 @@ def _cpf(value: str) -> str:
 
 def _cnpj(value: str) -> str:
     return _digits(value, 'CNPJ', {14})
+
+
+class PartnerSignupDocument(BaseModel):
+    document_type: Literal['alvara', 'rg', 'cnh', 'insurance_policy']
+    file_name: str
+    content_base64: str
 
 class RegisterParkingSchema(BaseModel):
     tenant_name: str
@@ -85,10 +91,8 @@ class PartnerSignupRequest(BaseModel):
     phone: str | None = None
     has_insurance: bool = False
     insurance_provider: str | None = None
-    instagram: str | None = None
     website: str | None = None
-    # Mantido opcional para compatibilidade com clientes antigos; não aparece na nova tela.
-    social_links: str | None = None
+    documents: list["PartnerSignupDocument"] = Field(default_factory=list)
 
     _validate_phone = field_validator('phone')(_phone)
 
@@ -105,6 +109,8 @@ class PartnerSignupRequest(BaseModel):
         if value not in PARTNER_SERVICE_TYPES:
             raise ValueError('Tipo de servico de parceiro invalido')
         return value
+
+
     
 class LoginRequest(BaseModel):
     email: str

@@ -8,6 +8,12 @@ from app.core.config import settings
 from sqlalchemy.engine import make_url
 from app.modules.customer_assets.models import DriverDocument, Vehicle, WalletPaymentMethod
 from app.modules.parkings.models import Parking, ParkingService
+from app.modules.parkings.convenience_models import (
+    ParkingConvenienceProduct,
+    ParkingConvenienceCategory,
+    ParkingConvenienceSale,
+    ParkingConvenienceSaleItem,
+)
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.partners.guide_service_models import GuideService
@@ -28,6 +34,7 @@ from app.modules.platform_fees.models import (
     EmailTemplate,
     AdminAuditLog,
 )
+from app.modules.rentals.models import RentalCompany, RentalVehicle, RentalReservation, RentalCheckin, RentalCheckout, RentalPlan, RentalMaintenance
 
 
 config = context.config

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/services/api_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../models/auth_state.dart';
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
@@ -12,16 +13,26 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
 
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(AuthState.initial()) {
-    ApiService.onUnauthorized = logout;
+    ApiService.onUnauthorized = () async {
+      await logout();
+      await ApiFeedback.showSessionExpired();
+    };
     checkAuthOnStartup();
   }
 
   final _storage = LocalStorageService();
   final _api = ApiService();
+  int _authFlowGeneration = 0;
 
   /// 🔎 Verifica token ao iniciar app
   Future<void> checkAuthOnStartup() async {
+    final startupGeneration = _authFlowGeneration;
     final tokens = await _storage.getTokens();
+    if (startupGeneration != _authFlowGeneration ||
+        state.status == AuthStatus.authenticated ||
+        state.status == AuthStatus.mfaRequired) {
+      return;
+    }
     final tokenClaims = _decodeAccessClaims(tokens["access"]);
     final role = tokens["role"] ?? tokenClaims["role"];
     final tenantId = tokens["tenant_id"] ?? tokenClaims["tenant_id"];
@@ -37,7 +48,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (state.status == AuthStatus.authenticated) return;
 
     if (tokens["access"] != null && _isExpired(tokenClaims["exp"])) {
+      if (startupGeneration != _authFlowGeneration) return;
       await logout();
+      // Let AuthGate rebuild to the signed-out screen before presenting the
+      // same centered feedback used for an API 401 during an active session.
+      await Future<void>.delayed(Duration.zero);
+      await ApiFeedback.showSessionExpired();
       return;
     }
 
@@ -66,10 +82,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String password, {
     AuthAccountType accountType = AuthAccountType.customer,
   }) async {
-    state = state.copyWith(
-      status: AuthStatus.loading,
-      accountType: accountType,
-    );
+    _authFlowGeneration++;
+    // Discard the previous identity before beginning a new MFA challenge.
+    // This prevents account switching from reusing stale tokens or role data.
+    state = AuthState(status: AuthStatus.loading, accountType: accountType);
 
     final normalizedEmail = email.toLowerCase();
     final accountTypeName = accountType == AuthAccountType.customer
@@ -90,16 +106,31 @@ class AuthNotifier extends StateNotifier<AuthState> {
         mfaToken: response["mfa_token"] as String?,
       );
     } on ApiConnectionException {
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Não foi possível conectar com a API");
-    } catch (_) {
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+    } catch (error) {
+      final message = error.toString().replaceFirst('Exception: ', '');
+      if (accountType == AuthAccountType.partner &&
+          (message.toLowerCase().contains('aprovação') ||
+              message.toLowerCase().contains('documentação') ||
+              message.toLowerCase().contains('vistoria'))) {
+        state = state.copyWith(
+          status: AuthStatus.partnerPending,
+          approvalStatus: message.toLowerCase().contains('vistoria')
+              ? 'waiting_inspection'
+              : 'waiting_documents',
+          approvalMessage: message,
+        );
+        return;
+      }
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
     }
   }
 
   /// 🔐 MFA
   Future<void> verifyMfa(String code) async {
+    _authFlowGeneration++;
     final mfaToken = state.mfaToken;
 
     if (mfaToken == null) {
@@ -113,8 +144,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         "code": code,
       });
 
-      final accessToken = response["access_token"] as String;
-      final refreshToken = response["refresh_token"] as String;
+      final accessToken = response["access_token"]?.toString();
+      final refreshToken = response["refresh_token"]?.toString();
+      if (accessToken == null || refreshToken == null) {
+        throw Exception("Resposta de autenticação incompleta");
+      }
       final tokenClaims = _decodeAccessClaims(accessToken);
       final role = response["role"] as String? ?? tokenClaims["role"];
       final tenantId =
@@ -125,14 +159,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           ? AuthAccountType.partner
           : AuthAccountType.customer;
 
-      await _storage.saveTokens(
-        accessToken,
-        refreshToken,
-        accountType: accountTypeName,
-        userEmail: state.userEmail,
-        role: role,
-        tenantId: tenantId,
-      );
       state = state.copyWith(
         status: AuthStatus.authenticated,
         accessToken: accessToken,
@@ -142,20 +168,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tenantId: tenantId,
         clearMfaToken: true,
       );
+      // Persistência é uma melhoria para a próxima abertura, mas não pode
+      // desfazer uma autenticação concluída (isso fazia o app voltar ao login
+      // no web/mobile quando o storage demorava ou falhava).
+      try {
+        await _storage.saveTokens(
+          accessToken,
+          refreshToken,
+          accountType: accountTypeName,
+          userEmail: state.userEmail,
+          role: role,
+          tenantId: tenantId,
+        );
+      } catch (_) {
+        // A sessão em memória permanece autenticada.
+      }
     } on ApiConnectionException {
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Não foi possível conectar com a API");
     } catch (_) {
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = const AuthState(status: AuthStatus.unauthenticated);
       throw Exception("Credenciais inválidas");
     }
   }
 
   void resetLoginFlow() {
-    state = state.copyWith(
-      status: AuthStatus.unauthenticated,
-      clearMfaToken: true,
-    );
+    _authFlowGeneration++;
+    state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
   Future<String> requestEmailValidationCode(String email) async {
@@ -183,9 +222,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String? phone,
     required bool hasInsurance,
     String? insuranceProvider,
-    String? instagram,
     String? website,
-    String? socialLinks,
+    List<Map<String, dynamic>> documents = const [],
   }) {
     return _api.post('/partners/signup', {
       'service_type': serviceType,
@@ -200,11 +238,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       'insurance_provider': insuranceProvider?.trim().isEmpty == true
           ? null
           : insuranceProvider?.trim(),
-      'instagram': instagram?.trim().isEmpty == true ? null : instagram?.trim(),
       'website': website?.trim().isEmpty == true ? null : website?.trim(),
-      'social_links': socialLinks?.trim().isEmpty == true
-          ? null
-          : socialLinks?.trim(),
+      'documents': documents,
     });
   }
 
@@ -226,13 +261,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final accessToken = response['access_token'] as String;
     final refreshToken = response['refresh_token'] as String;
     final claims = _decodeAccessClaims(accessToken);
-    await _storage.saveTokens(accessToken, refreshToken,
-        accountType: 'customer', userEmail: email.trim().toLowerCase(),
-        role: claims['role'], tenantId: claims['tenant_id']);
-    state = state.copyWith(status: AuthStatus.authenticated,
-        accessToken: accessToken, refreshToken: refreshToken,
-        accountType: AuthAccountType.customer, role: claims['role'],
-        tenantId: claims['tenant_id'], userEmail: email.trim().toLowerCase());
+    await _storage.saveTokens(
+      accessToken,
+      refreshToken,
+      accountType: 'customer',
+      userEmail: email.trim().toLowerCase(),
+      role: claims['role'],
+      tenantId: claims['tenant_id'],
+    );
+    state = state.copyWith(
+      status: AuthStatus.authenticated,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      accountType: AuthAccountType.customer,
+      role: claims['role'],
+      tenantId: claims['tenant_id'],
+      userEmail: email.trim().toLowerCase(),
+    );
   }
 
   Future<String> requestPasswordReset(String email) async {
@@ -298,6 +343,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// 🚪 LOGOUT
   Future<void> logout() async {
+    _authFlowGeneration++;
     await _storage.clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }

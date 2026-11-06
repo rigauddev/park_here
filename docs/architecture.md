@@ -34,6 +34,8 @@ Stack atual:
 - MySQL.
 - JWT/MFA em evolucao.
 
+As regras e transições de reserva estão em [reservation-lifecycle.md](reservation-lifecycle.md). Os IDs de domínio são UUID técnicos; eles não autorizam acesso por si só nem devem ser trocados sem uma migration coordenada de chaves estrangeiras e contratos.
+
 Modulos recomendados para o MVP:
 
 - `parkings`: unidade, endereco, geolocalizacao, capacidade, status.
@@ -48,6 +50,11 @@ Modulos recomendados para o MVP:
 - `sessions`: check-in, checkout, eventos e valores finais.
 - `payments`: transacao, status, provedor e conciliacao.
 - `incidents`: ocorrencias reportadas pelo usuario ou operador.
+- `rentals`: módulo de locação veicular com empresas/unidades, veículos
+  alugáveis, reservas e registros de check-in/checkout. Usa `tenant_id` e
+  `user_id` para isolamento e não reutiliza a tabela `vehicles` dos clientes.
+  O hub de serviços trata `rentals`, `parkings` e guia como módulos equivalentes;
+  uma relação opcional de matriz/filial é organizacional e não mistura tabelas.
 
 ## App Flutter
 
@@ -122,3 +129,31 @@ Direcao definida:
 - Cliente: `/customers/signup`, carteira, veiculos, documentos do motorista e reservas.
 - Parceiro: `/partners/signup`, perfil do estabelecimento, documentos, vistoria, servicos, taxas e divulgacao.
 - Auth: `/auth/login`, MFA e emissao de tokens.
+
+### Parceiros e unidades
+
+`parkings` permanece como o agregado de unidades de estacionamento, que é o produto principal do MVP. Os demais parceiros (guia, hotel, restaurante, lava-jato e transporte) usam `partner_profiles` e módulos de serviços; não é necessário renomear a tabela agora. A evolução deve criar agregados próprios por categoria e manter a relação com o parceiro, evitando misturar inventário de vagas com serviços de outros segmentos.
+
+### Caixas e conciliação
+
+O caixa operacional do estacionamento e o caixa do PDV de conveniência são
+sessões e livros separados, com permissões, abertura/fechamento e auditoria
+próprios. Isso evita misturar recebimentos de reservas com vendas de produtos e
+permite que cada operador feche somente o caixa do turno em que trabalha. O
+Financeiro e o dashboard consolidam os dois por origem (`parking` e
+`convenience`) e também oferecem filtros por unidade, período e origem.
+
+### Perfis, auditoria e observabilidade
+
+As roles continuam identificando o escopo de autenticação (`customer`, parceiro
+ou administrador), mas as permissões operacionais vêm do perfil associado ao
+usuário. Os perfis de parceiro e de gestão do app podem ser personalizados;
+alterações são soft delete e não removem o histórico. Ações administrativas e
+de perfil registram ator, alvo, estado anterior e estado posterior em
+`admin_audit_logs`.
+
+A API emite uma linha JSON por requisição com método, rota, status e duração.
+Em homologação local isso aparece no Docker; na VPS, o CloudWatch Agent pode
+coletar stdout/stderr do container e enviar para CloudWatch Logs. O MVP não
+embute credenciais AWS: a instância deve usar uma IAM Role com permissão mínima
+`logs:CreateLogStream`, `logs:PutLogEvents` e `logs:DescribeLogStreams`.

@@ -111,3 +111,19 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
     state = await AsyncValue.guard(() => fetchParkings(city: query));
   }
 }
+
+final citySuggestionsProvider = FutureProvider.family<List<String>, String>((
+  ref,
+  query,
+) async {
+  final value = query.trim();
+  final endpoint = value.isEmpty
+      ? '/parkings/cities'
+      : '/parkings/cities?q=${Uri.encodeQueryComponent(value)}';
+  final data = await ref.read(apiServiceProvider).getMap(endpoint);
+  final cities = data['cities'] as List<dynamic>? ?? const <dynamic>[];
+  return cities
+      .map((item) => item.toString())
+      .where((item) => item.isNotEmpty)
+      .toList();
+});

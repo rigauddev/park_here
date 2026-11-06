@@ -10,6 +10,10 @@ class Parking(BaseModel):
     tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False)
     name = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
+    street = Column(String(180), nullable=True)
+    number = Column(String(30), nullable=True)
+    neighborhood = Column(String(120), nullable=True)
+    postal_code = Column(String(9), nullable=True)
     city = Column(String(120), nullable=False, default="Valenca")
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
@@ -51,6 +55,9 @@ class Parking(BaseModel):
     guide_commission_terms = Column(Text, nullable=True)
     category_pricing = Column(Text, nullable=True)
     operating_hours = Column(Text, nullable=True)
+    # Scheduling rule is separate from gate access (a 24h gate does not imply
+    # that one employee works a 24h shift).
+    work_regime = Column(String(30), nullable=False, default="commercial")
 
     services = relationship("ParkingService", back_populates="parking")
 
@@ -61,6 +68,7 @@ class ParkingService(BaseModel):
     parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=False)
     code = Column(String(50), nullable=False)
     name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
     price = Column(Float, nullable=False, default=0)
     is_active = Column(Boolean, default=True)
 

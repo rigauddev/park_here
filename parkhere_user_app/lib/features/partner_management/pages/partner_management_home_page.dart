@@ -132,6 +132,21 @@ class _PartnerManagementBody extends StatelessWidget {
             featureKey: 'parking_management',
           ),
           _ManagementAction(
+            icon: Icons.shopping_bag_outlined,
+            title: 'Conveniências',
+            description: 'Produtos e serviços extras de cada unidade.',
+            onTap: () => _open(context, const ParkingManagementPage()),
+            featureKey: 'convenience_management',
+          ),
+          _ManagementAction(
+            icon: Icons.miscellaneous_services_outlined,
+            title: 'Serviços cadastrados',
+            description:
+                'Serviços extras, preços e disponibilidade por unidade.',
+            onTap: () => _open(context, const ParkingManagementPage()),
+            featureKey: 'services_management',
+          ),
+          _ManagementAction(
             icon: Icons.map_outlined,
             title: 'Mapa de vagas',
             description:
@@ -148,13 +163,6 @@ class _PartnerManagementBody extends StatelessWidget {
             featureKey: 'cash_management_basic',
           ),
           _ManagementAction(
-            icon: Icons.design_services_outlined,
-            title: 'Servicos cadastrados',
-            description: 'Lava jato, seguro, transporte e servicos extras.',
-            onTap: () => _open(context, const ParkingManagementPage()),
-            featureKey: 'services_management',
-          ),
-          _ManagementAction(
             icon: Icons.account_balance_wallet_outlined,
             title: 'Conta de repasse',
             description: _paymentDescription(partner),
@@ -163,7 +171,8 @@ class _PartnerManagementBody extends StatelessWidget {
           _ManagementAction(
             icon: Icons.group_outlined,
             title: 'Usuarios',
-            description: 'Crie ate 2 operadores no plano atual.',
+            description:
+                'Use ${partner.operatorCount} de ${partner.operatorLimit} operadores permitidos pelos serviços ativos.',
             onTap: () => _open(context, const PartnerUsersPage()),
             featureKey: 'team_management',
           ),
@@ -301,8 +310,6 @@ class _PartnerManagementBody extends StatelessWidget {
       final price = (feature?['price'] as num? ?? 0).toDouble();
       final period = feature?['billing_period'] == 'annual'
           ? (context.strings.isEnglish ? 'year' : 'ano')
-          : feature?['billing_period'] == 'one_time'
-          ? (context.strings.isEnglish ? 'once' : 'única')
           : (context.strings.isEnglish ? 'month' : 'mês');
       return context.strings.isEnglish
           ? 'Optional add-on: R\$ ${price.toStringAsFixed(2)} / $period. Contact ParkHere to enable.'

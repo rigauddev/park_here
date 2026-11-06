@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../providers/auth_provider.dart';
 import 'login_page.dart';
 
@@ -100,14 +101,14 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
 
   Future<void> _submit() async {
     if (!_isStrongPassword(passwordController.text)) {
-      _showError(
+      await _showError(
         'Senha deve ter minimo 8 caracteres, maiuscula, minuscula e caractere especial. Ex: Rig@ud2026',
       );
       return;
     }
 
     if (passwordController.text != confirmPasswordController.text) {
-      _showError('As senhas nao coincidem.');
+      await _showError('As senhas nao coincidem.');
       return;
     }
 
@@ -123,26 +124,27 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
       await ref.read(authProvider.notifier).logout();
 
       if (!mounted) return;
+      await ApiFeedback.show(
+        context,
+        'Senha alterada. Faça login novamente.',
+        isError: false,
+      );
+      if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginPage()),
         (_) => false,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Senha alterada. Faça login novamente.')),
-      );
     } catch (_) {
-      _showError('Nao foi possivel alterar a senha.');
+      await _showError('Nao foi possivel alterar a senha.');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
   }
 
-  void _showError(String message) {
+  Future<void> _showError(String message) async {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    await ApiFeedback.show(context, message);
   }
 
   bool _isStrongPassword(String password) {

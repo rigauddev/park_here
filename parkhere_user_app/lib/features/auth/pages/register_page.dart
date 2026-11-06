@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/widgets/api_feedback.dart';
 import '../providers/auth_provider.dart';
 
 enum RegisterAccountType { customer, partner }
@@ -45,9 +47,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final responsibleNameController = TextEditingController();
   final phoneController = TextEditingController();
   final insuranceCompanyController = TextEditingController();
-  final instagramController = TextEditingController();
   final websiteController = TextEditingController();
-  final socialLinksController = TextEditingController();
 
   late RegisterAccountType accountType;
   PartnerServiceType serviceType = PartnerServiceType.parking;
@@ -59,11 +59,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   bool obscurePassword = true;
   bool obscureConfirmation = true;
   Uint8List? profilePhoto;
+  final Map<String, PlatformFile> partnerDocuments = {};
+  String personalDocumentType = 'rg';
 
-  bool get needsInsuranceInfo =>
-      accountType == RegisterAccountType.partner &&
-      (serviceType == PartnerServiceType.parking ||
-          serviceType == PartnerServiceType.carWash);
+  bool get needsInsuranceInfo => accountType == RegisterAccountType.partner;
 
   String get serviceTypeApiValue {
     switch (serviceType) {
@@ -105,9 +104,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     responsibleNameController.dispose();
     phoneController.dispose();
     insuranceCompanyController.dispose();
-    instagramController.dispose();
     websiteController.dispose();
-    socialLinksController.dispose();
     super.dispose();
   }
 
@@ -141,23 +138,16 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    SegmentedButton<RegisterAccountType>(
-                      segments: const [
-                        ButtonSegment(
-                          value: RegisterAccountType.customer,
-                          label: Text("Cliente"),
-                          icon: Icon(Icons.person),
-                        ),
-                        ButtonSegment(
-                          value: RegisterAccountType.partner,
-                          label: Text("Parceiro"),
-                          icon: Icon(Icons.storefront),
-                        ),
-                      ],
-                      selected: {accountType},
-                      onSelectionChanged: (value) {
-                        setState(() => accountType = value.first);
-                      },
+                    Chip(
+                      avatar: Icon(
+                        isPartner ? Icons.storefront : Icons.person,
+                        size: 18,
+                      ),
+                      label: Text(
+                        isPartner
+                            ? 'Cadastro de parceiro'
+                            : 'Cadastro de cliente',
+                      ),
                     ),
                     const SizedBox(height: 22),
                     _emailValidationStep(),
@@ -212,20 +202,29 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   }
 
   Widget _customerFields() {
-    return Column(children: [
-      _field(nameController, "Nome completo"),
-      _field(cpfController, "CPF", keyboardType: TextInputType.number),
-      _field(phoneController, "Telefone", keyboardType: TextInputType.phone),
-      OutlinedButton.icon(
-        onPressed: isLoading ? null : _pickProfilePhoto,
-        icon: const Icon(Icons.photo_camera_outlined),
-        label: Text(profilePhoto == null ? 'Adicionar foto de perfil (opcional)' : 'Foto selecionada'),
-      ),
-    ]);
+    return Column(
+      children: [
+        _field(nameController, "Nome completo"),
+        _field(cpfController, "CPF", keyboardType: TextInputType.number),
+        _field(phoneController, "Telefone", keyboardType: TextInputType.phone),
+        OutlinedButton.icon(
+          onPressed: isLoading ? null : _pickProfilePhoto,
+          icon: const Icon(Icons.photo_camera_outlined),
+          label: Text(
+            profilePhoto == null
+                ? 'Adicionar foto de perfil (opcional)'
+                : 'Foto selecionada',
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _pickProfilePhoto() async {
-    final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
     if (file != null) {
       final bytes = await file.readAsBytes();
       if (mounted) setState(() => profilePhoto = bytes);
@@ -307,43 +306,99 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           "Telefone de contato / Contact phone",
           keyboardType: TextInputType.phone,
         ),
-        if (needsInsuranceInfo) ...[
-          SwitchListTile(
-            value: hasInsurance,
-            onChanged: (value) => setState(() => hasInsurance = value),
-            title: const Text("Estabelecimento possui seguro?"),
-            contentPadding: EdgeInsets.zero,
-          ),
-          if (hasInsurance)
-            _field(insuranceCompanyController, "Qual seguradora/apólice?"),
-        ],
-        _field(instagramController, "Instagram"),
-        _field(websiteController, "Site"),
-        _field(socialLinksController, "Outras redes sociais", maxLines: 3),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEAFBFF),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Text(
-            "Integração Instagram: nesta fase guardamos o perfil/link. A visualização de publicações dentro do app entra no bloco de integração oficial.",
-            style: TextStyle(color: Color(0xFF102657)),
-          ),
+        SwitchListTile(
+          value: hasInsurance,
+          onChanged: (value) => setState(() => hasInsurance = value),
+          title: const Text("Estabelecimento possui seguro?"),
+          contentPadding: EdgeInsets.zero,
         ),
+        if (hasInsurance)
+          _field(insuranceCompanyController, "Qual seguradora/apólice?"),
+        _field(websiteController, "Site"),
+        const SizedBox(height: 8),
+        _partnerDocumentPicker(
+          'alvara',
+          documentType == 'cnpj'
+              ? 'Alvará (obrigatório para CNPJ)'
+              : 'Alvará (opcional)',
+        ),
+        DropdownButtonFormField<String>(
+          initialValue: personalDocumentType,
+          decoration: const InputDecoration(
+            labelText: 'Documento do responsável',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'rg', child: Text('RG')),
+            DropdownMenuItem(value: 'cnh', child: Text('CNH')),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => personalDocumentType = value);
+          },
+        ),
+        const SizedBox(height: 10),
+        _partnerDocumentPicker('personal', 'RG ou CNH (obrigatório)'),
+        if (hasInsurance)
+          _partnerDocumentPicker(
+            'insurance_policy',
+            'Documento do seguro (obrigatório)',
+          ),
       ],
     );
+  }
+
+  Widget _partnerDocumentPicker(String key, String label) {
+    final selected = partnerDocuments[key];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: OutlinedButton.icon(
+        onPressed: isLoading ? null : () => _pickPartnerDocument(key),
+        icon: Icon(selected == null ? Icons.attach_file : Icons.check_circle),
+        label: Text(
+          selected == null
+              ? 'Anexar $label (PDF/JPG/PNG)'
+              : '${selected.name} anexado',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickPartnerDocument(String key) async {
+    final result = await FilePicker.platform.pickFiles(
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+    );
+    if (result == null || result.files.single.bytes == null || !mounted) return;
+    setState(() => partnerDocuments[key] = result.files.single);
   }
 
   Widget _passwordFields() {
     return Column(
       children: [
-        _field(passwordController, "Senha (mín. 8, maiúscula, minúscula e símbolo)", obscureText: obscurePassword,
-          suffixIcon: IconButton(icon: Icon(obscurePassword ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => obscurePassword = !obscurePassword))),
-        _field(confirmPasswordController, "Confirmar senha", obscureText: obscureConfirmation,
-          suffixIcon: IconButton(icon: Icon(obscureConfirmation ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => obscureConfirmation = !obscureConfirmation))),
+        _field(
+          passwordController,
+          "Senha (mín. 8, maiúscula, minúscula e símbolo)",
+          obscureText: obscurePassword,
+          suffixIcon: IconButton(
+            icon: Icon(
+              obscurePassword ? Icons.visibility : Icons.visibility_off,
+            ),
+            onPressed: () => setState(() => obscurePassword = !obscurePassword),
+          ),
+        ),
+        _field(
+          confirmPasswordController,
+          "Confirmar senha",
+          obscureText: obscureConfirmation,
+          suffixIcon: IconButton(
+            icon: Icon(
+              obscureConfirmation ? Icons.visibility : Icons.visibility_off,
+            ),
+            onPressed: () =>
+                setState(() => obscureConfirmation = !obscureConfirmation),
+          ),
+        ),
       ],
     );
   }
@@ -442,42 +497,43 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               phone: phoneController.text,
               hasInsurance: hasInsurance,
               insuranceProvider: insuranceCompanyController.text,
-              instagram: instagramController.text,
               website: websiteController.text,
-              socialLinks: socialLinksController.text,
+              documents: _partnerDocumentPayload(),
             );
       } else {
-        await ref.read(authProvider.notifier).registerCustomer(
-          name: nameController.text,
-          cpf: cpfController.text,
-          email: emailController.text,
-          password: passwordController.text,
-          phone: phoneController.text,
-        );
+        await ref
+            .read(authProvider.notifier)
+            .registerCustomer(
+              name: nameController.text,
+              cpf: cpfController.text,
+              email: emailController.text,
+              password: passwordController.text,
+              phone: phoneController.text,
+            );
         if (profilePhoto != null) {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('profile_avatar_${emailController.text.trim().toLowerCase()}', base64Encode(profilePhoto!));
+          await prefs.setString(
+            'profile_avatar_${emailController.text.trim().toLowerCase()}',
+            base64Encode(profilePhoto!),
+          );
         }
       }
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            accountType == RegisterAccountType.partner
-                ? "Cadastro enviado para análise documental e vistoria."
-                : "Conta criada com sucesso!",
-          ),
-        ),
+      await ApiFeedback.show(
+        context,
+        accountType == RegisterAccountType.partner
+            ? 'Cadastro enviado para análise documental e vistoria.'
+            : 'Conta criada com sucesso!',
+        isError: false,
       );
 
+      if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      await ApiFeedback.show(context, e.toString());
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -570,6 +626,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       throw Exception("Informe qual seguro o estabelecimento possui");
     }
 
+    if (isPartner) {
+      if (documentType == 'cnpj' && partnerDocuments['alvara'] == null) {
+        throw Exception('Anexe o alvará do estabelecimento.');
+      }
+      if (partnerDocuments['personal'] == null) {
+        throw Exception('Anexe RG ou CNH do responsável.');
+      }
+      if (hasInsurance && partnerDocuments['insurance_policy'] == null) {
+        throw Exception('Anexe o documento do seguro informado.');
+      }
+    }
+
     if (passwordController.text != confirmPasswordController.text) {
       throw Exception("As senhas não coincidem");
     }
@@ -579,6 +647,22 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         "Senha deve ter no mínimo 8 caracteres, letra maiúscula, letra minúscula e caractere especial. Ex: Rig@ud2026",
       );
     }
+  }
+
+  List<Map<String, dynamic>> _partnerDocumentPayload() {
+    final payload = <Map<String, dynamic>>[];
+    for (final entry in partnerDocuments.entries) {
+      final file = entry.value;
+      final bytes = file.bytes;
+      if (bytes == null) continue;
+      final type = entry.key == 'personal' ? personalDocumentType : entry.key;
+      payload.add({
+        'document_type': type,
+        'file_name': file.name,
+        'content_base64': base64Encode(bytes),
+      });
+    }
+    return payload;
   }
 
   bool _isStrongPassword(String password) {

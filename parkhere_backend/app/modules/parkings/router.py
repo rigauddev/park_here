@@ -1,3 +1,6 @@
+import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 import unicodedata
 from sqlalchemy import select
@@ -35,6 +38,39 @@ async def list_parkings(
             if normalized_city in _normalize_city(parking.city)
         ]
     return [_to_response(parking) for parking in parkings]
+
+
+@router.get("/cities")
+async def list_service_cities(
+    q: str | None = Query(default=None, min_length=1, max_length=120),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return distinct cities that currently have an active service.
+
+    City lookup is deliberately data-driven: an unknown city returns an empty
+    list and never becomes a client-side parsing error. The app can still
+    accept arbitrary text and then display the no-results state.
+    """
+    rows = await db.scalars(
+        select(Parking.city)
+        .where(Parking.is_active.is_(True))
+        .distinct()
+        .order_by(Parking.city.asc())
+    )
+    normalized_query = _normalize_city(q) if q else ""
+    values = []
+    seen = set()
+    for value in rows.all():
+        if not value:
+            continue
+        if normalized_query and normalized_query not in _normalize_city(value):
+            continue
+        canonical = _canonical_city(value)
+        key = _normalize_city(canonical)
+        if key not in seen:
+            seen.add(key)
+            values.append(canonical)
+    return {"cities": values}
 
 
 @router.get('/{parking_id}/guides')
@@ -82,6 +118,13 @@ def _canonical_city(value: str) -> str:
 
 def _to_response(parking: Parking) -> ParkingResponse:
     services = {service.code: service for service in parking.services if service.is_active}
+    category_pricing = {
+        key: _normalize_category_pricing(value)
+        for key, value in json.loads(parking.category_pricing or '{}').items()
+    }
+
+    def category_price(category: str, key: str) -> float:
+        return float(category_pricing.get(category, {}).get(key, 0) or 0)
 
     return ParkingResponse(
         id=parking.id,
@@ -102,6 +145,7 @@ def _to_response(parking: Parking) -> ParkingResponse:
             coveredFirstHourPrice=parking.covered_first_hour_price,
             uncoveredFirstHourPrice=parking.uncovered_first_hour_price,
         ),
+        category_pricing=category_pricing,
         hasCarWash="car_wash" in services,
         hasTourGuide="tour_guide" in services,
         hasTransportService="transport" in services,
@@ -116,11 +160,49 @@ def _to_response(parking: Parking) -> ParkingResponse:
         motoHomeSpots=getattr(parking, 'moto_home_spots', 0),
         coveredDailyPrice=parking.covered_daily_price,
         uncoveredDailyPrice=parking.uncovered_daily_price,
-        vipDailyPrice=parking.covered_daily_price,
-        largeDailyPrice=parking.uncovered_daily_price,
-        busDailyPrice=parking.uncovered_daily_price,
-        pickupDailyPrice=parking.uncovered_daily_price,
+        vipDailyPrice=category_price("vip", "daily_price"),
+        largeDailyPrice=category_price("large", "daily_price"),
+        busDailyPrice=category_price("bus", "daily_price"),
+        pickupDailyPrice=category_price("pickup", "daily_price"),
         carWashPrice=services.get("car_wash").price if "car_wash" in services else 0,
         tourGuidePrice=services.get("tour_guide").price if "tour_guide" in services else 0,
         transportPrice=services.get("transport").price if "transport" in services else 0,
+        isOpen=_is_open_now(parking),
+        operating_hours=json.loads(parking.operating_hours or '{}'),
     )
+
+
+def _is_open_now(parking: Parking) -> bool:
+    raw = json.loads(parking.operating_hours or '{}')
+    if not raw:
+        return True
+    keys = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
+    # Container clocks are commonly UTC; opening hours are configured in the
+    # parking unit's local Brazil/Bahia time.
+    now = datetime.now(ZoneInfo("America/Bahia"))
+    hours = raw.get(keys[now.weekday()])
+    if not hours or hours.get('closed') is True:
+        return False
+    opening, closing = hours.get('open'), hours.get('close')
+    if not opening or not closing or opening == closing == '00:00':
+        return False
+    try:
+        open_h, open_m = (int(part) for part in opening.split(':', 1))
+        close_h, close_m = (int(part) for part in closing.split(':', 1))
+        current = now.hour * 60 + now.minute
+        start, end = open_h * 60 + open_m, close_h * 60 + close_m
+        return current >= start or current < end if end < start else start <= current < end
+    except (TypeError, ValueError):
+        return True
+
+
+def _normalize_category_pricing(value: dict) -> dict[str, float]:
+    """Read current and pre-MVP seed formats into the stable public contract."""
+    first_hour = value.get('first_hour_price', value.get('hourly', 0))
+    return {
+        'first_hour_price': float(first_hour or 0),
+        'additional_hour_price': float(value.get('additional_hour_price', value.get('hourly', 0)) or 0),
+        'daily_price': float(value.get('daily_price', value.get('daily', 0)) or 0),
+        'weekly_price': float(value.get('weekly_price', value.get('weekly', 0)) or 0),
+        'monthly_price': float(value.get('monthly_price', value.get('monthly', 0)) or 0),
+    }

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, String
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
 
 from app.db.base import BaseModel
 
@@ -25,6 +25,8 @@ class Vehicle(BaseModel):
     vehicle_document = Column(String(80), nullable=False)
     ownership_type = Column(String(20), nullable=False)
     is_active = Column(Boolean, default=False)
+    vehicle_type = Column(String(20), nullable=False, default="car", server_default="car")
+    bicycle_parts = Column(String(500), nullable=True)
 
 
 class WalletPaymentMethod(BaseModel):
@@ -34,5 +36,9 @@ class WalletPaymentMethod(BaseModel):
     method_type = Column(String(20), nullable=False)
     label = Column(String(120), nullable=False)
     last_four = Column(String(4), nullable=True)
+    card_brand = Column(String(40), nullable=True)
+    cardholder_name = Column(String(120), nullable=True)
+    expiration_month = Column(Integer, nullable=True)
+    expiration_year = Column(Integer, nullable=True)
     pix_key = Column(String(120), nullable=True)
     is_active = Column(Boolean, default=False)

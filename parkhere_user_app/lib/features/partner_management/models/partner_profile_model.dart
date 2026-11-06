@@ -33,6 +33,8 @@ class PartnerProfileModel {
   final int unitLimit;
   final int serviceCount;
   final int serviceLimit;
+  final int operatorCount;
+  final int operatorLimit;
 
   const PartnerProfileModel({
     required this.tenantId,
@@ -49,6 +51,8 @@ class PartnerProfileModel {
     required this.unitLimit,
     required this.serviceCount,
     required this.serviceLimit,
+    required this.operatorCount,
+    required this.operatorLimit,
   });
 
   factory PartnerProfileModel.fromJson(Map<String, dynamic> json) {
@@ -77,6 +81,8 @@ class PartnerProfileModel {
       unitLimit: (json['unit_limit'] as num?)?.toInt() ?? 1,
       serviceCount: (json['service_count'] as num?)?.toInt() ?? 0,
       serviceLimit: (json['service_limit'] as num?)?.toInt() ?? 1,
+      operatorCount: (json['operator_count'] as num?)?.toInt() ?? 0,
+      operatorLimit: (json['operator_limit'] as num?)?.toInt() ?? 2,
     );
   }
 

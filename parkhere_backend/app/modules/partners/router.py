@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import re
 from uuid import uuid4
@@ -7,18 +9,21 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pathlib import Path
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy import func
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.core.database import get_db
+from app.core.email_service import EmailService
 from app.core.security import hash_password
 from app.modules.auth.auth_service import AuthService
 from app.modules.auth.schemas import PartnerSignupRequest
 from app.modules.customer_assets.models import Vehicle
 from app.modules.parkings.models import Parking, ParkingService
+from app.modules.parkings.convenience_models import ParkingConvenienceSale
 from app.modules.parkings.schemas import (
     ParkingManagementRequest,
     ParkingManagementResponse,
@@ -28,31 +33,51 @@ from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
+from app.modules.partners.cash_session_models import PartnerCashSession, PartnerCashBleed
+from app.modules.partners.financial_models import FinancialCostCenter, FinancialEntry
+from app.modules.partners.permission_profile_models import PartnerPermissionProfile
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.platform_fees.models import PartnerFeatureEntitlement, PartnerFeatureRequest
+from app.modules.platform_fees.models import AdminAuditLog
 from app.modules.platform_fees.feature_catalog import feature_by_key, features_for_service_type
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.partners.document_models import PartnerDocument
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
-from app.modules.reservations.service import expire_parking_reservations, physical_spot_type
+from app.modules.reservations.service import (
+    calculate_checkout_excess,
+    expire_parking_reservations,
+    physical_spot_type,
+    _utc_iso,
+)
 from app.modules.reservations.models import Reservation
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 
 router = APIRouter(prefix="/partners", tags=["Partners"])
 
-PARTNER_DOCUMENT_TYPES = {'alvara', 'rg', 'cnh'}
+PARTNER_DOCUMENT_TYPES = {'alvara', 'rg', 'cnh', 'insurance_policy'}
 
 FREE_OPERATOR_LIMIT = 2
 OPERATOR_PERMISSION_LABELS = {
-    "reservations.view": "Ver reservas recebidas",
+    "cash.view": "Visualizar caixa e movimentações do turno",
+    "cash.manage": "Abrir e fechar caixa e turno",
     "parking_map.view": "Ver patio de vagas",
+    "parking_map.edit": "Editar disponibilidade das vagas",
+    "reservations.view": "Ver reservas recebidas",
     "reservations.create": "Criar reserva operacional",
+    "reservations.edit": "Editar reservas",
+    "reservations.delete": "Excluir/cancelar reservas",
     "reservations.cancel_own": "Cancelar reservas criadas pelo operador",
     "checkin.own": "Realizar check-in de reservas criadas pelo operador",
     "checkout.own": "Realizar checkout de reservas criadas pelo operador",
     "payments.receive": "Receber pagamento no local",
+    "convenience.view": "Visualizar conveniência",
+    "convenience.sell": "Operar caixa e PDV da conveniência",
+    "convenience.sales.cancel": "Cancelar vendas no PDV da conveniência",
+    "convenience.discount": "Conceder descontos em produtos no PDV",
+    "convenience.edit": "Cadastrar e editar produtos",
+    "convenience.delete": "Excluir produtos",
 }
 DEFAULT_OPERATOR_PERMISSIONS = list(OPERATOR_PERMISSION_LABELS.keys())
 OWNER_PERMISSIONS = [
@@ -61,6 +86,34 @@ OWNER_PERMISSIONS = [
     "partner.pricing.manage",
     *DEFAULT_OPERATOR_PERMISSIONS,
 ]
+
+
+def _payment_terms(item: PartnerFeatureEntitlement | None) -> dict:
+    defaults = {
+        'monthly': {'minimum_months': 6, 'installments': 1, 'discounts': {}},
+        'annual': {'minimum_months': 12, 'installments': 1, 'discounts': {}},
+    }
+    try:
+        raw = json.loads(item.payment_terms or '{}') if item else {}
+    except json.JSONDecodeError:
+        raw = {}
+    result = {}
+    for period, default in defaults.items():
+        value = raw.get(period) or {}
+        result[period] = {
+            'minimum_months': max(int(value.get('minimum_months', default['minimum_months'])), default['minimum_months'] if period == 'monthly' else 12),
+            'installments': max(1, int(value.get('installments', 1))),
+            'discounts': {str(k): float(v) for k, v in (value.get('discounts') or {}).items()},
+        }
+    return result
+
+
+def _partner_audit(db: AsyncSession, actor: User, action: str, target_type: str, target_id: str, before: dict | None, after: dict | None):
+    db.add(AdminAuditLog(
+        actor_id=actor.id, tenant_id=actor.tenant_id, action=action,
+        target_type=target_type, target_id=target_id,
+        details=json.dumps({'before': before, 'after': after}, ensure_ascii=False, default=str),
+    ))
 
 
 class PartnerOperatorCreateRequest(BaseModel):
@@ -90,9 +143,22 @@ class OperatorPackageRequestCreate(BaseModel):
 class OperatorParkingAssignmentRequest(BaseModel):
     parking_ids: list[str]
 
+class PermissionProfileRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    permissions: list[str] = Field(default_factory=list)
+
+class OperatorPermissionProfileRequest(BaseModel):
+    profile_id: str | None = None
+    permissions: list[str] | None = None
+
 class OperatorShiftRequest(BaseModel):
     operator_id: str | None = None
     parking_id: str
+    starts_at: datetime
+    ends_at: datetime
+
+class OperatorShiftUpdateRequest(BaseModel):
+    operator_id: str | None
     starts_at: datetime
     ends_at: datetime
 
@@ -105,6 +171,48 @@ class OperatorWorkProfileRequest(BaseModel):
     work_modality: str = "8h"
     bank_hours: float = 0
 
+class CashSessionOpenRequest(BaseModel):
+    parking_id: str
+    parking_opening_cash: float = Field(default=0, ge=0)
+    convenience_opening_cash: float = Field(default=0, ge=0)
+
+class CashSessionCloseRequest(BaseModel):
+    parking_closing_cash: float = Field(default=0, ge=0)
+    convenience_closing_cash: float = Field(default=0, ge=0)
+    closing_notes: str | None = None
+
+
+class CashBleedRequest(BaseModel):
+    parking_id: str
+    amount: float = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=255)
+    target_type: str = "convenience"  # convenience | parking
+    notes: str | None = None
+
+
+class CostCenterRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    code: str | None = Field(default=None, max_length=30)
+    type: str = "both"  # expense, revenue, both
+    parking_id: str | None = None
+
+
+class FinancialEntryRequest(BaseModel):
+    parking_id: str | None = None
+    cost_center_id: str | None = None
+    entry_type: str = Field(pattern="^(income|expense)$")
+    category: str = Field(min_length=2, max_length=80)
+    description: str = Field(min_length=2, max_length=255)
+    amount: float = Field(gt=0)
+    payment_method: str = "cash"
+    entry_date: datetime | None = None
+    notes: str | None = None
+
+
+class FeatureActivationRequest(BaseModel):
+    modality: str = "trial"  # trial, direct_debit, card, pix
+    billing_period: str = "monthly"
+
 class ShiftSuggestionRequest(BaseModel):
     parking_id: str
     operator_ids: list[str]
@@ -113,6 +221,7 @@ class ShiftSuggestionRequest(BaseModel):
     daily_hours: float = 8
     opening_time: str | None = None
     closing_time: str | None = None
+    work_regime: str | None = None
 
 
 class PartnerOperatorResponse(BaseModel):
@@ -151,7 +260,29 @@ class GuideServiceRequest(BaseModel):
 class PartnerFeatureActivationRequest(BaseModel):
     feature_key: str
     quantity: int = 1
+    billing_period: str = 'monthly'
+    payment_method: str
+    contract_months: int | None = None
     notes: str | None = None
+
+
+class PartnerPayoutAccountRequest(BaseModel):
+    pix_key: str = Field(min_length=3, max_length=120)
+    account_holder_name: str = Field(min_length=2, max_length=160)
+    account_holder_document: str = Field(min_length=11, max_length=18)
+
+    @field_validator("pix_key")
+    @classmethod
+    def clean_pix_key(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("account_holder_document")
+    @classmethod
+    def clean_document(cls, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if len(digits) not in {11, 14}:
+            raise ValueError("Informe um CPF ou CNPJ válido")
+        return digits
 
 
 @router.post("/signup")
@@ -172,12 +303,47 @@ async def partner_signup(
         responsible_name=data.responsible_name,
         has_insurance=data.has_insurance,
         insurance_provider=data.insurance_provider,
-        instagram=data.instagram,
         website=data.website,
-        social_links=data.social_links,
     )
     db.add(profile)
+    expected_documents = {'alvara'} if data.document_type == 'cnpj' else set()
+    uploaded_types: set[str] = set()
+    target_dir = Path('/app/storage/partner_documents') / user.tenant_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for item in data.documents:
+        if item.document_type not in PARTNER_DOCUMENT_TYPES:
+            raise HTTPException(status_code=422, detail='Tipo de documento inválido')
+        if item.document_type == 'insurance_policy' and not data.has_insurance:
+            raise HTTPException(status_code=422, detail='Documento de seguro sem seguro informado')
+        try:
+            content = base64.b64decode(item.content_base64, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise HTTPException(status_code=422, detail='Arquivo de documento inválido') from exc
+        if not content or len(content) > 30 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail='Cada documento deve ter até 30 MB')
+        safe_name = Path(item.file_name).name
+        target = target_dir / safe_name
+        target.write_bytes(content)
+        db.add(PartnerDocument(
+            tenant_id=user.tenant_id,
+            document_type=item.document_type,
+            file_name=safe_name,
+            storage_path=str(target),
+        ))
+        uploaded_types.add(item.document_type)
+    personal_document_present = bool({'rg', 'cnh'} & uploaded_types)
+    if not expected_documents.issubset(uploaded_types) or not personal_document_present:
+        raise HTTPException(
+            status_code=422,
+            detail='Envie o alvará e RG/CNH para CNPJ, ou RG/CNH para CPF.',
+        )
+    if data.has_insurance and 'insurance_policy' not in uploaded_types:
+        raise HTTPException(status_code=422, detail='Anexe o documento do seguro informado.')
+    profile.approval_status = 'documents_submitted'
     await db.commit()
+    await EmailService.send_template(
+        db, user.email, 'welcome', 'pt_BR', {'name': user.name}
+    )
 
     return {
         "message": "Partner registered. Documents and inspection are required before publishing.",
@@ -216,9 +382,24 @@ async def get_my_partner_profile(
     total_parking_count = await db.scalar(select(func.count(Parking.id)).where(
         Parking.tenant_id == current_user.tenant_id
     )) or 0
+    active_service_count = await db.scalar(select(func.count(ParkingService.id)).join(
+        Parking, Parking.id == ParkingService.parking_id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    units_with_services = await db.scalar(select(func.count(func.distinct(Parking.id))).join(
+        ParkingService, ParkingService.parking_id == Parking.id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    operator_slots = int(active_service_count) + max(0, int(parking_count) - int(units_with_services))
     base_operator_limit = (
         tenant.operator_limit_override if tenant and tenant.operator_limit_override is not None
-        else max(FREE_OPERATOR_LIMIT, int(parking_count or 1) * FREE_OPERATOR_LIMIT)
+        else max(FREE_OPERATOR_LIMIT, operator_slots * FREE_OPERATOR_LIMIT)
     )
     entitlements = (await db.scalars(select(PartnerFeatureEntitlement).where(
         PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
@@ -227,15 +408,21 @@ async def get_my_partner_profile(
     partner_features = {}
     for feature in features_for_service_type(profile.service_type if profile else None):
         item = entitlements_by_key.get(feature['key'])
+        is_enabled = item.is_enabled if item else feature['default_is_enabled']
+        if item and item.expires_at and item.expires_at.replace(tzinfo=None) <= datetime.utcnow():
+            is_enabled = False
         partner_features[feature['key']] = {
             'name': feature['name'],
             'name_en': feature['name_en'],
             'description': feature['description'],
             'description_en': feature['description_en'],
-            'is_enabled': item.is_enabled if item else feature['default_is_enabled'],
+            'is_enabled': is_enabled,
             'is_paid': item.is_paid if item else feature['default_is_paid'],
             'price': item.price if item else 0,
             'billing_period': item.billing_period if item else feature['default_billing_period'],
+            'billing_prices': _feature_prices(item) if item else {},
+            'payment_terms': _payment_terms(item),
+            'expires_at': item.expires_at.isoformat() + 'Z' if item and item.expires_at else None,
             'notes': item.notes if item else None,
             'requestable': feature['requestable'],
             'quantity_based': feature.get('quantity_based', False),
@@ -257,7 +444,7 @@ async def get_my_partner_profile(
         ) or 0)
     approved_requests = (await db.scalars(select(PartnerFeatureRequest).where(
         PartnerFeatureRequest.tenant_id == current_user.tenant_id,
-        PartnerFeatureRequest.status == 'approved',
+        PartnerFeatureRequest.status.in_(['approved', 'payment_received']),
         PartnerFeatureRequest.feature_key.in_(['additional_units', 'additional_services']),
     ))).all()
     approved_capacities = {
@@ -284,6 +471,12 @@ async def get_my_partner_profile(
     elif service_addon.get('is_enabled') is False:
         service_limit = service_count
 
+    operator_count = int(await db.scalar(select(func.count(User.id)).where(
+        User.tenant_id == current_user.tenant_id,
+        User.role == UserRoleEnum.OPERATOR,
+        User.deleted_at.is_(None),
+    )) or 0)
+
     return {
         "tenant_id": current_user.tenant_id,
         "role": current_user.role.value,
@@ -298,6 +491,7 @@ async def get_my_partner_profile(
         if profile
         else "missing_profile",
         "operator_limit": int(base_operator_limit) + int(approved_extra),
+        "operator_count": operator_count,
         "unit_count": unit_count,
         "unit_limit": unit_limit,
         "service_count": service_count,
@@ -311,6 +505,83 @@ async def get_my_partner_profile(
         if payment_account
         else None,
     }
+
+
+def _payout_account_payload(account: PartnerPaymentAccount | None) -> dict | None:
+    if account is None:
+        return None
+    key = account.pix_key or ""
+    masked = f"{key[:3]}***{key[-4:]}" if len(key) > 7 else ("***" if key else None)
+    return {
+        "id": account.id,
+        "type": "pix",
+        "label": account.account_label,
+        "pixKey": masked,
+        "holderName": account.account_holder_name,
+        "verificationStatus": account.verification_status,
+        "isActive": bool(account.is_active),
+    }
+
+
+@router.get("/payout-account")
+async def get_payout_account(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    account = await db.scalar(
+        select(PartnerPaymentAccount)
+        .where(PartnerPaymentAccount.tenant_id == current_user.tenant_id)
+        .where(PartnerPaymentAccount.is_default.is_(True))
+        .where(PartnerPaymentAccount.is_active.is_(True))
+    )
+    return _payout_account_payload(account) or {}
+
+
+@router.put("/payout-account")
+async def save_payout_account(
+    data: PartnerPayoutAccountRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    profile = await db.scalar(
+        select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id)
+    )
+    expected_document = re.sub(r"\D", "", (profile.document_number if profile else "") or "")
+    if not expected_document:
+        raise HTTPException(
+            status_code=409,
+            detail="Finalize a validação do CPF/CNPJ do parceiro antes de cadastrar a conta de repasse.",
+        )
+    if expected_document and data.account_holder_document != expected_document:
+        raise HTTPException(
+            status_code=422,
+            detail="A chave Pix deve estar vinculada ao CPF/CNPJ validado do parceiro.",
+        )
+    account = await db.scalar(
+        select(PartnerPaymentAccount)
+        .where(PartnerPaymentAccount.tenant_id == current_user.tenant_id)
+        .where(PartnerPaymentAccount.is_default.is_(True))
+    )
+    if account is None:
+        account = PartnerPaymentAccount(
+            tenant_id=current_user.tenant_id,
+            provider="mercado_pago",
+            provider_account_id="pending_oauth_link",
+            account_label="Conta Pix do parceiro",
+            is_default=True,
+            is_active=True,
+        )
+        db.add(account)
+    account.pix_key = data.pix_key
+    account.account_holder_name = " ".join(data.account_holder_name.split())
+    account.account_holder_document = data.account_holder_document
+    account.verification_status = "pending_provider_verification"
+    account.status = "pending_verification"
+    await db.commit()
+    await db.refresh(account)
+    return _payout_account_payload(account)
 
 
 @router.get('/feature-requests')
@@ -331,6 +602,9 @@ async def list_my_partner_feature_requests(
             'quantity': row.quantity,
             'total_price': row.total_price,
             'billing_period': row.billing_period,
+            'payment_terms': _payment_terms(row),
+            'payment_method': row.payment_method,
+            'has_receipt': bool(row.receipt_path),
             'status': row.status,
             'created_at': row.created_at.isoformat() + 'Z',
         }
@@ -373,15 +647,35 @@ async def request_partner_feature(
             'code': 'feature_locked', 'feature_key': data.feature_key,
             'message': 'A gestão do sistema desativou novas solicitações para este recurso.',
         })
-    if unit_price <= 0:
-        raise HTTPException(status_code=409, detail='O preço desta funcionalidade ainda não foi configurado')
     if data.feature_key not in {'additional_units', 'additional_services'} and is_enabled:
         raise HTTPException(status_code=409, detail='Esta funcionalidade já está liberada')
+
+    if data.billing_period not in {'monthly', 'annual'}:
+        raise HTTPException(status_code=422, detail='Escolha uma modalidade de cobrança válida')
+    if data.payment_method not in {'credit_card', 'debit_card', 'pix'}:
+        raise HTTPException(status_code=422, detail='Escolha Pix, débito ou crédito')
+    prices = _feature_prices(entitlement) if entitlement else {}
+    unit_price = float(prices.get(data.billing_period, unit_price if billing_period == data.billing_period else 0))
+    if unit_price <= 0:
+        raise HTTPException(status_code=409, detail='O valor desta modalidade ainda não foi configurado pela gestão do app')
+    terms = _payment_terms(entitlement)
+    selected_terms = terms[data.billing_period]
+    contract_months = int(data.contract_months or selected_terms['minimum_months'])
+    if data.billing_period == 'monthly':
+        contract_months = max(contract_months, 6)
+    else:
+        contract_months = max(contract_months, 12)
+    discount = float((selected_terms.get('discounts') or {}).get(data.payment_method, 0))
+    gross_total = unit_price * data.quantity
+    if data.billing_period == 'monthly':
+        gross_total *= contract_months
+    discounted_total = round(gross_total * (1 - discount / 100), 2)
+    installment_amount = round(discounted_total / selected_terms['installments'], 2)
 
     pending = await db.scalar(select(PartnerFeatureRequest).where(
         PartnerFeatureRequest.tenant_id == current_user.tenant_id,
         PartnerFeatureRequest.feature_key == data.feature_key,
-        PartnerFeatureRequest.status == 'pending_review',
+        PartnerFeatureRequest.status.in_(['pending_payment', 'pending_review']),
     ))
     if pending:
         raise HTTPException(status_code=409, detail='Já existe uma solicitação pendente para esta funcionalidade')
@@ -392,8 +686,17 @@ async def request_partner_feature(
         requested_by=current_user.id,
         quantity=data.quantity,
         unit_price=unit_price,
-        total_price=round(unit_price * data.quantity, 2),
-        billing_period=billing_period,
+        total_price=discounted_total,
+        billing_period=data.billing_period,
+        payment_terms=json.dumps({
+            **selected_terms,
+            'contract_months': contract_months,
+            'discount_percentage': discount,
+            'gross_total': round(gross_total, 2),
+            'installment_amount': installment_amount,
+        }),
+        payment_method=data.payment_method,
+        status='pending_payment',
         notes=(data.notes or '').strip() or None,
     )
     db.add(request)
@@ -407,9 +710,106 @@ async def request_partner_feature(
         'unit_price': request.unit_price,
         'total_price': request.total_price,
         'billing_period': request.billing_period,
+        'payment_method': request.payment_method,
+        'contract_months': contract_months,
+        'discount_percentage': discount,
+        'gross_total': round(gross_total, 2),
+        'installment_amount': installment_amount,
         'status': request.status,
         'created_at': request.created_at.isoformat() + 'Z',
     }
+
+
+@router.post('/feature-requests/{request_id}/receipt')
+async def upload_partner_feature_receipt(
+    request_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_partner_user(current_user)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail='Somente o gestor pode enviar comprovante')
+    item = await db.scalar(select(PartnerFeatureRequest).where(
+        PartnerFeatureRequest.id == request_id,
+        PartnerFeatureRequest.tenant_id == current_user.tenant_id,
+    ))
+    if item is None:
+        raise HTTPException(status_code=404, detail='Solicitação não encontrada')
+    if item.status != 'payment_received':
+        raise HTTPException(status_code=409, detail='Esta solicitação não aguarda comprovante')
+    if file.content_type not in {'application/pdf', 'image/jpeg', 'image/png'}:
+        raise HTTPException(status_code=422, detail='Anexe comprovante em PDF, JPG ou PNG')
+    content = await file.read()
+    if not content or len(content) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail='O comprovante deve ter até 30 MB')
+    target_dir = Path('/app/storage/feature_requests') / current_user.tenant_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(file.filename or 'receipt').suffix.lower()
+    target = target_dir / f'{item.id}{suffix}'
+    target.write_bytes(content)
+    item.receipt_path = str(target)
+    item.status = 'pending_review'
+    await db.commit()
+    return {'id': item.id, 'status': item.status, 'has_receipt': True}
+
+
+@router.post('/feature-requests/{request_id}/pay')
+async def pay_partner_feature_request(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Register local payment simulation before proof submission."""
+    _ensure_partner_user(current_user)
+    if current_user.role == UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail='Somente o gestor pode pagar esta funcionalidade')
+    item = await db.scalar(select(PartnerFeatureRequest).where(
+        PartnerFeatureRequest.id == request_id,
+        PartnerFeatureRequest.tenant_id == current_user.tenant_id,
+    ))
+    if item is None:
+        raise HTTPException(status_code=404, detail='Solicitação não encontrada')
+    if item.status == 'payment_received':
+        return {'id': item.id, 'status': item.status, 'is_simulated': True}
+    if item.status != 'pending_payment':
+        raise HTTPException(status_code=409, detail='Esta solicitação não aguarda pagamento')
+    item.status = 'payment_received'
+    if item.feature_key == 'additional_units':
+        current_capacity = int(await db.scalar(select(func.count(Parking.id)).where(
+            Parking.tenant_id == item.tenant_id,
+        )) or 0)
+    else:
+        current_capacity = int(await db.scalar(
+            select(func.count(ParkingService.id))
+            .join(Parking, Parking.id == ParkingService.parking_id)
+            .where(Parking.tenant_id == item.tenant_id)
+        ) or 0)
+    item.capacity_after = max(current_capacity, 1) + int(item.quantity)
+    if item.feature_key not in {'additional_units', 'additional_services'}:
+        entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+            PartnerFeatureEntitlement.tenant_id == item.tenant_id,
+            PartnerFeatureEntitlement.feature_key == item.feature_key,
+        ))
+        if entitlement is not None:
+            entitlement.is_enabled = True
+    item.notes = ((item.notes + ' | ') if item.notes else '') + 'Pagamento simulado registrado; comprovante pendente.'
+    await db.commit()
+    return {'id': item.id, 'status': item.status, 'is_simulated': True, 'amount': item.total_price, 'method': item.payment_method}
+
+
+def _feature_prices(item: PartnerFeatureEntitlement | None) -> dict[str, float]:
+    if item is None:
+        return {}
+    try:
+        values = json.loads(item.billing_prices or '{}')
+    except json.JSONDecodeError:
+        values = {}
+    if 'monthly' not in values and 'one_time' in values:
+        values['monthly'] = values['one_time']
+    if not values and item.price > 0:
+        values[item.billing_period] = item.price
+    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual'}}
 
 
 @router.post('/me/documents', status_code=201)
@@ -431,8 +831,8 @@ async def upload_partner_document(
     )
     if not profile:
         raise HTTPException(status_code=404, detail='Partner profile not found')
-    expected = {'cnpj': {'alvara'}, 'cpf': {'rg', 'cnh'}}.get(profile.document_type)
-    if expected and document_type not in expected:
+    expected = {'cnpj': {'alvara'}, 'cpf': set()}.get(profile.document_type)
+    if expected and document_type not in expected and document_type not in {'rg', 'cnh'}:
         raise HTTPException(status_code=422, detail='Document type does not match the partner document')
 
     safe_name = Path(file.filename or 'document').name
@@ -761,6 +1161,7 @@ async def get_partner_parking_map(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    _require_operator_permission(current_user, 'parking_map.view')
     await _ensure_partner_feature(db, current_user, 'parking_operations')
     owned_query = select(Parking).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
@@ -842,17 +1243,56 @@ async def toggle_parking_slot_block(
     return {"slot_code": slot_code, "status": status}
 
 
+@router.get("/customer-by-plate")
+async def lookup_customer_by_plate(
+    plate: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Consulta se a placa já existe no sistema e retorna dados do cliente para vincular na reserva."""
+    await _ensure_parking_staff(db, current_user)
+    clean = re.sub(r"[\s-]", "", plate).upper()
+    if len(clean) < 7:
+        return {"found": False}
+
+    vehicle = await db.scalar(
+        select(Vehicle)
+        .where(func.upper(func.replace(func.replace(Vehicle.plate, "-", ""), " ", "")) == clean)
+        .limit(1)
+    )
+    if vehicle is None:
+        return {"found": False}
+
+    owner = await db.get(User, vehicle.user_id)
+    if owner is None:
+        return {"found": False}
+
+    return {
+        "found": True,
+        "user_id": owner.id,
+        "customer_name": owner.name,
+        "customer_phone": owner.phone,
+        "customer_email": owner.email,
+        "vehicle_id": vehicle.id,
+        "vehicle_plate": vehicle.plate,
+        "vehicle_model": f"{vehicle.brand or ''} {vehicle.model or ''}".strip(),
+    }
+
+
 @router.get("/reservations")
 async def list_partner_reservations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_parking_staff(db, current_user)
+    _require_operator_permission(current_user, 'reservations.view')
     await _ensure_any_partner_feature(
         db, current_user,
         ('parking_operations', 'cash_management_basic', 'dashboard', 'financial_management'),
     )
-    reservation_query = select(Reservation, Parking, User, Vehicle).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).where(Parking.tenant_id == current_user.tenant_id)
+    cancellation_actor = aliased(User)
+    creator = aliased(User)
+    reservation_query = select(Reservation, Parking, User, Vehicle, cancellation_actor.name, creator).join(Parking, Parking.id == Reservation.parking_id).outerjoin(User, User.id == Reservation.user_id).outerjoin(Vehicle, Vehicle.id == Reservation.vehicle_id).outerjoin(cancellation_actor, cancellation_actor.id == Reservation.cancelled_by_user_id).outerjoin(creator, creator.id == Reservation.created_by_user_id).where(Parking.tenant_id == current_user.tenant_id)
     if current_user.role == UserRoleEnum.OPERATOR:
         now = _now_schedule_local()
         assigned_ids = (await db.scalars(select(OperatorWorkShift.parking_id).where(
@@ -865,20 +1305,27 @@ async def list_partner_reservations(
         reservation_query.order_by(Reservation.created_at.desc())
     )
 
-    return [
-        {
+    payload = []
+    for reservation, parking, customer, vehicle, cancelled_by_name, created_by in result.all():
+        excess_minutes, excess_amount = calculate_checkout_excess(reservation, parking)
+        payload.append({
             "id": reservation.id,
             "parking_name": parking.name,
-            "customer_name": "Cliente avulso" if reservation.walk_in_plate else (customer.name if customer else "Cliente nao informado"),
+            "customer_name": customer.name if customer else ("Cliente avulso" if reservation.walk_in_plate else "Cliente nao informado"),
+            "customer_phone": reservation.walk_in_phone or (customer.phone if customer else None),
+            "created_by_name": created_by.name if created_by else None,
+            "created_by_phone": created_by.phone if created_by else None,
             "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "status": reservation.status,
+            "cancelled_by_user_id": reservation.cancelled_by_user_id,
+            "cancelled_by_name": cancelled_by_name,
             "payment_status": reservation.payment_status,
             "notification_status": reservation.notification_status,
             "spot_type": reservation.spot_type,
             "pricing_plan": reservation.pricing_plan,
             "route_minutes": reservation.route_minutes,
-            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
+            "hold_expires_at": _utc_iso(reservation.hold_expires_at),
             "base_amount": reservation.base_amount,
             "services_amount": reservation.services_amount,
             "platform_fee_amount": reservation.platform_fee_amount,
@@ -887,11 +1334,13 @@ async def list_partner_reservations(
             "guide_platform_fee_amount": reservation.guide_platform_fee_amount,
             "guide_payout_amount": reservation.guide_payout_amount,
             "final_total": reservation.final_total,
+            "checkout_excess_minutes": excess_minutes,
+            "checkout_excess_amount": excess_amount,
+            "checkout_grace_minutes": reservation.checkout_grace_minutes,
             "selected_services": _reservation_services(reservation),
-            "created_at": reservation.created_at.isoformat() + "Z",
-        }
-        for reservation, parking, customer, vehicle in result.all()
-    ]
+            "created_at": _utc_iso(reservation.created_at),
+        })
+    return payload
 
 
 @router.get('/financial-report')
@@ -905,6 +1354,692 @@ async def get_partner_financial_report(
     return await list_partner_reservations(db, current_user)
 
 
+@router.get('/financial-summary')
+async def get_partner_financial_summary(
+    period_days: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Aggregated financial summary separating parking, convenience and manual entries.
+    Defaults to the current month if no period or dates are specified.
+    """
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    now = datetime.utcnow()
+    start_time = None
+    end_time = None
+
+    if start_date and end_date:
+        try:
+            start_time = datetime.fromisoformat(start_date.replace("Z", ""))
+            end_time = datetime.fromisoformat(end_date.replace("Z", ""))
+        except Exception:
+            start_time = None
+            end_time = None
+
+    if start_time is None and period_days is not None and period_days > 0:
+        start_time = now - timedelta(days=period_days)
+        end_time = now
+    elif start_time is None and (period_days is None or period_days == 30):
+        # Default: Sempre o Mês Atual
+        start_time = datetime(now.year, now.month, 1, 0, 0, 0)
+        if now.month == 12:
+            end_time = datetime(now.year + 1, 1, 1, 23, 59, 59)
+        else:
+            end_time = datetime(now.year, now.month + 1, 1, 0, 0, 0) - timedelta(seconds=1)
+
+    # 1. Parking / Reservations query
+    res_query = (
+        select(Reservation)
+        .join(Parking, Parking.id == Reservation.parking_id)
+        .where(Parking.tenant_id == current_user.tenant_id)
+    )
+    if start_time:
+        res_query = res_query.where(Reservation.created_at >= start_time)
+    if end_time:
+        res_query = res_query.where(Reservation.created_at <= end_time)
+
+    reservations = (await db.scalars(res_query)).all()
+
+    parking_paid = [r for r in reservations if r.payment_status == 'paid']
+    parking_refunded = [r for r in reservations if r.payment_status in ('refunded', 'refunded_pending')]
+    parking_cancelled = [r for r in reservations if r.status == 'cancelled']
+
+    parking_revenue = sum(r.final_total or 0 for r in parking_paid)
+    parking_refunds = sum(r.final_total or 0 for r in parking_refunded)
+    parking_fees = sum(r.platform_fee_amount or 0 for r in parking_paid)
+    parking_net = round(parking_revenue - parking_refunds - parking_fees, 2)
+
+    # 2. Convenience sales query
+    conv_query = select(ParkingConvenienceSale).where(
+        ParkingConvenienceSale.tenant_id == current_user.tenant_id
+    )
+    if start_time:
+        conv_query = conv_query.where(ParkingConvenienceSale.created_at >= start_time)
+    if end_time:
+        conv_query = conv_query.where(ParkingConvenienceSale.created_at <= end_time)
+
+    conv_sales = (await db.scalars(conv_query)).all()
+
+    conv_completed = [s for s in conv_sales if getattr(s, 'status', 'completed') != 'cancelled']
+    conv_cancelled = [s for s in conv_sales if getattr(s, 'status', 'completed') == 'cancelled']
+
+    conv_revenue = sum(s.total_amount or 0 for s in conv_completed)
+    conv_discounts = sum(getattr(s, 'discount_total', 0) or 0 for s in conv_completed)
+    conv_cancelled_amount = sum(s.total_amount or 0 for s in conv_cancelled)
+    conv_net = round(conv_revenue - conv_cancelled_amount, 2)
+
+    # 3. Manual Financial Entries (Entradas e Saídas manuais por centro de custo)
+    entries_query = select(FinancialEntry).where(
+        FinancialEntry.tenant_id == current_user.tenant_id,
+        FinancialEntry.status == "completed",
+    )
+    if start_time:
+        entries_query = entries_query.where(FinancialEntry.entry_date >= start_time)
+    if end_time:
+        entries_query = entries_query.where(FinancialEntry.entry_date <= end_time)
+
+    manual_entries = (await db.scalars(entries_query)).all()
+    manual_incomes = [e for e in manual_entries if e.entry_type == "income"]
+    manual_expenses = [e for e in manual_entries if e.entry_type == "expense"]
+    manual_income_total = sum(e.amount for e in manual_incomes)
+    manual_expense_total = sum(e.amount for e in manual_expenses)
+
+    # 4. Cash Bleeds (Sangrias de caixa realizadas)
+    bleeds_query = select(PartnerCashBleed).where(PartnerCashBleed.tenant_id == current_user.tenant_id)
+    if start_time:
+        bleeds_query = bleeds_query.where(PartnerCashBleed.created_at >= start_time)
+    if end_time:
+        bleeds_query = bleeds_query.where(PartnerCashBleed.created_at <= end_time)
+    cash_bleeds = (await db.scalars(bleeds_query)).all()
+    cash_bleeds_total = sum(b.amount for b in cash_bleeds)
+
+    # 5. Consolidated totals
+    total_gross = round(parking_revenue + conv_revenue + manual_income_total, 2)
+    total_refunds = round(parking_refunds + conv_cancelled_amount, 2)
+    total_expenses = round(manual_expense_total, 2)
+    total_fees = round(parking_fees, 2)
+    total_net = round(total_gross - total_refunds - total_expenses - total_fees, 2)
+
+    return {
+        "period_days": period_days,
+        "start_date": start_time.isoformat() if start_time else None,
+        "end_date": end_time.isoformat() if end_time else None,
+        "is_current_month": start_time is not None and start_time.day == 1 and start_time.month == now.month and start_time.year == now.year,
+        "parking": {
+            "paid_count": len(parking_paid),
+            "refunded_count": len(parking_refunded),
+            "cancelled_count": len(parking_cancelled),
+            "gross_revenue": round(parking_revenue, 2),
+            "refunds_amount": round(parking_refunds, 2),
+            "platform_fees": round(parking_fees, 2),
+            "net_revenue": parking_net,
+            "average_ticket": round(parking_revenue / len(parking_paid), 2) if parking_paid else 0.0,
+        },
+        "convenience": {
+            "completed_count": len(conv_completed),
+            "cancelled_count": len(conv_cancelled),
+            "gross_revenue": round(conv_revenue, 2),
+            "discounts_given": round(conv_discounts, 2),
+            "cancelled_amount": round(conv_cancelled_amount, 2),
+            "net_revenue": conv_net,
+            "average_ticket": round(conv_revenue / len(conv_completed), 2) if conv_completed else 0.0,
+        },
+        "manual_entries": {
+            "income_count": len(manual_incomes),
+            "expense_count": len(manual_expenses),
+            "income_total": round(manual_income_total, 2),
+            "expense_total": round(manual_expense_total, 2),
+            "cash_bleeds_total": round(cash_bleeds_total, 2),
+            "bleeds_count": len(cash_bleeds),
+        },
+        "consolidated": {
+            "total_gross_revenue": total_gross,
+            "total_refunds": total_refunds,
+            "total_expenses": total_expenses,
+            "total_platform_fees": total_fees,
+            "total_net_revenue": total_net,
+            "cash_bleeds_total": round(cash_bleeds_total, 2),
+            "total_operations": len(parking_paid) + len(conv_completed) + len(manual_entries),
+        },
+    }
+
+
+# ============================================================================
+# CENTROS DE CUSTO & LANÇAMENTOS FINANCEIROS
+# ============================================================================
+
+DEFAULT_COST_CENTERS = [
+    {"name": "Operacional & Pátio", "code": "CC-01", "type": "both"},
+    {"name": "Manutenção & Reparos", "code": "CC-02", "type": "expense"},
+    {"name": "Insumos & Limpeza", "code": "CC-03", "type": "expense"},
+    {"name": "Energia & Concessionárias", "code": "CC-04", "type": "expense"},
+    {"name": "Folha de Pagamento & Pessoal", "code": "CC-05", "type": "expense"},
+    {"name": "Marketing & Divulgação", "code": "CC-06", "type": "expense"},
+    {"name": "Receitas Avulsas & Parcerias", "code": "CC-07", "type": "revenue"},
+]
+
+
+@router.get('/financial/cost-centers')
+async def list_cost_centers(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    rows = (await db.scalars(
+        select(FinancialCostCenter)
+        .where(
+            FinancialCostCenter.tenant_id == current_user.tenant_id,
+            FinancialCostCenter.is_active.is_(True),
+        )
+        .order_by(FinancialCostCenter.code, FinancialCostCenter.name)
+    )).all()
+
+    if not rows:
+        # Auto-semeia centros de custo padrão para o parceiro
+        for item in DEFAULT_COST_CENTERS:
+            cc = FinancialCostCenter(
+                tenant_id=current_user.tenant_id,
+                name=item["name"],
+                code=item["code"],
+                type=item["type"],
+                is_active=True,
+            )
+            db.add(cc)
+        await db.commit()
+        rows = (await db.scalars(
+            select(FinancialCostCenter)
+            .where(
+                FinancialCostCenter.tenant_id == current_user.tenant_id,
+                FinancialCostCenter.is_active.is_(True),
+            )
+            .order_by(FinancialCostCenter.code, FinancialCostCenter.name)
+        )).all()
+
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "code": r.code,
+            "type": r.type,
+            "parking_id": r.parking_id,
+            "is_active": r.is_active,
+        }
+        for r in rows
+    ]
+
+
+@router.post('/financial/cost-centers', status_code=201)
+async def create_cost_center(
+    data: CostCenterRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    row = FinancialCostCenter(
+        tenant_id=current_user.tenant_id,
+        parking_id=data.parking_id,
+        name=data.name.strip(),
+        code=data.code.strip() if data.code else None,
+        type=data.type,
+        is_active=True,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {
+        "id": row.id,
+        "name": row.name,
+        "code": row.code,
+        "type": row.type,
+        "parking_id": row.parking_id,
+        "is_active": row.is_active,
+    }
+
+
+@router.delete('/financial/cost-centers/{cost_center_id}', status_code=204)
+async def deactivate_cost_center(
+    cost_center_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    row = await db.scalar(
+        select(FinancialCostCenter).where(
+            FinancialCostCenter.id == cost_center_id,
+            FinancialCostCenter.tenant_id == current_user.tenant_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Centro de custo não encontrado")
+    row.is_active = False
+    await db.commit()
+
+
+@router.get('/financial/entries')
+async def list_financial_entries(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    entry_type: str | None = None,
+    cost_center_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    now = datetime.utcnow()
+    if start_date and end_date:
+        try:
+            start_time = datetime.fromisoformat(start_date.replace("Z", ""))
+            end_time = datetime.fromisoformat(end_date.replace("Z", ""))
+        except Exception:
+            start_time = datetime(now.year, now.month, 1)
+            end_time = datetime(now.year, now.month + 1, 1) if now.month < 12 else datetime(now.year + 1, 1, 1)
+    else:
+        # Default: mês atual
+        start_time = datetime(now.year, now.month, 1, 0, 0, 0)
+        end_time = datetime(now.year, now.month + 1, 1, 0, 0, 0) if now.month < 12 else datetime(now.year + 1, 1, 1, 0, 0, 0)
+
+    query = (
+        select(FinancialEntry, FinancialCostCenter.name, FinancialCostCenter.code)
+        .outerjoin(FinancialCostCenter, FinancialCostCenter.id == FinancialEntry.cost_center_id)
+        .where(
+            FinancialEntry.tenant_id == current_user.tenant_id,
+            FinancialEntry.entry_date >= start_time,
+            FinancialEntry.entry_date <= end_time,
+        )
+        .order_by(FinancialEntry.entry_date.desc())
+    )
+    if entry_type:
+        query = query.where(FinancialEntry.entry_type == entry_type)
+    if cost_center_id:
+        query = query.where(FinancialEntry.cost_center_id == cost_center_id)
+
+    rows = (await db.execute(query)).all()
+    return [
+        {
+            "id": entry.id,
+            "entry_type": entry.entry_type,
+            "category": entry.category,
+            "description": entry.description,
+            "amount": entry.amount,
+            "payment_method": entry.payment_method,
+            "entry_date": entry.entry_date.isoformat() if entry.entry_date else None,
+            "status": entry.status,
+            "notes": entry.notes,
+            "cost_center_id": entry.cost_center_id,
+            "cost_center_name": cc_name or "Geral",
+            "cost_center_code": cc_code or "-",
+            "created_by_id": entry.created_by_id,
+            "created_by_name": entry.created_by_name,
+        }
+        for entry, cc_name, cc_code in rows
+    ]
+
+
+@router.post('/financial/entries', status_code=201)
+async def create_financial_entry(
+    data: FinancialEntryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    entry_date = data.entry_date or datetime.utcnow()
+    entry = FinancialEntry(
+        tenant_id=current_user.tenant_id,
+        parking_id=data.parking_id,
+        cost_center_id=data.cost_center_id,
+        created_by_id=current_user.id,
+        created_by_name=current_user.name,
+        entry_type=data.entry_type,
+        category=data.category.strip(),
+        description=data.description.strip(),
+        amount=round(data.amount, 2),
+        payment_method=data.payment_method,
+        entry_date=entry_date,
+        status="completed",
+        notes=data.notes.strip() if data.notes else None,
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+
+    cc = await db.get(FinancialCostCenter, entry.cost_center_id) if entry.cost_center_id else None
+    return {
+        "id": entry.id,
+        "entry_type": entry.entry_type,
+        "category": entry.category,
+        "description": entry.description,
+        "amount": entry.amount,
+        "payment_method": entry.payment_method,
+        "entry_date": entry.entry_date.isoformat(),
+        "status": entry.status,
+        "cost_center_id": entry.cost_center_id,
+        "cost_center_name": cc.name if cc else "Geral",
+        "cost_center_code": cc.code if cc else "-",
+        "created_by_id": entry.created_by_id,
+        "created_by_name": entry.created_by_name,
+    }
+
+
+# ============================================================================
+# SANGRIA DE CAIXA (CASH BLEED)
+# ============================================================================
+
+@router.post("/cash-session/bleed", status_code=201)
+async def create_cash_bleed(
+    data: CashBleedRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record a cash bleed / withdrawal, detailing the operator and reason."""
+    await _ensure_parking_staff(db, current_user)
+    _require_operator_permission(current_user, 'cash.manage')
+
+    session = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).order_by(PartnerCashSession.opened_at.desc()))
+
+    bleed = PartnerCashBleed(
+        tenant_id=current_user.tenant_id,
+        parking_id=data.parking_id,
+        cash_session_id=session.id if session else None,
+        operator_id=current_user.id,
+        operator_name=current_user.name,
+        target_type=data.target_type,
+        amount=round(data.amount, 2),
+        reason=data.reason.strip(),
+        notes=data.notes.strip() if data.notes else None,
+    )
+    db.add(bleed)
+    await db.commit()
+    await db.refresh(bleed)
+
+    return {
+        "id": bleed.id,
+        "parking_id": bleed.parking_id,
+        "cash_session_id": bleed.cash_session_id,
+        "operator_id": bleed.operator_id,
+        "operator_name": bleed.operator_name,
+        "target_type": bleed.target_type,
+        "amount": bleed.amount,
+        "reason": bleed.reason,
+        "notes": bleed.notes,
+        "created_at": bleed.created_at.isoformat(),
+        "receipt": {
+            "title": "COMPROVANTE DE SANGRIA DE CAIXA",
+            "is_fiscal": False,
+            "operator": bleed.operator_name,
+            "reason": bleed.reason,
+            "amount": bleed.amount,
+            "target": bleed.target_type,
+            "timestamp": bleed.created_at.isoformat(),
+        },
+    }
+
+
+@router.get("/cash-session/bleeds")
+async def list_cash_bleeds(
+    parking_id: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_staff(db, current_user)
+    query = select(PartnerCashBleed).where(PartnerCashBleed.tenant_id == current_user.tenant_id)
+    if parking_id:
+        query = query.where(PartnerCashBleed.parking_id == parking_id)
+    bleeds = (await db.scalars(query.order_by(PartnerCashBleed.created_at.desc()).limit(limit))).all()
+
+    return [
+        {
+            "id": b.id,
+            "parking_id": b.parking_id,
+            "operator_id": b.operator_id,
+            "operator_name": b.operator_name,
+            "target_type": b.target_type,
+            "amount": b.amount,
+            "reason": b.reason,
+            "notes": b.notes,
+            "created_at": b.created_at.isoformat(),
+        }
+        for b in bleeds
+    ]
+
+
+# ============================================================================
+# ATIVAÇÃO DIRETA DE FUNCIONALIDADE (TRIAL 30 DIAS & SPLIT DE TAXAS)
+# ============================================================================
+
+@router.post("/features/{feature_key}/activate")
+async def activate_partner_feature(
+    feature_key: str,
+    data: FeatureActivationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Direct feature activation: 30-day free trial or automatic split deduction."""
+    _ensure_parking_manager(current_user)
+
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    feature = feature_by_key(profile.service_type if profile else None, feature_key)
+    if feature is None:
+        raise HTTPException(status_code=404, detail="Funcionalidade não encontrada")
+
+    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
+        PartnerFeatureEntitlement.feature_key == feature_key,
+    ))
+    if entitlement is None:
+        entitlement = PartnerFeatureEntitlement(
+            tenant_id=current_user.tenant_id,
+            feature_key=feature_key,
+            is_enabled=False,
+            is_paid=True,
+            price=float(feature.get('price', 0) or 0),
+            billing_period=data.billing_period,
+        )
+        db.add(entitlement)
+
+    now = datetime.utcnow()
+    price = float(entitlement.price or feature.get('price', 0) or 0)
+
+    if data.modality == "trial":
+        entitlement.is_enabled = True
+        entitlement.is_trial = True
+        entitlement.trial_ends_at = now + timedelta(days=30)
+        entitlement.billing_modality = "trial"
+        message = "Período de teste gratuito ativado por 30 dias!"
+    elif data.modality == "direct_debit":
+        entitlement.is_enabled = True
+        entitlement.is_trial = False
+        entitlement.billing_modality = "direct_debit"
+        entitlement.accumulated_debt = price
+        message = "Funcionalidade ativada com cobrança automática via débito no split de taxas das reservas."
+    else:
+        entitlement.is_enabled = True
+        entitlement.is_trial = False
+        entitlement.billing_modality = data.modality
+        message = f"Funcionalidade ativada via pagamento ({data.modality.upper()})."
+
+    await db.commit()
+    await db.refresh(entitlement)
+
+    return {
+        "success": True,
+        "feature_key": feature_key,
+        "is_enabled": entitlement.is_enabled,
+        "is_trial": entitlement.is_trial,
+        "trial_ends_at": entitlement.trial_ends_at.isoformat() if entitlement.trial_ends_at else None,
+        "billing_modality": entitlement.billing_modality,
+        "accumulated_debt": entitlement.accumulated_debt,
+        "requires_restart": True,
+        "message": message,
+    }
+
+
+@router.get("/permission-profiles")
+async def list_permission_profiles(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    rows = (await db.scalars(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+        PartnerPermissionProfile.scope == 'partner',
+        PartnerPermissionProfile.is_active.is_(True),
+    ).order_by(PartnerPermissionProfile.name))).all()
+    builtins = [{
+        'id': None, 'name': 'Operador',
+        'permissions': DEFAULT_OPERATOR_PERMISSIONS,
+        'is_active': True,
+    }, {
+        'id': None, 'name': 'Gestor',
+        'permissions': OWNER_PERMISSIONS,
+        'is_active': True,
+    }]
+    return builtins + [_permission_profile_payload(row) for row in rows]
+
+
+@router.post("/permission-profiles", status_code=201)
+async def create_permission_profile(
+    data: PermissionProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    invalid = [item for item in data.permissions if item not in OPERATOR_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    profile = PartnerPermissionProfile(
+        tenant_id=current_user.tenant_id,
+        scope='partner',
+        name=data.name.strip(),
+        permissions=json.dumps(sorted(set(data.permissions))),
+    )
+    db.add(profile)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe um perfil com este nome")
+    await db.refresh(profile)
+    _partner_audit(db, current_user, 'permission_profile.created', 'permission_profile', profile.id, None, _permission_profile_payload(profile))
+    await db.commit()
+    return _permission_profile_payload(profile)
+
+
+@router.put("/permission-profiles/{profile_id}")
+async def update_permission_profile(
+    profile_id: str,
+    data: PermissionProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    profile = await db.scalar(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.id == profile_id,
+        PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+        PartnerPermissionProfile.scope == 'partner',
+    ))
+    if profile is None:
+        raise HTTPException(status_code=404, detail='Perfil não encontrado')
+    invalid = [item for item in data.permissions if item not in OPERATOR_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    before = _permission_profile_payload(profile)
+    profile.name = data.name.strip()
+    profile.permissions = json.dumps(sorted(set(data.permissions)))
+    for user in (await db.scalars(select(User).where(User.permission_profile_id == profile.id))).all():
+        user.permissions = profile.permissions
+    _partner_audit(db, current_user, 'permission_profile.updated', 'permission_profile', profile.id, before, _permission_profile_payload(profile))
+    await db.commit()
+    await db.refresh(profile)
+    return {'before': before, 'after': _permission_profile_payload(profile)}
+
+
+@router.delete("/permission-profiles/{profile_id}")
+async def delete_permission_profile(
+    profile_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    profile = await db.scalar(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.id == profile_id,
+        PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+        PartnerPermissionProfile.scope == 'partner',
+    ))
+    if profile is None:
+        raise HTTPException(status_code=404, detail='Perfil não encontrado')
+    before = _permission_profile_payload(profile)
+    profile.is_active = False
+    profile.deleted_at = datetime.utcnow()
+    for user in (await db.scalars(select(User).where(User.permission_profile_id == profile.id))).all():
+        user.permission_profile_id = None
+        user.permissions = json.dumps(DEFAULT_OPERATOR_PERMISSIONS)
+    _partner_audit(db, current_user, 'permission_profile.deleted', 'permission_profile', profile.id, before, None)
+    await db.commit()
+    return {'deleted': True, 'before': before}
+
+
+@router.put("/operators/{operator_id}/permission-profile")
+async def assign_operator_permission_profile(
+    operator_id: str,
+    data: OperatorPermissionProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    operator = await db.scalar(select(User).where(
+        User.id == operator_id, User.tenant_id == current_user.tenant_id,
+        User.role == UserRoleEnum.OPERATOR, User.deleted_at.is_(None),
+    ))
+    if operator is None:
+        raise HTTPException(status_code=404, detail="Operador não encontrado")
+    permissions = data.permissions
+    profile_id = data.profile_id
+    if profile_id:
+        profile = await db.scalar(select(PartnerPermissionProfile).where(
+            PartnerPermissionProfile.id == profile_id,
+            PartnerPermissionProfile.tenant_id == current_user.tenant_id,
+            PartnerPermissionProfile.scope == 'partner',
+            PartnerPermissionProfile.is_active.is_(True),
+        ))
+        if profile is None:
+            raise HTTPException(status_code=404, detail="Perfil de permissões não encontrado")
+        permissions = json.loads(profile.permissions or "[]")
+        operator.permission_profile_id = profile.id
+    else:
+        operator.permission_profile_id = None
+    if permissions is None:
+        raise HTTPException(status_code=422, detail="Informe um perfil ou permissões")
+    invalid = [item for item in permissions if item not in OPERATOR_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    operator.permissions = json.dumps(sorted(set(permissions)))
+    _partner_audit(db, current_user, 'operator.permission_profile.assigned', 'user', operator.id, None, {
+        'profile_id': operator.permission_profile_id, 'permissions': sorted(set(permissions)),
+    })
+    await db.commit()
+    return _operator_response(operator)
+
+
 @router.get("/operators", response_model=list[PartnerOperatorResponse])
 async def list_partner_operators(
     db: AsyncSession = Depends(get_db),
@@ -916,6 +2051,7 @@ async def list_partner_operators(
         select(User)
         .where(User.tenant_id == current_user.tenant_id)
         .where(User.role == UserRoleEnum.OPERATOR)
+        .where(User.deleted_at.is_(None))
         .order_by(User.created_at.desc())
     )
     return [_operator_response(user) for user in result.scalars().all()]
@@ -962,6 +2098,7 @@ async def create_partner_operator(
         select(func.count(User.id))
         .where(User.tenant_id == current_user.tenant_id)
         .where(User.role == UserRoleEnum.OPERATOR)
+        .where(User.deleted_at.is_(None))
     )
     operator_count = count_result.scalar_one()
     parking_count = await db.scalar(select(func.count(Parking.id)).where(Parking.tenant_id == current_user.tenant_id, Parking.is_active.is_(True)))
@@ -970,9 +2107,24 @@ async def create_partner_operator(
         OperatorPackageRequest.status == "approved",
     )) or 0
     tenant = await db.get(Tenant, current_user.tenant_id)
+    active_service_count = await db.scalar(select(func.count(ParkingService.id)).join(
+        Parking, Parking.id == ParkingService.parking_id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    units_with_services = await db.scalar(select(func.count(func.distinct(Parking.id))).join(
+        ParkingService, ParkingService.parking_id == Parking.id
+    ).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+        ParkingService.is_active.is_(True),
+    )) or 0
+    operator_slots = int(active_service_count) + max(0, int(parking_count or 0) - int(units_with_services))
     base_limit = (
         tenant.operator_limit_override if tenant and tenant.operator_limit_override is not None
-        else max(FREE_OPERATOR_LIMIT, int(parking_count or 1) * FREE_OPERATOR_LIMIT)
+        else max(FREE_OPERATOR_LIMIT, operator_slots * FREE_OPERATOR_LIMIT)
     )
     operator_limit = int(base_limit) + int(approved_extra)
     if operator_count >= operator_limit:
@@ -1116,12 +2268,119 @@ async def assign_operator_parkings(operator_id: str, data: OperatorParkingAssign
     saved = (await db.scalars(select(OperatorParkingAssignment.parking_id).where(OperatorParkingAssignment.operator_id == operator_id))).all()
     return {"operator_id": operator_id, "parking_ids": saved}
 
+@router.get("/cash-session")
+async def current_cash_session(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail="Somente operadores possuem caixa de turno")
+    session = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).order_by(PartnerCashSession.opened_at.desc()))
+    if session is None:
+        return {"open": False}
+    return _cash_session_payload(session)
+
+
+@router.post("/cash-session", status_code=201)
+async def open_cash_session(
+    data: CashSessionOpenRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail="Somente operadores podem abrir o caixa")
+    parking = await db.scalar(select(Parking).where(
+        Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id,
+    ))
+    if parking is None:
+        raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
+    await _ensure_operator_on_parking_shift(db, current_user.id, parking.id)
+    _require_operator_permission(current_user, 'cash.manage')
+    existing = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).with_for_update())
+    if existing:
+        raise HTTPException(status_code=409, detail="Já existe um caixa aberto para este operador")
+
+    now_local = _now_schedule_local()
+    # Assegura que há um turno ativo registrado para o operador
+    active_shift = await db.scalar(select(OperatorWorkShift).where(
+        OperatorWorkShift.operator_id == current_user.id,
+        OperatorWorkShift.parking_id == parking.id,
+        OperatorWorkShift.starts_at <= now_local,
+        OperatorWorkShift.ends_at >= now_local,
+    ).limit(1))
+    if active_shift is None:
+        db.add(OperatorWorkShift(
+            operator_id=current_user.id,
+            parking_id=parking.id,
+            starts_at=now_local,
+            ends_at=now_local + timedelta(hours=8),
+        ))
+
+    session = PartnerCashSession(
+        operator_id=current_user.id, parking_id=parking.id,
+        opened_at=datetime.utcnow(), status="open",
+        parking_opening_cash=data.parking_opening_cash,
+        convenience_opening_cash=data.convenience_opening_cash,
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return _cash_session_payload(session)
+
+
+@router.post("/cash-session/close")
+async def close_cash_session(
+    data: CashSessionCloseRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRoleEnum.OPERATOR:
+        raise HTTPException(status_code=403, detail="Somente operadores podem fechar o caixa")
+    session = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).with_for_update())
+    if session is None:
+        raise HTTPException(status_code=409, detail="Não existe caixa aberto para este operador")
+    session.status = "closed"
+    session.closed_at = datetime.utcnow()
+    session.parking_closing_cash = data.parking_closing_cash
+    session.convenience_closing_cash = data.convenience_closing_cash
+    session.closing_notes = data.closing_notes
+    await db.commit()
+    await db.refresh(session)
+    return _cash_session_payload(session)
+
+
+def _cash_session_payload(session: PartnerCashSession) -> dict:
+    return {
+        "id": session.id, "operator_id": session.operator_id,
+        "parking_id": session.parking_id, "status": session.status,
+        "opened_at": session.opened_at.isoformat(),
+        "closed_at": session.closed_at.isoformat() if session.closed_at else None,
+        "parking_opening_cash": session.parking_opening_cash,
+        "convenience_opening_cash": session.convenience_opening_cash,
+        "parking_closing_cash": session.parking_closing_cash,
+        "convenience_closing_cash": session.convenience_closing_cash,
+        "closing_notes": session.closing_notes,
+    }
+
+
 @router.get("/shifts")
 async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    await _ensure_parking_staff(db, current_user)
+    # A closed shift must still be visible so the operator can consult the
+    # schedule and open the next cash session. Operational endpoints enforce
+    # the cash-session requirement separately.
+    await _ensure_parking_profile(db, current_user)
     if current_user.role != UserRoleEnum.OPERATOR:
         await _ensure_partner_feature(db, current_user, 'team_management')
-    query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id)
+    query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id, User.deleted_at.is_(None))
     if current_user.role == UserRoleEnum.OPERATOR:
         query = query.where(OperatorWorkShift.operator_id == current_user.id)
     rows = (await db.scalars(query.order_by(OperatorWorkShift.starts_at.desc()))).all()
@@ -1134,7 +2393,7 @@ async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = D
     starts_at = _schedule_local(data.starts_at)
     ends_at = _schedule_local(data.ends_at)
     if ends_at <= starts_at: raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
-    operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR))
+    operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR).with_for_update())
     parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
     assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id)) if data.operator_id else None
     if not parking or (data.operator_id and (not operator or not assigned)): raise HTTPException(status_code=422, detail="Operador não está associado a este estacionamento")
@@ -1152,6 +2411,66 @@ async def cancel_operator_shift(shift_id: str, db: AsyncSession = Depends(get_db
     if shift is None: raise HTTPException(status_code=404, detail="Turno não encontrado")
     db.add(OperatorScheduleHistory(parking_id=shift.parking_id, changed_by=current_user.id, action="cancelled", details=json.dumps({"shift_id": shift_id})))
     await db.delete(shift); await db.commit()
+
+@router.put("/shifts/{shift_id}")
+async def update_operator_shift(shift_id: str, data: OperatorShiftUpdateRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Assign or edit a shift while keeping operators conflict-free across units."""
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'team_management')
+    shift = await db.scalar(
+        select(OperatorWorkShift)
+        .join(Parking, Parking.id == OperatorWorkShift.parking_id)
+        .where(
+            OperatorWorkShift.id == shift_id,
+            Parking.tenant_id == current_user.tenant_id,
+        )
+    )
+    if shift is None:
+        raise HTTPException(status_code=404, detail="Turno não encontrado")
+
+    starts_at = _schedule_local(data.starts_at)
+    ends_at = _schedule_local(data.ends_at)
+    if ends_at <= starts_at:
+        raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
+
+    if data.operator_id:
+        operator = await db.scalar(select(User).where(
+            User.id == data.operator_id,
+            User.tenant_id == current_user.tenant_id,
+            User.role == UserRoleEnum.OPERATOR,
+            User.is_active.is_(True),
+        ).with_for_update())
+        assigned = await db.scalar(select(OperatorParkingAssignment.id).where(
+            OperatorParkingAssignment.operator_id == data.operator_id,
+            OperatorParkingAssignment.parking_id == shift.parking_id,
+        ))
+        if operator is None or assigned is None:
+            raise HTTPException(status_code=422, detail="Operador não está ativo e autorizado para esta unidade")
+        await _ensure_operator_has_no_shift_conflict(
+            db, data.operator_id, starts_at, ends_at, exclude_shift_id=shift.id,
+        )
+
+    previous = {
+        "operator_id": shift.operator_id,
+        "starts_at": shift.starts_at.isoformat(),
+        "ends_at": shift.ends_at.isoformat(),
+    }
+    shift.operator_id = data.operator_id
+    shift.starts_at = starts_at
+    shift.ends_at = ends_at
+    db.add(OperatorScheduleHistory(
+        parking_id=shift.parking_id,
+        changed_by=current_user.id,
+        action="updated",
+        details=json.dumps({"shift_id": shift.id, "before": previous, "after": {
+            "operator_id": shift.operator_id,
+            "starts_at": starts_at.isoformat(),
+            "ends_at": ends_at.isoformat(),
+        }}),
+    ))
+    await db.commit()
+    await db.refresh(shift)
+    return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id, "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
 
 @router.get("/work-profiles")
 async def list_work_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -1191,25 +2510,28 @@ async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession
     """Sugere uma escala rotativa; o gestor pode editar antes de confirmar."""
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
-    if data.ends_on < data.starts_on or not 1 <= data.daily_hours <= 12:
+    if data.ends_on < data.starts_on or not 1 <= data.daily_hours <= 24:
         raise HTTPException(status_code=422, detail="Período, operadores ou carga horária inválidos")
     parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
     if parking is None: raise HTTPException(status_code=404, detail="Estacionamento não encontrado")
     assigned = (await db.scalars(select(OperatorParkingAssignment.operator_id).where(OperatorParkingAssignment.parking_id == data.parking_id, OperatorParkingAssignment.operator_id.in_(data.operator_ids)))).all()
     if len(assigned) != len(set(data.operator_ids)): raise HTTPException(status_code=422, detail="Todos os operadores precisam estar associados à unidade")
+    regime = data.work_regime or getattr(parking, "work_regime", "commercial") or "commercial"
+    if regime not in {"commercial", "three_shifts", "24h_on_3off", "administrative_8h"}:
+        raise HTTPException(status_code=422, detail="Modelo de jornada inválido")
     duration = int(data.daily_hours * 60)
-    continuous_hours = 24 if parking.has_24h_gate else 12
     configured_hours = json.loads(parking.operating_hours or '{}')
-    if not configured_hours and not parking.has_24h_gate and not (data.opening_time and data.closing_time):
+    if not configured_hours and regime not in {"three_shifts", "24h_on_3off"} and not (data.opening_time and data.closing_time):
         raise HTTPException(status_code=422, detail="Configure o funcionamento da unidade ou informe abertura e fechamento para gerar esta escala.")
     weekday_keys = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
-    required_people = max(1, (continuous_hours * 60 + duration - 1) // duration)
     suggestions = []
     local_start = _schedule_local(data.starts_on)
     local_end = _schedule_local(data.ends_on)
     day = local_start.replace(hour=0, minute=0, second=0, microsecond=0)
     end_day = local_end.replace(hour=0, minute=0, second=0, microsecond=0)
     index = 0
+    rotation_cursor = 0
+    last_24h_shift_day: dict[str, int] = {}
     conflicts = set()
     if data.operator_ids:
         conflict_window_start = max(day, _now_schedule_local())
@@ -1221,35 +2543,67 @@ async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession
         conflicts = {shift.operator_id for shift in existing}
     conflict_operator_ids = sorted(conflicts)
     while day <= end_day:
-        day_hours = None if parking.has_24h_gate else configured_hours.get(weekday_keys[day.weekday()])
-        if not parking.has_24h_gate and not configured_hours and data.opening_time and data.closing_time:
+        day_hours = None if regime in {"three_shifts", "24h_on_3off"} else configured_hours.get(weekday_keys[day.weekday()])
+        if regime not in {"three_shifts", "24h_on_3off"} and not configured_hours and data.opening_time and data.closing_time:
             day_hours = {"open": data.opening_time, "close": data.closing_time}
-        if not parking.has_24h_gate and not day_hours:
+        if regime not in {"three_shifts", "24h_on_3off"} and not day_hours:
             day += timedelta(days=1)
             continue
         candidates = [operator_id for operator_id in data.operator_ids if operator_id not in conflicts]
-        operator_id = candidates[index % len(candidates)] if candidates else None
-        if parking.has_24h_gate:
-            start_hour = (index % required_people) * int(data.daily_hours)
-            start = day.replace(hour=start_hour % 24)
+        slots: list[tuple[datetime, datetime]] = []
+        if regime == "three_shifts":
+            slots = [(day + timedelta(hours=slot * 8), day + timedelta(hours=(slot + 1) * 8)) for slot in range(3)]
+        elif regime == "24h_on_3off":
+            slots = [(day, day + timedelta(days=1))]
         else:
             open_text = day_hours.get('open', '08:00')
             hour, minute = (int(part) for part in open_text.split(':', 1))
             start = day.replace(hour=hour, minute=minute)
-        shift_duration = duration
-        if day_hours:
             close_text = day_hours.get('close', '18:00')
             close_hour, close_minute = (int(part) for part in close_text.split(':', 1))
             closing = day.replace(hour=close_hour, minute=close_minute)
-            shift_duration = max(60, min(duration, int((closing - start).total_seconds() // 60)))
-        finish = start + timedelta(minutes=shift_duration)
-        suggestions.append({"operator_id": operator_id, "starts_at": start.isoformat(), "ends_at": finish.isoformat(), "day_off_for": [item for item in data.operator_ids if item != operator_id]})
-        index += 1; day += timedelta(days=1)
-    warning = None if len(data.operator_ids) >= required_people else f"Cobertura pendente: esta unidade exige pelo menos {required_people} faixas de {data.daily_hours:g}h para operar {continuous_hours}h por dia. Os turnos foram criados como vagas abertas."
+            if closing <= start:
+                closing += timedelta(days=1)
+            operating_minutes = int((closing - start).total_seconds() // 60)
+            max_shift_minutes = 8 * 60 if regime == "administrative_8h" else duration
+            slot_count = max(1, (operating_minutes + max_shift_minutes - 1) // max_shift_minutes)
+            # Overlap shift starts to avoid a gap when the opening window is
+            # longer than one employee's configured workday.
+            for slot in range(slot_count):
+                slot_start = start + timedelta(minutes=min(slot * max_shift_minutes, max(operating_minutes - 60, 0)))
+                slot_end = min(slot_start + timedelta(minutes=max_shift_minutes), closing)
+                slots.append((slot_start, slot_end))
+
+        for slot_number, (slot_start, slot_end) in enumerate(slots):
+            if regime == "24h_on_3off":
+                operator_id = None
+                if candidates:
+                    for offset in range(len(candidates)):
+                        candidate_index = (rotation_cursor + offset) % len(candidates)
+                        candidate_id = candidates[candidate_index]
+                        last_day = last_24h_shift_day.get(candidate_id, -4)
+                        if index - last_day >= 4:
+                            operator_id = candidate_id
+                            last_24h_shift_day[candidate_id] = index
+                            rotation_cursor = (candidate_index + 1) % len(candidates)
+                            break
+            elif regime == "three_shifts":
+                operator_id = candidates[(index + slot_number) % len(candidates)] if candidates and slot_number < len(candidates) else None
+            else:
+                operator_id = candidates[(index + slot_number) % len(candidates)] if candidates and slot_number < len(candidates) else None
+            suggestions.append({"operator_id": operator_id, "starts_at": slot_start.isoformat(), "ends_at": slot_end.isoformat(), "work_regime": regime})
+        index += 1
+        day += timedelta(days=1)
+    required_people = 3 if regime == "three_shifts" else (4 if regime == "24h_on_3off" else 1)
+    warning = None
+    if regime == "three_shifts" and len(data.operator_ids) < required_people:
+        warning = "Cobertura pendente: três faixas de 8h foram criadas por dia. Os turnos sem operador continuam abertos para atribuição posterior."
+    elif regime == "24h_on_3off" and len(data.operator_ids) < 4:
+        warning = "A jornada 24h + 3 dias de folga deixa dias descobertos com menos de quatro operadores. Os dias sem operador aparecem como turnos abertos."
     if conflict_operator_ids:
         conflict_names = (await db.scalars(select(User.name).where(User.id.in_(conflict_operator_ids)))).all()
         warning = " ".join(filter(None, [warning, "Operadores já escalados em outra unidade no período foram removidos desta sugestão: " + ", ".join(conflict_names) + "."])).strip()
-    return {"parking_id": data.parking_id, "suggestions": suggestions, "required_people": required_people, "coverage_warning": warning, "conflicting_operator_ids": conflict_operator_ids, "rule": "A folga é atribuída automaticamente ao operador que não trabalha no dia; o gestor pode editar antes de salvar."}
+    return {"parking_id": data.parking_id, "work_regime": regime, "suggestions": suggestions, "required_people": required_people, "coverage_warning": warning, "conflicting_operator_ids": conflict_operator_ids, "rule": "A escala respeita a jornada escolhida. Turnos descobertos permanecem abertos; conflitos futuros em outra unidade não são atribuídos."}
 
 
 @router.get(
@@ -1262,7 +2616,16 @@ async def list_managed_parkings(
 ):
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'parking_management')
-    return await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
+    parkings = await ParkingManagementService.list_for_tenant(db, current_user.tenant_id)
+    # Operators need the unit list to open their cash before operational
+    # routes are unlocked. Keep the list read-only and restricted to their
+    # assignments; map/reservation/POS endpoints still require an open cash.
+    if current_user.role == UserRoleEnum.OPERATOR:
+        assigned_ids = set((await db.scalars(select(OperatorParkingAssignment.parking_id).where(
+            OperatorParkingAssignment.operator_id == current_user.id,
+        ))).all())
+        parkings = [parking for parking in parkings if parking.id in assigned_ids]
+    return parkings
 
 
 @router.post(
@@ -1359,12 +2722,15 @@ async def _ensure_partner_feature(db: AsyncSession, user: User, key: str) -> dic
         PartnerFeatureEntitlement.feature_key == key,
     ))
     enabled = entitlement.is_enabled if entitlement else feature['default_is_enabled']
+    if entitlement and entitlement.expires_at and entitlement.expires_at.replace(tzinfo=None) <= datetime.utcnow():
+        enabled = False
     if not enabled:
         raise HTTPException(status_code=403, detail={
             'code': 'feature_locked', 'feature_key': key, 'name': feature['name'],
             'is_paid': entitlement.is_paid if entitlement else feature['default_is_paid'],
             'price': entitlement.price if entitlement else 0,
             'billing_period': entitlement.billing_period if entitlement else feature['default_billing_period'],
+            'billing_prices': _feature_prices(entitlement),
         })
     return feature
 
@@ -1402,7 +2768,7 @@ async def _feature_request_price(
 async def _ensure_service_capacity(db: AsyncSession, tenant_id: str, requested_total: int):
     approved_capacity = int(await db.scalar(select(func.max(PartnerFeatureRequest.capacity_after)).where(
         PartnerFeatureRequest.tenant_id == tenant_id, PartnerFeatureRequest.feature_key == 'additional_services',
-        PartnerFeatureRequest.status == 'approved',
+        PartnerFeatureRequest.status.in_(['approved', 'payment_received']),
     )) or 1)
     current_count = int(await db.scalar(
         select(func.count(ParkingService.id))
@@ -1423,7 +2789,7 @@ async def _ensure_unit_capacity(db: AsyncSession, tenant_id: str):
     total = int(await db.scalar(select(func.count(Parking.id)).where(Parking.tenant_id == tenant_id)) or 0)
     approved_capacity = int(await db.scalar(select(func.max(PartnerFeatureRequest.capacity_after)).where(
         PartnerFeatureRequest.tenant_id == tenant_id, PartnerFeatureRequest.feature_key == 'additional_units',
-        PartnerFeatureRequest.status == 'approved',
+        PartnerFeatureRequest.status.in_(['approved', 'payment_received']),
     )) or 1)
     paid, price, enabled = await _feature_request_price(db, tenant_id, 'additional_units')
     capacity = (max(total, approved_capacity) if enabled else max(total, 1)) if paid else 1_000_000
@@ -1460,6 +2826,20 @@ def _operator_response(user: User) -> PartnerOperatorResponse:
     )
 
 
+def _permission_profile_payload(profile: PartnerPermissionProfile) -> dict:
+    try:
+        permissions = json.loads(profile.permissions or "[]")
+    except json.JSONDecodeError:
+        permissions = []
+    return {
+        "id": profile.id,
+        "name": profile.name,
+        "scope": profile.scope,
+        "permissions": permissions if isinstance(permissions, list) else [],
+        "is_active": bool(profile.is_active),
+    }
+
+
 def _schedule_local(value: datetime) -> datetime:
     """Schedule times are wall-clock times in Brazil; DB stores them as naive local values."""
     if value.tzinfo is None:
@@ -1473,12 +2853,16 @@ def _now_schedule_local() -> datetime:
 
 async def _ensure_operator_has_no_shift_conflict(
     db: AsyncSession, operator_id: str, starts_at: datetime, ends_at: datetime,
+    exclude_shift_id: str | None = None,
 ) -> None:
-    conflict = await db.scalar(select(OperatorWorkShift.id).where(
+    query = select(OperatorWorkShift.id).where(
         OperatorWorkShift.operator_id == operator_id,
         OperatorWorkShift.starts_at < ends_at,
         OperatorWorkShift.ends_at > starts_at,
-    ).limit(1))
+    )
+    if exclude_shift_id:
+        query = query.where(OperatorWorkShift.id != exclude_shift_id)
+    conflict = await db.scalar(query.limit(1))
     if conflict:
         raise HTTPException(status_code=409, detail="Este operador já possui um turno sobreposto em outra unidade ou nesta mesma unidade.")
 
@@ -1493,8 +2877,18 @@ async def _ensure_operator_on_parking_shift(
         OperatorWorkShift.starts_at <= now,
         OperatorWorkShift.ends_at >= now,
     ).limit(1))
-    if shift_id is None:
-        raise HTTPException(status_code=403, detail="Você só pode operar esta unidade durante o seu turno escalado.")
+    if shift_id is not None:
+        return
+
+    # Se não houver turno exato agendado no minuto, permite se o operador estiver associado à unidade pelo gestor
+    assignment_id = await db.scalar(select(OperatorParkingAssignment.id).where(
+        OperatorParkingAssignment.operator_id == operator_id,
+        OperatorParkingAssignment.parking_id == parking_id,
+    ).limit(1))
+    if assignment_id is not None:
+        return
+
+    raise HTTPException(status_code=403, detail="Você só pode operar unidades para as quais foi autorizado ou escalado pelo gestor.")
 
 
 def _guide_service_payload(service: GuideService) -> dict:
@@ -1517,24 +2911,36 @@ def _user_permissions(user: User) -> list[str]:
     }:
         return OWNER_PERMISSIONS
 
+    if user.role == UserRoleEnum.SYSTEM_ADMIN_OPERATOR:
+        return _operator_permissions(user)
+
     if user.role == UserRoleEnum.OPERATOR:
-        if user.permissions:
-            try:
-                values = json.loads(user.permissions)
-            except json.JSONDecodeError:
-                return DEFAULT_OPERATOR_PERMISSIONS
-
-            if isinstance(values, list):
-                return [
-                    permission
-                    for permission in values
-                    if isinstance(permission, str)
-                    and permission in OPERATOR_PERMISSION_LABELS
-                ]
-
-        return DEFAULT_OPERATOR_PERMISSIONS
+        return _operator_permissions(user)
 
     return []
+
+
+def _operator_permissions(user: User) -> list[str]:
+    if user.permissions:
+        try:
+            values = json.loads(user.permissions)
+        except json.JSONDecodeError:
+            values = DEFAULT_OPERATOR_PERMISSIONS
+        if isinstance(values, list):
+            return [item for item in values if isinstance(item, str) and item in OPERATOR_PERMISSION_LABELS]
+    return DEFAULT_OPERATOR_PERMISSIONS
+
+
+def _require_operator_permission(user: User, permission: str) -> None:
+    """Apply granular rules to operators while preserving manager access."""
+    if user.role != UserRoleEnum.OPERATOR:
+        return
+    if permission not in _user_permissions(user):
+        raise HTTPException(status_code=403, detail={
+            'code': 'permission_denied',
+            'permission': permission,
+            'message': 'Seu perfil não possui esta permissão.',
+        })
 
 
 def _is_valid_email(value: str) -> bool:
@@ -1572,6 +2978,13 @@ async def _ensure_parking_staff(db: AsyncSession, user: User):
         raise HTTPException(status_code=403, detail="Tenant required")
 
     await _ensure_parking_profile(db, user)
+    if user.role == UserRoleEnum.OPERATOR:
+        open_cash = await db.scalar(select(PartnerCashSession.id).where(
+            PartnerCashSession.operator_id == user.id,
+            PartnerCashSession.status == "open",
+        ).limit(1))
+        if open_cash is None:
+            raise HTTPException(status_code=403, detail="Abra o caixa do turno para acessar a operação")
 
 
 async def _ensure_parking_profile(db: AsyncSession, user: User):
@@ -1763,27 +3176,21 @@ def _slot_payload(
             "vehicle_plate": vehicle.plate if vehicle else reservation.walk_in_plate,
             "vehicle_label": f"{vehicle.brand} {vehicle.model}" if vehicle else None,
             "route_minutes": reservation.route_minutes,
-            "created_at": reservation.created_at.isoformat() + "Z",
-            "checked_in_at": reservation.checked_in_at.isoformat() + "Z"
-            if reservation.checked_in_at
-            else None,
-            "arrival_estimate_at": (
+            "created_at": _utc_iso(reservation.created_at),
+            "checked_in_at": _utc_iso(reservation.checked_in_at),
+            "arrival_estimate_at": _utc_iso(
                 reservation.arrival_estimate_at
                 or reservation.created_at + timedelta(minutes=reservation.route_minutes)
-            ).isoformat() + "Z",
+            ),
             "is_manual_arrival": reservation.is_manual_arrival,
-            "hold_expires_at": reservation.hold_expires_at.isoformat() + "Z",
-            "cancelled_at": reservation.cancelled_at.isoformat() + "Z"
-            if reservation.cancelled_at
-            else None,
+            "hold_expires_at": _utc_iso(reservation.hold_expires_at),
+            "cancelled_at": _utc_iso(reservation.cancelled_at),
             "cancellation_fee_amount": reservation.cancellation_fee_amount,
             "cancellation_credit_amount": reservation.cancellation_credit_amount,
             "checkout_grace_minutes": reservation.checkout_grace_minutes,
             "checkout_excess_minutes": checkout_excess_minutes,
             "checkout_excess_amount": checkout_excess_amount,
-            "checkout_excess_paid_at": reservation.checkout_excess_paid_at.isoformat() + "Z"
-            if reservation.checkout_excess_paid_at
-            else None,
+            "checkout_excess_paid_at": _utc_iso(reservation.checkout_excess_paid_at),
         },
     }
 
@@ -1825,7 +3232,7 @@ def _checkout_excess_preview(
         ),
         0,
     )
-    grace_minutes = reservation.checkout_grace_minutes or 15
+    grace_minutes = reservation.checkout_grace_minutes or 10
     included_minutes = reservation.duration_hours * 60 + grace_minutes
     excess_minutes = max(elapsed_minutes - included_minutes, 0)
     if excess_minutes == 0:

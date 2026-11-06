@@ -1,4 +1,5 @@
-FROM ghcr.io/cirruslabs/flutter:stable
+ARG FLUTTER_IMAGE=ghcr.io/cirruslabs/flutter:stable
+FROM ${FLUTTER_IMAGE}
 
 WORKDIR /app
 

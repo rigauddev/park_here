@@ -1,5 +1,28 @@
 # Homologacao de baixo custo
 
+## Dados de teste reproduziveis
+
+O roteiro funcional e as contas de teste ficam em `docs/manual-tests.md`. Em
+uma base local ou de homologacao recém-criada, aplique as migrations e execute
+o seed antes de testar:
+
+```bash
+docker compose up -d mysql api
+docker compose exec -T api alembic upgrade head
+docker compose exec -T api python -m app.scripts.seed_mvp_data
+```
+
+O seed está em `parkhere_backend/app/scripts/seed_mvp_data.py`, é idempotente e
+recria os dados determinísticos do piloto em Valença-BA. Se o banco foi apagado,
+execute os dois comandos acima novamente após subir o MySQL.
+
+O seed recria estacionamentos de demonstração, cliente/veículo/cartão, parceiro,
+guia, operadores, reservas em estados variados e escalas com turnos abertos e
+com operadores. Ele não apaga o volume nem os dados manuais. A matriz e a filial
+de Valença usadas nos testes permanecem com os IDs listados no roteiro. Para
+homologação remota, mantenha um banco isolado dos dados de desenvolvimento e
+faça backup antes de atualizar a carga.
+
 ## Preparar o VPS
 
 Gere um arquivo local com credenciais fortes e limite de acesso ao piloto:

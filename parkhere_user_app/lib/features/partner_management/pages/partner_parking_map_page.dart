@@ -1,30 +1,34 @@
 import '../utils/manual_arrival.dart';
 import 'dart:async';
 
+import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
+import '../../reservation/pages/incident_dailog_page.dart';
 
 Future<void> _showCenteredError(BuildContext context, String message) {
   return showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
+    useRootNavigator: true,
+    builder: (dialogCtx) => AlertDialog(
       icon: const Icon(Icons.error_outline, color: Colors.red, size: 42),
       title: const Text('Não foi possível concluir'),
       content: Text(message, textAlign: TextAlign.center),
       actions: [
         FilledButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(dialogCtx, rootNavigator: true).pop(),
           child: const Text('Entendi'),
         ),
       ],
@@ -172,7 +176,6 @@ class _ParkingLayoutPanel extends ConsumerWidget {
               else
                 const SizedBox(height: 10),
               _FeeStatementCard(onTap: () => _showFeeStatement(context, ref)),
-              const _CashShiftCard(),
               const SizedBox(height: 12),
             ],
             Wrap(
@@ -242,8 +245,9 @@ class _ParkingLayoutPanel extends ConsumerWidget {
             _MoneySummaryCard(
               icon: Icons.schedule,
               label: 'Pre-reservas',
-              value: layout.preReservedAmount,
+              value: 0,
               count: layout.preReservedSpots,
+              showValue: false,
               color: Colors.orange,
               tooltip:
                   'Soma das pre-reservas aguardando confirmacao ou chegada.',
@@ -361,83 +365,6 @@ class _FeeStatementCard extends StatelessWidget {
         ),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _CashShiftCard extends StatefulWidget {
-  const _CashShiftCard();
-
-  @override
-  State<_CashShiftCard> createState() => _CashShiftCardState();
-}
-
-class _CashShiftCardState extends State<_CashShiftCard> {
-  double? opening;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadOpening();
-  }
-
-  Future<void> _loadOpening() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getDouble('cash_shift_opening');
-    if (mounted && value != null) setState(() => opening = value);
-  }
-
-  Future<void> _openShift() async {
-    final controller = TextEditingController();
-    final value = await showDialog<double>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Abertura de caixa / Cash opening'),
-        content: TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Dinheiro inicial / Opening cash',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              double.tryParse(controller.text.replaceAll(',', '.')),
-            ),
-            child: const Text('Iniciar turno'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (value == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('cash_shift_opening', value);
-    if (mounted) setState(() => opening = value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.point_of_sale),
-        title: const Text('Caixa do turno / Shift cash'),
-        subtitle: Text(
-          opening == null
-              ? 'Informe o dinheiro inicial.'
-              : 'Abertura: R\$ ${opening!.toStringAsFixed(2)}',
-        ),
-        trailing: IconButton(
-          onPressed: _openShift,
-          icon: const Icon(Icons.edit),
-        ),
       ),
     );
   }
@@ -685,6 +612,11 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
               const Icon(Icons.local_parking, color: AppTheme.secondary),
               const SizedBox(width: 10),
               Expanded(child: Text('Vaga ${slot.code}')),
+              IconButton(
+                tooltip: 'Fechar',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
             ],
           ),
           content: ConstrainedBox(
@@ -699,11 +631,15 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
                     runSpacing: 8,
                     children: [
                       _StatusChip(
-                        label: reservation.status,
+                        label: context.strings.reservationStatus(
+                          reservation.status,
+                        ),
                         color: AppTheme.primary,
                       ),
                       _StatusChip(
-                        label: reservation.paymentStatus,
+                        label: context.strings.paymentStatus(
+                          reservation.paymentStatus,
+                        ),
                         color: Colors.orange,
                       ),
                     ],
@@ -785,94 +721,150 @@ class _ParkingSlotTileState extends ConsumerState<_ParkingSlotTile> {
             ),
           ),
           actions: [
-            TextButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.close),
-              label: const Text('Fechar'),
-            ),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-              onPressed: canCancel
-                  ? () {
-                      Navigator.pop(context);
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => _CancelReservationDialog(
-                          reservationId: reservation.id,
-                          checkedIn: reservation.status == 'checked_in',
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
+            SizedBox(
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                    onPressed: canCancel
+                        ? () {
+                            Navigator.pop(context);
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => _CancelReservationDialog(
+                                reservationId: reservation.id,
+                                checkedIn: reservation.status == 'checked_in',
+                                onCompleted: () {
+                                  ref.invalidate(partnerParkingMapProvider);
+                                  ref.invalidate(partnerReservationsProvider);
+                                },
+                              ),
+                            );
+                          }
+                        : null,
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text('Cancelar'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        reservation.paymentStatus == 'paid' && !hasUnpaidExcess
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => _CashierPaymentDialog(
+                                reservationId: reservation.id,
+                                amount: paymentAmount,
+                                purpose: paymentPurpose,
+                                onCompleted: () {
+                                  ref.invalidate(partnerParkingMapProvider);
+                                  ref.invalidate(partnerReservationsProvider);
+                                },
+                              ),
+                            );
                           },
-                        ),
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.cancel_outlined),
-              label: const Text('Cancelar'),
-            ),
-            OutlinedButton.icon(
-              onPressed: reservation.paymentStatus == 'paid' && !hasUnpaidExcess
-                  ? null
-                  : () {
-                      Navigator.pop(context);
-                      showDialog<void>(
+                    icon: const Icon(Icons.receipt_long_outlined),
+                    label: Text(
+                      hasUnpaidExcess && reservation.paymentStatus == 'paid'
+                          ? 'Pagar excedente'
+                          : 'Pagamento',
+                    ),
+                  ),
+                  if (reservation.status != 'checked_in')
+                    FilledButton.icon(
+                      onPressed: canCheckin
+                          ? () {
+                              Navigator.pop(context);
+                              showDialog<void>(
+                                context: context,
+                                builder: (_) => _CheckinPhotosDialog(
+                                  reservationId: reservation.id,
+                                  onCompleted: () {
+                                    ref.invalidate(partnerParkingMapProvider);
+                                    ref.invalidate(partnerReservationsProvider);
+                                  },
+                                ),
+                              );
+                            }
+                          : null,
+                      icon: const Icon(Icons.login),
+                      label: const Text('Check-in'),
+                    ),
+                  if (reservation.status == 'checked_in')
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => _InspectionPhotosDialog(
+                            reservationId: reservation.id,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Ver check-in'),
+                    ),
+                  if (canCheckout)
+                    TextButton.icon(
+                      onPressed: () => showDialog<void>(
                         context: context,
-                        builder: (_) => _CashierPaymentDialog(
-                          reservationId: reservation.id,
-                          amount: paymentAmount,
-                          purpose: paymentPurpose,
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
-                          },
-                        ),
-                      );
-                    },
-              icon: const Icon(Icons.receipt_long_outlined),
-              label: Text(
-                hasUnpaidExcess && reservation.paymentStatus == 'paid'
-                    ? 'Pagar excedente'
-                    : 'Pagamento',
+                        builder: (_) => const IncidentDialog(),
+                      ),
+                      icon: const Icon(
+                        Icons.report_problem_outlined,
+                        color: Colors.red,
+                      ),
+                      label: const Text(
+                        'Informar ocorrência',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  if (canCheckout)
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => _CheckoutPhotosDialog(
+                            reservationId: reservation.id,
+                            customerForgot: false,
+                            onCompleted: () {
+                              ref.invalidate(partnerParkingMapProvider);
+                              ref.invalidate(partnerReservationsProvider);
+                            },
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Registrar checkout'),
+                    ),
+                  if (canCheckout) ...[
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => _CheckoutPhotosDialog(
+                            reservationId: reservation.id,
+                            customerForgot: true,
+                            onCompleted: () {
+                              ref.invalidate(partnerParkingMapProvider);
+                              ref.invalidate(partnerReservationsProvider);
+                            },
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.person_off_outlined),
+                      label: const Text('Registrar checkout do cliente'),
+                    ),
+                  ],
+                ],
               ),
-            ),
-            FilledButton.icon(
-              onPressed: canCheckin
-                  ? () {
-                      Navigator.pop(context);
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => _CheckinPhotosDialog(
-                          reservationId: reservation.id,
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
-                          },
-                        ),
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.login),
-              label: const Text('Check-in'),
-            ),
-            FilledButton.icon(
-              onPressed: canCheckout
-                  ? () {
-                      Navigator.pop(context);
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => _CheckoutPhotosDialog(
-                          reservationId: reservation.id,
-                          onCompleted: () {
-                            ref.invalidate(partnerParkingMapProvider);
-                            ref.invalidate(partnerReservationsProvider);
-                          },
-                        ),
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.logout),
-              label: const Text('Checkout'),
             ),
           ],
         );
@@ -952,12 +944,81 @@ class _FreeSlotReservationDialogState
   _OperationalPricingPlan pricingPlan = _OperationalPricingPlan.hourly;
   _OperationalPayTiming payTiming = _OperationalPayTiming.checkout;
   TimeOfDay arrivalTime = TimeOfDay.now();
+  DateTimeRange? selectedDateRange;
   String? pixQrCode;
   String? pendingPixPaymentId;
   double? finalTotal;
   double? changeAmount;
   bool isSubmitting = false;
   bool customerAcceptedTerms = false;
+  Map<String, dynamic>? foundCustomer;
+  bool isSearchingPlate = false;
+  Timer? _plateDebounce;
+
+  int get dailyDays {
+    if (selectedDateRange == null) return 1;
+    final diff = selectedDateRange!.end.difference(selectedDateRange!.start).inDays;
+    return diff > 0 ? diff : 1;
+  }
+
+  void _onPlateChanged(String text) {
+    _plateDebounce?.cancel();
+    final clean = text.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();
+    if (clean.length < 7) {
+      if (foundCustomer != null) {
+        setState(() => foundCustomer = null);
+      }
+      return;
+    }
+    _plateDebounce = Timer(const Duration(milliseconds: 600), () async {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) return;
+      setState(() => isSearchingPlate = true);
+      try {
+        final res = await ApiService().getAuthorizedMap(
+          '/partners/customer-by-plate?plate=$clean',
+          token,
+        );
+        if (!mounted) return;
+        if (res['found'] == true) {
+          setState(() {
+            foundCustomer = res;
+            if (ownerPhoneController.text.trim().isEmpty &&
+                res['customer_phone'] != null) {
+              ownerPhoneController.text = res['customer_phone'].toString();
+            }
+          });
+        } else {
+          setState(() => foundCustomer = null);
+        }
+      } catch (_) {
+        if (mounted) setState(() => foundCustomer = null);
+      } finally {
+        if (mounted) setState(() => isSearchingPlate = false);
+      }
+    });
+  }
+
+  Future<void> _selectDailyPeriod() async {
+    final now = DateTime.now();
+    final initialStart = selectedDateRange?.start ?? now;
+    final initialEnd = selectedDateRange?.end ?? now.add(const Duration(days: 1));
+    final picked = await showDateRangePicker(
+      context: context,
+      useRootNavigator: true,
+      firstDate: now.subtract(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 180)),
+      initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
+      helpText: 'Selecione o período da diária',
+      cancelText: 'Cancelar',
+      confirmText: 'Confirmar período',
+    );
+    if (picked != null) {
+      setState(() {
+        selectedDateRange = picked;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -969,6 +1030,7 @@ class _FreeSlotReservationDialogState
 
   @override
   void dispose() {
+    _plateDebounce?.cancel();
     cashReceivedController.dispose();
     arrivalTimeController.dispose();
     plateController.dispose();
@@ -997,11 +1059,60 @@ class _FreeSlotReservationDialogState
                 controller: plateController,
                 enabled: !isSubmitting && createdReservationId == null,
                 textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
+                onChanged: _onPlateChanged,
+                decoration: InputDecoration(
                   labelText: 'Placa do veículo',
-                  prefixIcon: Icon(Icons.directions_car),
+                  prefixIcon: const Icon(Icons.directions_car),
+                  suffixIcon: isSearchingPlate
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : (foundCustomer != null
+                          ? const Icon(Icons.verified, color: Colors.green)
+                          : null),
                 ),
               ),
+              if (foundCustomer != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 4),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person, color: Colors.green, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cliente: ${foundCustomer!['customer_name']}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                            if (foundCustomer!['vehicle_model'] != null &&
+                                foundCustomer!['vehicle_model'].toString().isNotEmpty)
+                              Text(
+                                'Veículo: ${foundCustomer!['vehicle_model']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               TextField(
                 controller: ownerPhoneController,
                 enabled: !isSubmitting && createdReservationId == null,
@@ -1020,13 +1131,23 @@ class _FreeSlotReservationDialogState
                       '',
                     );
                     if (phone.length < 10) return;
+                    final plate = plateController.text.trim().toUpperCase();
+                    final resCode = createdReservationId != null
+                        ? 'Código da sua reserva: #${createdReservationId!.substring(createdReservationId!.length > 6 ? createdReservationId!.length - 6 : 0)}\n'
+                        : '';
+                    final message =
+                        'Olá! Sua reserva no ParkHere para o veículo $plate foi registrada.\n'
+                        '$resCode'
+                        'Baixe o aplicativo para acompanhar e gerenciar sua vaga:\n'
+                        '📱 Android (Google Play): https://play.google.com/store/apps/details?id=com.parkhere.app\n'
+                        '🍎 iOS (App Store): https://apps.apple.com/app/parkhere/id123456789';
                     final uri = Uri.parse(
-                      'https://wa.me/55$phone?text=${Uri.encodeComponent('Baixe o app ParkHere para acompanhar sua reserva: https://parkhere.app/download')}',
+                      'https://wa.me/55$phone?text=${Uri.encodeComponent(message)}',
                     );
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   },
                   icon: const Icon(Icons.share),
-                  label: const Text('Enviar link do app pelo WhatsApp'),
+                  label: const Text('Enviar comprovante e links das lojas via WhatsApp'),
                 ),
               ),
               SwitchListTile(
@@ -1129,10 +1250,46 @@ class _FreeSlotReservationDialogState
                           });
                         },
                 ),
+                if (pricingPlan == _OperationalPricingPlan.daily) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: isSubmitting ? null : _selectDailyPeriod,
+                    icon: const Icon(Icons.date_range),
+                    label: Text(
+                      selectedDateRange == null
+                          ? 'Selecionar período no calendário'
+                          : 'Alterar período ($dailyDays ${dailyDays == 1 ? "diária" : "diárias"})',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.softCyan.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today, size: 18, color: AppTheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            selectedDateRange == null
+                                ? 'Período padrão: 1 diária selecionada'
+                                : '${DateFormat("dd/MM/yyyy").format(selectedDateRange!.start)} até ${DateFormat("dd/MM/yyyy").format(selectedDateRange!.end)} ($dailyDays ${dailyDays == 1 ? "dia" : "dias"} selecionados)',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 _OperationalPricePreview(
                   plan: pricingPlan,
                   pricing: widget.pricing,
+                  days: pricingPlan == _OperationalPricingPlan.daily ? dailyDays : 1,
                 ),
                 const SizedBox(height: 12),
                 SegmentedButton<_OperationalPayTiming>(
@@ -1225,10 +1382,46 @@ class _FreeSlotReservationDialogState
                           }
                         },
                 ),
+                if (pricingPlan == _OperationalPricingPlan.daily) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: isSubmitting ? null : _selectDailyPeriod,
+                    icon: const Icon(Icons.date_range),
+                    label: Text(
+                      selectedDateRange == null
+                          ? 'Selecionar período no calendário'
+                          : 'Alterar período ($dailyDays ${dailyDays == 1 ? "diária" : "diárias"})',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.softCyan.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today, size: 18, color: AppTheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            selectedDateRange == null
+                                ? 'Período padrão: 1 diária selecionada'
+                                : '${DateFormat("dd/MM/yyyy").format(selectedDateRange!.start)} até ${DateFormat("dd/MM/yyyy").format(selectedDateRange!.end)} ($dailyDays ${dailyDays == 1 ? "dia" : "dias"} selecionados)',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 _OperationalPricePreview(
                   plan: pricingPlan,
                   pricing: widget.pricing,
+                  days: pricingPlan == _OperationalPricingPlan.daily ? dailyDays : 1,
                 ),
               ],
               if (mode == _OperationalReservationMode.paidReservation &&
@@ -1406,10 +1599,10 @@ class _FreeSlotReservationDialogState
         ref.invalidate(partnerReservationsProvider);
         if (!mounted) return;
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pix simulado. Nenhuma cobrança realizada.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Pix simulado. Nenhuma cobrança realizada.',
+          isError: false,
         );
         return;
       }
@@ -1434,10 +1627,12 @@ class _FreeSlotReservationDialogState
               spotCode: widget.slotCode,
               spotType: widget.slotType,
               pricingPlan: pricingPlan.apiValue,
-              durationHours: 1,
-              arrivalEstimateAt: arrivalNow
-                  ? DateTime.now()
-                  : _arrivalDateTime(),
+              durationHours: pricingPlan == _OperationalPricingPlan.daily
+                  ? dailyDays * 24
+                  : 1,
+              arrivalEstimateAt: (pricingPlan == _OperationalPricingPlan.daily && selectedDateRange != null)
+                  ? selectedDateRange!.start
+                  : (arrivalNow ? DateTime.now() : _arrivalDateTime()),
               arrivalNow: arrivalNow,
               plate: plate,
               ownerPhone: phone,
@@ -1489,22 +1684,18 @@ class _FreeSlotReservationDialogState
       ref.invalidate(partnerReservationsProvider);
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            mode == _OperationalReservationMode.preReserve
-                ? 'Pre-reserva criada.'
-                : payTiming == _OperationalPayTiming.now
-                ? 'Reserva confirmada com pagamento.'
-                : 'Reserva criada para pagamento no checkout.',
-          ),
-        ),
+      await ApiFeedback.show(
+        context,
+        mode == _OperationalReservationMode.preReserve
+            ? 'Pré-reserva criada.'
+            : payTiming == _OperationalPayTiming.now
+            ? 'Reserva confirmada com pagamento.'
+            : 'Reserva criada para pagamento no checkout.',
+        isError: false,
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erro ao criar reserva: $error')));
+      await ApiFeedback.show(context, 'Erro ao criar reserva: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }
@@ -1533,21 +1724,33 @@ class _FreeSlotReservationDialogState
 class _OperationalPricePreview extends StatelessWidget {
   final _OperationalPricingPlan plan;
   final Map<String, double> pricing;
+  final int days;
 
-  const _OperationalPricePreview({required this.plan, required this.pricing});
+  const _OperationalPricePreview({
+    required this.plan,
+    required this.pricing,
+    this.days = 1,
+  });
 
   @override
   Widget build(BuildContext context) {
     final value = pricing[plan.apiValue];
+    String text;
+    if (value == null) {
+      text = 'Não configurado para este tipo de vaga';
+    } else if (plan == _OperationalPricingPlan.daily && days > 1) {
+      final total = value * days;
+      text = 'R\$ ${total.toStringAsFixed(2)} ($days diárias x R\$ ${value.toStringAsFixed(2)})';
+    } else {
+      text = 'R\$ ${value.toStringAsFixed(2)}';
+    }
     return InputDecorator(
       decoration: const InputDecoration(
         labelText: 'Valor cadastrado para esta modalidade',
         prefixIcon: Icon(Icons.sell_outlined),
       ),
       child: Text(
-        value == null
-            ? 'Não configurado para este tipo de vaga'
-            : 'R\$ ${value.toStringAsFixed(2)}',
+        text,
         style: TextStyle(
           color: value == null ? AppTheme.textMuted : AppTheme.primary,
           fontWeight: FontWeight.w700,
@@ -1673,14 +1876,10 @@ class _CancelReservationDialogState
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Reserva cancelada.')));
+      await ApiFeedback.show(context, 'Reserva cancelada.', isError: false);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao cancelar reserva: $error')),
-      );
+      await ApiFeedback.show(context, 'Erro ao cancelar reserva: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }
@@ -1865,10 +2064,10 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
         widget.onCompleted();
         if (!mounted) return;
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pix simulado. Nenhuma cobrança realizada.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Pix simulado. Nenhuma cobrança realizada.',
+          isError: false,
         );
         return;
       }
@@ -1904,8 +2103,10 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pagamento recebido no caixa.')),
+      await ApiFeedback.show(
+        context,
+        'Pagamento recebido no caixa.',
+        isError: false,
       );
     } catch (error) {
       if (!mounted) return;
@@ -1918,6 +2119,71 @@ class _CashierPaymentDialogState extends ConsumerState<_CashierPaymentDialog> {
   double _parseMoney(String value) {
     final normalized = value.trim().replaceAll('.', '').replaceAll(',', '.');
     return double.tryParse(normalized) ?? 0;
+  }
+}
+
+class _InspectionPhotosDialog extends ConsumerWidget {
+  final String reservationId;
+
+  const _InspectionPhotosDialog({required this.reservationId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) {
+      return const AlertDialog(content: Text('Sessão expirada.'));
+    }
+    return AlertDialog(
+      title: const Text('Fotos do check-in'),
+      content: SizedBox(
+        width: 420,
+        child: FutureBuilder<dynamic>(
+          future: ApiService().getAuthorized(
+            '/reservations/$reservationId/photos',
+            token,
+          ),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 80,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return Text(
+                'Não foi possível carregar as fotos: ${snapshot.error}',
+              );
+            }
+            final payload = snapshot.data as Map<String, dynamic>? ?? {};
+            final photos = (payload['photos'] as List<dynamic>? ?? [])
+                .whereType<Map<String, dynamic>>()
+                .toList();
+            if (photos.isEmpty) return const Text('Nenhuma foto disponível.');
+            return ListView.separated(
+              shrinkWrap: true,
+              itemCount: photos.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final photo = photos[index];
+                return ListTile(
+                  leading: const Icon(Icons.photo_outlined),
+                  title: Text('${photo['kind'] ?? ''}'.toUpperCase()),
+                  subtitle: Text(
+                    '${photo['filename'] ?? ''} · retenção de 7 dias',
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fechar'),
+        ),
+      ],
+    );
   }
 }
 
@@ -2043,9 +2309,7 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Check-in realizado.')));
+      await ApiFeedback.show(context, 'Check-in realizado.', isError: false);
     } catch (error) {
       if (!mounted) return;
       await _showCenteredError(context, 'Erro ao realizar check-in: $error');
@@ -2064,10 +2328,12 @@ class _CheckinPhotosDialogState extends ConsumerState<_CheckinPhotosDialog> {
 
 class _CheckoutPhotosDialog extends ConsumerStatefulWidget {
   final String reservationId;
+  final bool customerForgot;
   final VoidCallback onCompleted;
 
   const _CheckoutPhotosDialog({
     required this.reservationId,
+    required this.customerForgot,
     required this.onCompleted,
   });
 
@@ -2077,15 +2343,19 @@ class _CheckoutPhotosDialog extends ConsumerStatefulWidget {
 }
 
 class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
-  final Map<String, XFile?> photos = {
-    'Frente': null,
-    'Traseira': null,
-    'Lateral esquerda': null,
-    'Lateral direita': null,
-  };
+  XFile? spotPhoto;
+  final reasonController = TextEditingController(
+    text: 'Cliente deixou o estacionamento sem realizar o checkout.',
+  );
   bool isSubmitting = false;
 
-  bool get hasAllPhotos => photos.values.every((photo) => photo != null);
+  bool get hasPhoto => spotPhoto != null;
+
+  @override
+  void dispose() {
+    reasonController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2095,7 +2365,11 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
             defaultTargetPlatform == TargetPlatform.iOS);
 
     return AlertDialog(
-      title: const Text('Checkout com fotos'),
+      title: Text(
+        widget.customerForgot
+            ? 'Checkout do cliente sem registro'
+            : 'Checkout normal com fotos',
+      ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: SingleChildScrollView(
@@ -2103,26 +2377,30 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Capture frente, traseira e laterais do veiculo antes de liberar a vaga.',
+              Text(
+                widget.customerForgot
+                    ? 'O cliente esqueceu de registrar o checkout. Fotografe a vaga liberada e registre o motivo.'
+                    : 'Registre as fotos da saída do veículo para concluir o checkout normal.',
                 style: TextStyle(color: AppTheme.textMuted),
               ),
               const SizedBox(height: 14),
-              for (final entry in photos.entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: OutlinedButton.icon(
-                    onPressed: canUseCamera && !isSubmitting
-                        ? () => _takePhoto(entry.key)
-                        : null,
-                    icon: Icon(
-                      entry.value == null
-                          ? Icons.photo_camera_outlined
-                          : Icons.check_circle,
-                    ),
-                    label: Text(entry.key),
-                  ),
+              OutlinedButton.icon(
+                onPressed: canUseCamera && !isSubmitting ? _takePhoto : null,
+                icon: Icon(
+                  spotPhoto == null
+                      ? Icons.photo_camera_outlined
+                      : Icons.check_circle,
                 ),
+                label: Text(
+                  spotPhoto == null ? 'Fotografar vaga' : 'Foto registrada',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: reasonController,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Motivo'),
+              ),
               if (!canUseCamera)
                 const Text(
                   'O checkout com fotos deve ser feito no celular.',
@@ -2138,7 +2416,7 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
           child: const Text('Cancelar'),
         ),
         FilledButton.icon(
-          onPressed: hasAllPhotos && !isSubmitting ? _confirmCheckout : null,
+          onPressed: hasPhoto && !isSubmitting ? _confirmCheckout : null,
           icon: isSubmitting
               ? const SizedBox(
                   width: 16,
@@ -2152,14 +2430,14 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
     );
   }
 
-  Future<void> _takePhoto(String label) async {
+  Future<void> _takePhoto() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.camera,
       maxWidth: 1600,
       imageQuality: 85,
     );
     if (picked == null || !mounted) return;
-    setState(() => photos[label] = picked);
+    setState(() => spotPhoto = picked);
   }
 
   Future<void> _confirmCheckout() async {
@@ -2168,25 +2446,32 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
 
     setState(() => isSubmitting = true);
     try {
-      for (final entry in photos.entries) {
-        final photo = entry.value!;
-        await ApiService().uploadAuthorizedFile(
-          '/reservations/${widget.reservationId}/photos?kind=${_photoKind(entry.key)}',
+      final bytes = await spotPhoto!.readAsBytes();
+      if (widget.customerForgot) {
+        await ApiService().postAuthorizedMultipart(
+          '/reservations/${widget.reservationId}/operator-checkout',
           token,
-          photo.name,
-          await photo.readAsBytes(),
+          fields: {'reason': reasonController.text.trim()},
+          fileName: spotPhoto!.name,
+          bytes: bytes,
+        );
+      } else {
+        await ApiService().uploadAuthorizedFile(
+          '/reservations/${widget.reservationId}/photos?kind=spot_exit',
+          token,
+          spotPhoto!.name,
+          bytes,
+        );
+        await ApiService().postAuthorized(
+          '/reservations/${widget.reservationId}/checkout',
+          {},
+          token,
         );
       }
-      await checkoutOperationalReservation(
-        token: token,
-        reservationId: widget.reservationId,
-      );
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Checkout realizado.')));
+      await ApiFeedback.show(context, 'Checkout realizado.', isError: false);
     } catch (error) {
       if (!mounted) return;
       await _showCenteredError(context, 'Erro ao realizar checkout: $error');
@@ -2194,13 +2479,6 @@ class _CheckoutPhotosDialogState extends ConsumerState<_CheckoutPhotosDialog> {
       if (mounted) setState(() => isSubmitting = false);
     }
   }
-
-  String _photoKind(String label) => switch (label) {
-    'Frente' => 'front',
-    'Traseira' => 'rear',
-    'Lateral esquerda' => 'left',
-    _ => 'right',
-  };
 }
 
 class _MoneySummaryCard extends StatelessWidget {
@@ -2210,6 +2488,7 @@ class _MoneySummaryCard extends StatelessWidget {
   final int? count;
   final Color color;
   final String tooltip;
+  final bool showValue;
 
   const _MoneySummaryCard({
     required this.icon,
@@ -2218,6 +2497,7 @@ class _MoneySummaryCard extends StatelessWidget {
     this.count,
     required this.color,
     required this.tooltip,
+    this.showValue = true,
   });
 
   @override
@@ -2260,16 +2540,17 @@ class _MoneySummaryCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  'R\$ ${value.toStringAsFixed(2)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
+                if (showValue)
+                  Text(
+                    'R\$ ${value.toStringAsFixed(2)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
                   ),
-                ),
                 if (count != null) ...[
                   const SizedBox(height: 2),
                   Text(

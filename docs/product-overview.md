@@ -2,7 +2,9 @@
 
 ## Proposta
 
-ParkHere ajuda motoristas a encontrar estacionamentos com vagas disponiveis na cidade, reservar uma vaga e contratar servicos adicionais no mesmo fluxo. Para o estacionamento, o sistema organiza disponibilidade, entrada, saida, operadores, reservas e faturamento.
+ServiceHub conecta clientes a serviços locais em uma única conta. O primeiro
+conjunto de módulos é estacionamento, locação veicular e guia turístico; novos
+serviços entram como módulos independentes sem misturar seus inventários.
 
 ## Publicos
 
@@ -25,7 +27,7 @@ ParkHere ajuda motoristas a encontrar estacionamentos com vagas disponiveis na c
 - O app pode usar mock temporario, mas todo mock deve apontar o endpoint futuro.
 - Automacao por placa/facial fica para V2, sem bloquear o MVP.
 
-## Tipos De Parceiro
+## Tipos De Parceiro E Serviços
 
 - Estacionamento.
 - Lava-jato.
@@ -36,6 +38,11 @@ ParkHere ajuda motoristas a encontrar estacionamentos com vagas disponiveis na c
 - A identidade do afiliado nunca compartilha o tenant do parceiro indicado. A indicação referencia o usuário guia e o serviço/unidade de destino.
 - Transporte.
 - Outros servicos locais aprovados pela plataforma.
+
+Uma mesma empresa/tenant pode contratar mais de um módulo. Cada módulo possui
+unidades, usuários, permissões, reservas e relatórios próprios, enquanto o
+gestor pode consultar um consolidado da conta e também filtrar por serviço,
+matriz ou filial.
 
 ## Validacao De Parceiros
 

@@ -32,7 +32,29 @@ async def create_user(
     return user
 
 @router.get("/users_list")
-async def list_users(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User))
-    users = result.scalars().all()
-    return users
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+    }:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    users = await db.scalars(
+        select(User).where(
+            User.tenant_id == current_user.tenant_id,
+            User.deleted_at.is_(None),
+        )
+    )
+    return [
+        {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "phone": user.phone,
+            "role": user.role.value,
+            "is_active": user.is_active,
+        }
+        for user in users.all()
+    ]
