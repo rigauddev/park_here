@@ -59,7 +59,7 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _hero(context, company),
+                _hero(context, company, data),
                 const SizedBox(height: 20),
                 Text('Planos de contratação', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
@@ -78,7 +78,7 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
     );
   }
 
-  Widget _hero(BuildContext context, Map<String, dynamic> company) {
+  Widget _hero(BuildContext context, Map<String, dynamic> company, _RentalPageData data) {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -94,9 +94,9 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
           Text(company['address'] as String? ?? 'Endereço não informado', style: const TextStyle(color: Colors.white70)),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Selecione um veículo e um plano para iniciar a reserva.')),
-            ),
+            onPressed: data.vehicles.isEmpty
+                ? null
+                : () => _showReservationDialog(data),
             icon: const Icon(Icons.calendar_month),
             label: const Text('Escolher período e reservar'),
           ),
@@ -104,6 +104,57 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
       ),
     );
   }
+
+  Future<void> _showReservationDialog(_RentalPageData data) async {
+    Map<String, dynamic>? vehicle = data.vehicles.first;
+    Map<String, dynamic>? plan = data.plans.isEmpty ? null : data.plans.first;
+    DateTimeRange? range;
+    final companyId = widget.company['id'] as String;
+    final token = (await LocalStorageService().getTokens())['access'];
+    if (!mounted || token == null) return;
+    await showDialog<void>(context: context, builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('Nova reserva de locação'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<Map<String, dynamic>>(
+            initialValue: vehicle,
+            decoration: const InputDecoration(labelText: 'Veículo'),
+            items: [for (final item in data.vehicles) DropdownMenuItem(value: item, child: Text('${item['brand'] ?? ''} ${item['model'] ?? ''}'))],
+            onChanged: (value) => setDialogState(() => vehicle = value),
+          ),
+          if (data.plans.isNotEmpty) DropdownButtonFormField<Map<String, dynamic>>(
+            initialValue: plan,
+            decoration: const InputDecoration(labelText: 'Plano'),
+            items: [for (final item in data.plans) DropdownMenuItem(value: item, child: Text(item['name'] as String? ?? 'Plano'))],
+            onChanged: (value) => setDialogState(() => plan = value),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final picked = await showDateRangePicker(context: context, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)), initialDateRange: range);
+              if (picked != null) setDialogState(() => range = picked);
+            },
+            icon: const Icon(Icons.date_range),
+            label: Text(range == null ? 'Escolher período' : '${_date(range!.start)} até ${_date(range!.end)}'),
+          ),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          FilledButton(onPressed: range == null || vehicle == null ? null : () async {
+            try {
+              await _service.reserve(companyId: companyId, vehicleId: vehicle!['id'] as String, planId: plan?['id'] as String?, start: range!.start, end: range!.end.add(const Duration(days: 1)), token: token);
+              if (context.mounted) Navigator.pop(context);
+              if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Reserva criada. O contrato será disponibilizado na próxima etapa.')));
+            } catch (error) {
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível reservar: $error')));
+            }
+          }, child: const Text('Criar reserva')),
+        ],
+      ),
+    ));
+  }
+
+  String _date(DateTime value) => '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}';
 
   Widget _planCard(BuildContext context, Map<String, dynamic> plan) {
     return Card(
