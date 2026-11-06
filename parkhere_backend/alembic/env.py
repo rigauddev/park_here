@@ -34,7 +34,7 @@ from app.modules.platform_fees.models import (
     EmailTemplate,
     AdminAuditLog,
 )
-from app.modules.rentals.models import RentalCompany, RentalVehicle, RentalReservation, RentalCheckin, RentalCheckout
+from app.modules.rentals.models import RentalCompany, RentalVehicle, RentalReservation, RentalCheckin, RentalCheckout, RentalPlan, RentalMaintenance
 
 
 config = context.config

@@ -81,5 +81,14 @@
 - [ ] Confirmar que as multas diárias são associadas via API.
 - [ ] Verificar que o backend persiste corretamente nas tabelas.
 
+## Bloco atual: planos e manutenção da frota
+
+- [x] Cadastro e consulta de planos por locadora.
+- [x] Reserva pode referenciar um plano; preço calculado na API.
+- [x] Histórico de manutenção separado por veículo.
+- [ ] Contrato de locação com aceite digital e PDF.
+- [ ] Itens configuráveis de check-in/check-out por locadora.
+- [ ] Cobrança de multas associada à reserva e ao meio de pagamento.
+
 ---
 *Este roadmap será mantido como artefato permanente e pode ser consultado a qualquer momento.*

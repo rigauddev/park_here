@@ -20,23 +20,47 @@ class RentalService {
     return response.cast<Map<String, dynamic>>();
   }
 
+  Future<List<Map<String, dynamic>>> plans(
+    String companyId,
+    String token,
+  ) async {
+    final response = await _api.getAuthorized(
+      '/rentals/companies/$companyId/plans',
+      token,
+    );
+    return response.cast<Map<String, dynamic>>();
+  }
+
   Future<Map<String, dynamic>> reserve({
     required String companyId,
     required String vehicleId,
     required DateTime start,
     required DateTime end,
     required String token,
+    String? planId,
     Map<String, dynamic>? extras,
     int? kmStart,
   }) {
     return _api.postAuthorized('/rentals/reservations', {
       'company_id': companyId,
       'vehicle_id': vehicleId,
+      if (planId != null) 'plan_id': planId,
       'start_date': start.toUtc().toIso8601String(),
       'end_date': end.toUtc().toIso8601String(),
       if (extras != null) 'extras': extras,
       if (kmStart != null) 'km_start': kmStart,
     }, token);
+  }
+
+  Future<List<Map<String, dynamic>>> maintenance(
+    String vehicleId,
+    String token,
+  ) async {
+    final response = await _api.getAuthorized(
+      '/rentals/vehicles/$vehicleId/maintenance',
+      token,
+    );
+    return response.cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> reservations(String token) async {

@@ -35,9 +35,29 @@ class VehicleOut(VehicleCreate):
     status: str
     is_active: bool
 
+
+class RentalPlanCreate(BaseModel):
+    company_id: str
+    name: str = Field(min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    vehicle_type: str | None = Field(default=None, max_length=30)
+    price_per_day: float = Field(gt=0)
+    price_per_week: float | None = Field(default=None, gt=0)
+    price_per_month: float | None = Field(default=None, gt=0)
+    deposit_amount: float = Field(default=0, ge=0)
+    included_items: list[str] = Field(default_factory=list, max_length=30)
+    mileage_limit_per_day: int | None = Field(default=None, ge=0)
+
+
+class RentalPlanOut(RentalPlanCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    is_active: bool
+
 class ReservationCreate(BaseModel):
     company_id: str
     vehicle_id: str
+    plan_id: str | None = None
     start_date: datetime
     end_date: datetime
     extras: dict[str, Any] | None = None
@@ -58,6 +78,7 @@ class ReservationOut(BaseModel):
     user_id: str
     company_id: str
     vehicle_id: str
+    plan_id: str | None = None
     start_date: datetime
     end_date: datetime
     total_price: float
@@ -77,3 +98,19 @@ class CheckinCreate(BaseModel):
 
 class CheckoutCreate(CheckinCreate):
     damage_fine: float = Field(default=0, ge=0)
+
+
+class MaintenanceCreate(BaseModel):
+    vehicle_id: str
+    maintenance_type: str = Field(min_length=2, max_length=40)
+    description: str | None = Field(default=None, max_length=2000)
+    performed_at: datetime
+    next_due_at: datetime | None = None
+    odometer: int | None = Field(default=None, ge=0)
+    cost: float | None = Field(default=None, ge=0)
+    status: str = Field(default="completed", pattern=r"^(scheduled|in_progress|completed|cancelled)$")
+
+
+class MaintenanceOut(MaintenanceCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str

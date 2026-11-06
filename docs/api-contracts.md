@@ -1254,3 +1254,21 @@ apenas para compatibilidade com a matriz de estacionamento. A API valida a
 matriz de estacionamento quando esse campo legado é usado. `VehicleCreate` exige
 `vehicle_type` (`car`, `suv`, `pickup`, `van`, `motorcycle`, `scooter`,
 `bicycle`, `bus`, `truck`, `motorhome` ou `electric_car`).
+
+Planos e frota:
+
+- `GET /rentals/companies/{company_id}/plans` lista os planos ativos da
+  locadora.
+- `POST /rentals/plans` cria um plano com preço diário, semanal/mensal
+  opcional, caução, itens incluídos e limite de quilometragem.
+- `POST /rentals/reservations` aceita `plan_id`; o preço é calculado no
+  backend usando o plano da mesma locadora.
+- `GET /rentals/vehicles/{vehicle_id}/maintenance` lista o histórico de
+  manutenção em ordem decrescente.
+- `POST /rentals/maintenance` registra manutenção, próxima revisão,
+  quilometragem, custo e status. A operação é restrita ao gestor do parceiro.
+
+Planos, veículos e manutenções permanecem em tabelas próprias do módulo de
+locação. Contrato/assinatura digital, cobrança de multas e integração de
+pagamento serão blocos posteriores e reutilizarão o serviço central de
+pagamentos.
