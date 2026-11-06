@@ -61,6 +61,10 @@ class PartnerFeatureEntitlement(BaseModel):
     # compatibility with the existing MySQL deployment.
     payment_terms = Column(Text, nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
+    trial_ends_at = Column(DateTime(timezone=True), nullable=True)
+    is_trial = Column(Boolean, nullable=False, default=False)
+    billing_modality = Column(String(30), nullable=False, default="direct_debit")
+    accumulated_debt = Column(Float, nullable=False, default=0)
     notes = Column(String(500), nullable=True)
 
 

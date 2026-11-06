@@ -21,13 +21,14 @@ import '../../reservation/pages/incident_dailog_page.dart';
 Future<void> _showCenteredError(BuildContext context, String message) {
   return showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
+    useRootNavigator: true,
+    builder: (dialogCtx) => AlertDialog(
       icon: const Icon(Icons.error_outline, color: Colors.red, size: 42),
       title: const Text('Não foi possível concluir'),
       content: Text(message, textAlign: TextAlign.center),
       actions: [
         FilledButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(dialogCtx, rootNavigator: true).pop(),
           child: const Text('Entendi'),
         ),
       ],
@@ -1004,6 +1005,7 @@ class _FreeSlotReservationDialogState
     final initialEnd = selectedDateRange?.end ?? now.add(const Duration(days: 1));
     final picked = await showDateRangePicker(
       context: context,
+      useRootNavigator: true,
       firstDate: now.subtract(const Duration(days: 1)),
       lastDate: now.add(const Duration(days: 180)),
       initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),

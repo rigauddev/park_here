@@ -14,6 +14,7 @@ from app.modules.parkings.convenience_models import (
     ParkingConvenienceSale,
     ParkingConvenienceSaleItem,
 )
+from app.modules.partners.cash_session_models import PartnerCashSession, PartnerCashBleed
 from app.modules.parkings.models import Parking
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
@@ -79,6 +80,12 @@ class ConvenienceSaleInput(BaseModel):
 class CancelSaleInput(BaseModel):
     reason: str = Field(min_length=3, max_length=200)
     manager_password: str | None = None
+
+
+class ConvenienceBleedInput(BaseModel):
+    amount: float = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=255)
+    notes: str | None = None
 
 
 async def _unit(db: AsyncSession, parking_id: str, user: User) -> Parking:
@@ -465,3 +472,90 @@ async def deactivate_convenience(
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     item.is_active = False
     await db.commit()
+
+
+@router.post("/{parking_id}/cash-bleed", status_code=201)
+async def create_convenience_bleed(
+    parking_id: str,
+    data: ConvenienceBleedInput,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record a cash bleed (sangria) at the convenience POS."""
+    await _unit(db, parking_id, current_user)
+    await _ensure_access(db, current_user)
+    _require_operator_permission(current_user, 'cash.manage')
+
+    session = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).order_by(desc(PartnerCashSession.opened_at)))
+
+    bleed = PartnerCashBleed(
+        tenant_id=current_user.tenant_id,
+        parking_id=parking_id,
+        cash_session_id=session.id if session else None,
+        operator_id=current_user.id,
+        operator_name=current_user.name,
+        target_type="convenience",
+        amount=round(data.amount, 2),
+        reason=data.reason.strip(),
+        notes=data.notes.strip() if data.notes else None,
+    )
+    db.add(bleed)
+    await db.commit()
+    await db.refresh(bleed)
+
+    return {
+        "id": bleed.id,
+        "parking_id": bleed.parking_id,
+        "operator_id": bleed.operator_id,
+        "operator_name": bleed.operator_name,
+        "amount": bleed.amount,
+        "reason": bleed.reason,
+        "created_at": bleed.created_at.isoformat() if bleed.created_at else None,
+        "receipt": {
+            "title": "COMPROVANTE DE SANGRIA DE CAIXA - CONVENIÊNCIA",
+            "is_fiscal": False,
+            "operator": bleed.operator_name,
+            "amount": bleed.amount,
+            "reason": bleed.reason,
+            "timestamp": bleed.created_at.isoformat() if bleed.created_at else None,
+        },
+    }
+
+
+@router.get("/{parking_id}/cash-bleeds")
+async def list_convenience_bleeds(
+    parking_id: str,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _unit(db, parking_id, current_user)
+    await _ensure_access(db, current_user)
+    _require_operator_permission(current_user, 'convenience.view')
+
+    bleeds = (await db.scalars(
+        select(PartnerCashBleed)
+        .where(
+            PartnerCashBleed.parking_id == parking_id,
+            PartnerCashBleed.tenant_id == current_user.tenant_id,
+            PartnerCashBleed.target_type == "convenience",
+        )
+        .order_by(desc(PartnerCashBleed.created_at))
+        .limit(limit)
+    )).all()
+
+    return [
+        {
+            "id": b.id,
+            "operator_id": b.operator_id,
+            "operator_name": b.operator_name,
+            "amount": b.amount,
+            "reason": b.reason,
+            "notes": b.notes,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+        }
+        for b in bleeds
+    ]

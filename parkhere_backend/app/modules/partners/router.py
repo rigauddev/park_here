@@ -33,7 +33,8 @@ from app.modules.partners.models import PartnerProfile
 from app.modules.partners.guide_models import GuideParkingLink, GuideReview
 from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
-from app.modules.partners.cash_session_models import PartnerCashSession
+from app.modules.partners.cash_session_models import PartnerCashSession, PartnerCashBleed
+from app.modules.partners.financial_models import FinancialCostCenter, FinancialEntry
 from app.modules.partners.permission_profile_models import PartnerPermissionProfile
 from app.modules.partners.work_schedule_models import OperatorWorkProfile, OperatorScheduleHistory
 from app.modules.partners.operator_package_models import OperatorPackageRequest
@@ -179,6 +180,38 @@ class CashSessionCloseRequest(BaseModel):
     parking_closing_cash: float = Field(default=0, ge=0)
     convenience_closing_cash: float = Field(default=0, ge=0)
     closing_notes: str | None = None
+
+
+class CashBleedRequest(BaseModel):
+    parking_id: str
+    amount: float = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=255)
+    target_type: str = "convenience"  # convenience | parking
+    notes: str | None = None
+
+
+class CostCenterRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    code: str | None = Field(default=None, max_length=30)
+    type: str = "both"  # expense, revenue, both
+    parking_id: str | None = None
+
+
+class FinancialEntryRequest(BaseModel):
+    parking_id: str | None = None
+    cost_center_id: str | None = None
+    entry_type: str = Field(pattern="^(income|expense)$")
+    category: str = Field(min_length=2, max_length=80)
+    description: str = Field(min_length=2, max_length=255)
+    amount: float = Field(gt=0)
+    payment_method: str = "cash"
+    entry_date: datetime | None = None
+    notes: str | None = None
+
+
+class FeatureActivationRequest(BaseModel):
+    modality: str = "trial"  # trial, direct_debit, card, pix
+    billing_period: str = "monthly"
 
 class ShiftSuggestionRequest(BaseModel):
     parking_id: str
@@ -1323,18 +1356,40 @@ async def get_partner_financial_report(
 
 @router.get('/financial-summary')
 async def get_partner_financial_summary(
-    period_days: int = 30,
+    period_days: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Aggregated financial summary separating parking and convenience."""
+    """Aggregated financial summary separating parking, convenience and manual entries.
+    Defaults to the current month if no period or dates are specified.
+    """
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'financial_management')
 
     now = datetime.utcnow()
     start_time = None
-    if period_days > 0:
+    end_time = None
+
+    if start_date and end_date:
+        try:
+            start_time = datetime.fromisoformat(start_date.replace("Z", ""))
+            end_time = datetime.fromisoformat(end_date.replace("Z", ""))
+        except Exception:
+            start_time = None
+            end_time = None
+
+    if start_time is None and period_days is not None and period_days > 0:
         start_time = now - timedelta(days=period_days)
+        end_time = now
+    elif start_time is None and (period_days is None or period_days == 30):
+        # Default: Sempre o Mês Atual
+        start_time = datetime(now.year, now.month, 1, 0, 0, 0)
+        if now.month == 12:
+            end_time = datetime(now.year + 1, 1, 1, 23, 59, 59)
+        else:
+            end_time = datetime(now.year, now.month + 1, 1, 0, 0, 0) - timedelta(seconds=1)
 
     # 1. Parking / Reservations query
     res_query = (
@@ -1344,6 +1399,8 @@ async def get_partner_financial_summary(
     )
     if start_time:
         res_query = res_query.where(Reservation.created_at >= start_time)
+    if end_time:
+        res_query = res_query.where(Reservation.created_at <= end_time)
 
     reservations = (await db.scalars(res_query)).all()
 
@@ -1362,6 +1419,8 @@ async def get_partner_financial_summary(
     )
     if start_time:
         conv_query = conv_query.where(ParkingConvenienceSale.created_at >= start_time)
+    if end_time:
+        conv_query = conv_query.where(ParkingConvenienceSale.created_at <= end_time)
 
     conv_sales = (await db.scalars(conv_query)).all()
 
@@ -1373,14 +1432,43 @@ async def get_partner_financial_summary(
     conv_cancelled_amount = sum(s.total_amount or 0 for s in conv_cancelled)
     conv_net = round(conv_revenue - conv_cancelled_amount, 2)
 
-    # 3. Consolidated totals
-    total_gross = round(parking_revenue + conv_revenue, 2)
+    # 3. Manual Financial Entries (Entradas e Saídas manuais por centro de custo)
+    entries_query = select(FinancialEntry).where(
+        FinancialEntry.tenant_id == current_user.tenant_id,
+        FinancialEntry.status == "completed",
+    )
+    if start_time:
+        entries_query = entries_query.where(FinancialEntry.entry_date >= start_time)
+    if end_time:
+        entries_query = entries_query.where(FinancialEntry.entry_date <= end_time)
+
+    manual_entries = (await db.scalars(entries_query)).all()
+    manual_incomes = [e for e in manual_entries if e.entry_type == "income"]
+    manual_expenses = [e for e in manual_entries if e.entry_type == "expense"]
+    manual_income_total = sum(e.amount for e in manual_incomes)
+    manual_expense_total = sum(e.amount for e in manual_expenses)
+
+    # 4. Cash Bleeds (Sangrias de caixa realizadas)
+    bleeds_query = select(PartnerCashBleed).where(PartnerCashBleed.tenant_id == current_user.tenant_id)
+    if start_time:
+        bleeds_query = bleeds_query.where(PartnerCashBleed.created_at >= start_time)
+    if end_time:
+        bleeds_query = bleeds_query.where(PartnerCashBleed.created_at <= end_time)
+    cash_bleeds = (await db.scalars(bleeds_query)).all()
+    cash_bleeds_total = sum(b.amount for b in cash_bleeds)
+
+    # 5. Consolidated totals
+    total_gross = round(parking_revenue + conv_revenue + manual_income_total, 2)
     total_refunds = round(parking_refunds + conv_cancelled_amount, 2)
+    total_expenses = round(manual_expense_total, 2)
     total_fees = round(parking_fees, 2)
-    total_net = round(total_gross - total_refunds - total_fees, 2)
+    total_net = round(total_gross - total_refunds - total_expenses - total_fees, 2)
 
     return {
         "period_days": period_days,
+        "start_date": start_time.isoformat() if start_time else None,
+        "end_date": end_time.isoformat() if end_time else None,
+        "is_current_month": start_time is not None and start_time.day == 1 and start_time.month == now.month and start_time.year == now.year,
         "parking": {
             "paid_count": len(parking_paid),
             "refunded_count": len(parking_refunded),
@@ -1400,13 +1488,404 @@ async def get_partner_financial_summary(
             "net_revenue": conv_net,
             "average_ticket": round(conv_revenue / len(conv_completed), 2) if conv_completed else 0.0,
         },
+        "manual_entries": {
+            "income_count": len(manual_incomes),
+            "expense_count": len(manual_expenses),
+            "income_total": round(manual_income_total, 2),
+            "expense_total": round(manual_expense_total, 2),
+            "cash_bleeds_total": round(cash_bleeds_total, 2),
+            "bleeds_count": len(cash_bleeds),
+        },
         "consolidated": {
             "total_gross_revenue": total_gross,
             "total_refunds": total_refunds,
+            "total_expenses": total_expenses,
             "total_platform_fees": total_fees,
             "total_net_revenue": total_net,
-            "total_operations": len(parking_paid) + len(conv_completed),
+            "cash_bleeds_total": round(cash_bleeds_total, 2),
+            "total_operations": len(parking_paid) + len(conv_completed) + len(manual_entries),
         },
+    }
+
+
+# ============================================================================
+# CENTROS DE CUSTO & LANÇAMENTOS FINANCEIROS
+# ============================================================================
+
+DEFAULT_COST_CENTERS = [
+    {"name": "Operacional & Pátio", "code": "CC-01", "type": "both"},
+    {"name": "Manutenção & Reparos", "code": "CC-02", "type": "expense"},
+    {"name": "Insumos & Limpeza", "code": "CC-03", "type": "expense"},
+    {"name": "Energia & Concessionárias", "code": "CC-04", "type": "expense"},
+    {"name": "Folha de Pagamento & Pessoal", "code": "CC-05", "type": "expense"},
+    {"name": "Marketing & Divulgação", "code": "CC-06", "type": "expense"},
+    {"name": "Receitas Avulsas & Parcerias", "code": "CC-07", "type": "revenue"},
+]
+
+
+@router.get('/financial/cost-centers')
+async def list_cost_centers(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    rows = (await db.scalars(
+        select(FinancialCostCenter)
+        .where(
+            FinancialCostCenter.tenant_id == current_user.tenant_id,
+            FinancialCostCenter.is_active.is_(True),
+        )
+        .order_by(FinancialCostCenter.code, FinancialCostCenter.name)
+    )).all()
+
+    if not rows:
+        # Auto-semeia centros de custo padrão para o parceiro
+        for item in DEFAULT_COST_CENTERS:
+            cc = FinancialCostCenter(
+                tenant_id=current_user.tenant_id,
+                name=item["name"],
+                code=item["code"],
+                type=item["type"],
+                is_active=True,
+            )
+            db.add(cc)
+        await db.commit()
+        rows = (await db.scalars(
+            select(FinancialCostCenter)
+            .where(
+                FinancialCostCenter.tenant_id == current_user.tenant_id,
+                FinancialCostCenter.is_active.is_(True),
+            )
+            .order_by(FinancialCostCenter.code, FinancialCostCenter.name)
+        )).all()
+
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "code": r.code,
+            "type": r.type,
+            "parking_id": r.parking_id,
+            "is_active": r.is_active,
+        }
+        for r in rows
+    ]
+
+
+@router.post('/financial/cost-centers', status_code=201)
+async def create_cost_center(
+    data: CostCenterRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    row = FinancialCostCenter(
+        tenant_id=current_user.tenant_id,
+        parking_id=data.parking_id,
+        name=data.name.strip(),
+        code=data.code.strip() if data.code else None,
+        type=data.type,
+        is_active=True,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {
+        "id": row.id,
+        "name": row.name,
+        "code": row.code,
+        "type": row.type,
+        "parking_id": row.parking_id,
+        "is_active": row.is_active,
+    }
+
+
+@router.delete('/financial/cost-centers/{cost_center_id}', status_code=204)
+async def deactivate_cost_center(
+    cost_center_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_parking_manager(current_user)
+    row = await db.scalar(
+        select(FinancialCostCenter).where(
+            FinancialCostCenter.id == cost_center_id,
+            FinancialCostCenter.tenant_id == current_user.tenant_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Centro de custo não encontrado")
+    row.is_active = False
+    await db.commit()
+
+
+@router.get('/financial/entries')
+async def list_financial_entries(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    entry_type: str | None = None,
+    cost_center_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    now = datetime.utcnow()
+    if start_date and end_date:
+        try:
+            start_time = datetime.fromisoformat(start_date.replace("Z", ""))
+            end_time = datetime.fromisoformat(end_date.replace("Z", ""))
+        except Exception:
+            start_time = datetime(now.year, now.month, 1)
+            end_time = datetime(now.year, now.month + 1, 1) if now.month < 12 else datetime(now.year + 1, 1, 1)
+    else:
+        # Default: mês atual
+        start_time = datetime(now.year, now.month, 1, 0, 0, 0)
+        end_time = datetime(now.year, now.month + 1, 1, 0, 0, 0) if now.month < 12 else datetime(now.year + 1, 1, 1, 0, 0, 0)
+
+    query = (
+        select(FinancialEntry, FinancialCostCenter.name, FinancialCostCenter.code)
+        .outerjoin(FinancialCostCenter, FinancialCostCenter.id == FinancialEntry.cost_center_id)
+        .where(
+            FinancialEntry.tenant_id == current_user.tenant_id,
+            FinancialEntry.entry_date >= start_time,
+            FinancialEntry.entry_date <= end_time,
+        )
+        .order_by(FinancialEntry.entry_date.desc())
+    )
+    if entry_type:
+        query = query.where(FinancialEntry.entry_type == entry_type)
+    if cost_center_id:
+        query = query.where(FinancialEntry.cost_center_id == cost_center_id)
+
+    rows = (await db.execute(query)).all()
+    return [
+        {
+            "id": entry.id,
+            "entry_type": entry.entry_type,
+            "category": entry.category,
+            "description": entry.description,
+            "amount": entry.amount,
+            "payment_method": entry.payment_method,
+            "entry_date": entry.entry_date.isoformat() if entry.entry_date else None,
+            "status": entry.status,
+            "notes": entry.notes,
+            "cost_center_id": entry.cost_center_id,
+            "cost_center_name": cc_name or "Geral",
+            "cost_center_code": cc_code or "-",
+            "created_by_id": entry.created_by_id,
+            "created_by_name": entry.created_by_name,
+        }
+        for entry, cc_name, cc_code in rows
+    ]
+
+
+@router.post('/financial/entries', status_code=201)
+async def create_financial_entry(
+    data: FinancialEntryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_partner(db, current_user)
+    await _ensure_partner_feature(db, current_user, 'financial_management')
+
+    entry_date = data.entry_date or datetime.utcnow()
+    entry = FinancialEntry(
+        tenant_id=current_user.tenant_id,
+        parking_id=data.parking_id,
+        cost_center_id=data.cost_center_id,
+        created_by_id=current_user.id,
+        created_by_name=current_user.name,
+        entry_type=data.entry_type,
+        category=data.category.strip(),
+        description=data.description.strip(),
+        amount=round(data.amount, 2),
+        payment_method=data.payment_method,
+        entry_date=entry_date,
+        status="completed",
+        notes=data.notes.strip() if data.notes else None,
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+
+    cc = await db.get(FinancialCostCenter, entry.cost_center_id) if entry.cost_center_id else None
+    return {
+        "id": entry.id,
+        "entry_type": entry.entry_type,
+        "category": entry.category,
+        "description": entry.description,
+        "amount": entry.amount,
+        "payment_method": entry.payment_method,
+        "entry_date": entry.entry_date.isoformat(),
+        "status": entry.status,
+        "cost_center_id": entry.cost_center_id,
+        "cost_center_name": cc.name if cc else "Geral",
+        "cost_center_code": cc.code if cc else "-",
+        "created_by_id": entry.created_by_id,
+        "created_by_name": entry.created_by_name,
+    }
+
+
+# ============================================================================
+# SANGRIA DE CAIXA (CASH BLEED)
+# ============================================================================
+
+@router.post("/cash-session/bleed", status_code=201)
+async def create_cash_bleed(
+    data: CashBleedRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record a cash bleed / withdrawal, detailing the operator and reason."""
+    await _ensure_parking_staff(db, current_user)
+    _require_operator_permission(current_user, 'cash.manage')
+
+    session = await db.scalar(select(PartnerCashSession).where(
+        PartnerCashSession.operator_id == current_user.id,
+        PartnerCashSession.status == "open",
+    ).order_by(PartnerCashSession.opened_at.desc()))
+
+    bleed = PartnerCashBleed(
+        tenant_id=current_user.tenant_id,
+        parking_id=data.parking_id,
+        cash_session_id=session.id if session else None,
+        operator_id=current_user.id,
+        operator_name=current_user.name,
+        target_type=data.target_type,
+        amount=round(data.amount, 2),
+        reason=data.reason.strip(),
+        notes=data.notes.strip() if data.notes else None,
+    )
+    db.add(bleed)
+    await db.commit()
+    await db.refresh(bleed)
+
+    return {
+        "id": bleed.id,
+        "parking_id": bleed.parking_id,
+        "cash_session_id": bleed.cash_session_id,
+        "operator_id": bleed.operator_id,
+        "operator_name": bleed.operator_name,
+        "target_type": bleed.target_type,
+        "amount": bleed.amount,
+        "reason": bleed.reason,
+        "notes": bleed.notes,
+        "created_at": bleed.created_at.isoformat(),
+        "receipt": {
+            "title": "COMPROVANTE DE SANGRIA DE CAIXA",
+            "is_fiscal": False,
+            "operator": bleed.operator_name,
+            "reason": bleed.reason,
+            "amount": bleed.amount,
+            "target": bleed.target_type,
+            "timestamp": bleed.created_at.isoformat(),
+        },
+    }
+
+
+@router.get("/cash-session/bleeds")
+async def list_cash_bleeds(
+    parking_id: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _ensure_parking_staff(db, current_user)
+    query = select(PartnerCashBleed).where(PartnerCashBleed.tenant_id == current_user.tenant_id)
+    if parking_id:
+        query = query.where(PartnerCashBleed.parking_id == parking_id)
+    bleeds = (await db.scalars(query.order_by(PartnerCashBleed.created_at.desc()).limit(limit))).all()
+
+    return [
+        {
+            "id": b.id,
+            "parking_id": b.parking_id,
+            "operator_id": b.operator_id,
+            "operator_name": b.operator_name,
+            "target_type": b.target_type,
+            "amount": b.amount,
+            "reason": b.reason,
+            "notes": b.notes,
+            "created_at": b.created_at.isoformat(),
+        }
+        for b in bleeds
+    ]
+
+
+# ============================================================================
+# ATIVAÇÃO DIRETA DE FUNCIONALIDADE (TRIAL 30 DIAS & SPLIT DE TAXAS)
+# ============================================================================
+
+@router.post("/features/{feature_key}/activate")
+async def activate_partner_feature(
+    feature_key: str,
+    data: FeatureActivationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Direct feature activation: 30-day free trial or automatic split deduction."""
+    _ensure_parking_manager(current_user)
+
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id))
+    feature = feature_by_key(profile.service_type if profile else None, feature_key)
+    if feature is None:
+        raise HTTPException(status_code=404, detail="Funcionalidade não encontrada")
+
+    entitlement = await db.scalar(select(PartnerFeatureEntitlement).where(
+        PartnerFeatureEntitlement.tenant_id == current_user.tenant_id,
+        PartnerFeatureEntitlement.feature_key == feature_key,
+    ))
+    if entitlement is None:
+        entitlement = PartnerFeatureEntitlement(
+            tenant_id=current_user.tenant_id,
+            feature_key=feature_key,
+            is_enabled=False,
+            is_paid=True,
+            price=float(feature.get('price', 0) or 0),
+            billing_period=data.billing_period,
+        )
+        db.add(entitlement)
+
+    now = datetime.utcnow()
+    price = float(entitlement.price or feature.get('price', 0) or 0)
+
+    if data.modality == "trial":
+        entitlement.is_enabled = True
+        entitlement.is_trial = True
+        entitlement.trial_ends_at = now + timedelta(days=30)
+        entitlement.billing_modality = "trial"
+        message = "Período de teste gratuito ativado por 30 dias!"
+    elif data.modality == "direct_debit":
+        entitlement.is_enabled = True
+        entitlement.is_trial = False
+        entitlement.billing_modality = "direct_debit"
+        entitlement.accumulated_debt = price
+        message = "Funcionalidade ativada com cobrança automática via débito no split de taxas das reservas."
+    else:
+        entitlement.is_enabled = True
+        entitlement.is_trial = False
+        entitlement.billing_modality = data.modality
+        message = f"Funcionalidade ativada via pagamento ({data.modality.upper()})."
+
+    await db.commit()
+    await db.refresh(entitlement)
+
+    return {
+        "success": True,
+        "feature_key": feature_key,
+        "is_enabled": entitlement.is_enabled,
+        "is_trial": entitlement.is_trial,
+        "trial_ends_at": entitlement.trial_ends_at.isoformat() if entitlement.trial_ends_at else None,
+        "billing_modality": entitlement.billing_modality,
+        "accumulated_debt": entitlement.accumulated_debt,
+        "requires_restart": True,
+        "message": message,
     }
 
 

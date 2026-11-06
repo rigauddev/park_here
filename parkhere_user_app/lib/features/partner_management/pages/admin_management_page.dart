@@ -79,6 +79,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   String? _loadError;
   bool _loading = true;
   int _section = 0;
+  int _feeTab = 0;
   final _partnerSearch = TextEditingController();
   final _customerSearch = TextEditingController();
 
@@ -354,33 +355,127 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         ];
       case 2:
         final currency = context.strings.isEnglish ? 'BRL' : r'R$';
+        final isPlansTab = _feeTab == 0;
+        final planTypes = {
+          'parking_hourly',
+          'hourly',
+          'parking',
+          'reservation',
+          'daily',
+          'parking_daily',
+          'weekly',
+          'parking_weekly',
+          'monthly',
+          'parking_monthly',
+          'establishment',
+        };
+
+        final displayedFees = _fees.where((fee) {
+          final type = (fee['service_type'] as String? ?? '').toLowerCase();
+          final isPlan = planTypes.contains(type) ||
+              type.contains('parking') ||
+              type.contains('diari') ||
+              type.contains('hora');
+          return isPlansTab ? isPlan : !isPlan;
+        }).toList();
+
         return [
-          const Text(
-            'Taxas e planos',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          ..._fees.map(
-            (fee) => Card(
-              child: ListTile(
-                title: Text(
-                  context.strings.isEnglish
-                      ? (fee['service_name_en'] as String? ??
-                            fee['service_type'] as String? ??
-                            '')
-                      : (fee['service_name'] as String? ??
-                            fee['service_type'] as String? ??
-                            ''),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Taxas e Planos Globais',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isPlansTab
+                          ? 'Taxas sobre modalidades de vagas (Hora, Diária, Semana e Mês). Aplicadas igualmente às filiais.'
+                          : 'Taxas sobre serviços adicionais, filiais e facilidades do estacionamento.',
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    ),
+                  ],
                 ),
-                subtitle: Text(
-                  '${context.strings.isEnglish ? fee['description_en'] ?? '' : fee['description'] ?? ''}\n'
-                  '${fee['percentage'] ?? 0}% + $currency ${fee['fixed_amount'] ?? 0}',
-                ),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: () => _editFee(fee),
               ),
-            ),
+            ],
           ),
+          const SizedBox(height: 12),
+          SegmentedButton<int>(
+            showSelectedIcon: false,
+            selected: {_feeTab},
+            onSelectionChanged: (val) => setState(() => _feeTab = val.first),
+            segments: const [
+              ButtonSegment(
+                value: 0,
+                label: Text('Taxas dos Planos (Vagas)'),
+                icon: Icon(Icons.local_parking),
+              ),
+              ButtonSegment(
+                value: 1,
+                label: Text('Taxas dos Serviços Extras'),
+                icon: Icon(Icons.miscellaneous_services),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (displayedFees.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Text(
+                    isPlansTab
+                        ? 'Nenhuma taxa de plano de vaga configurada.'
+                        : 'Nenhuma taxa de serviço extra configurada.',
+                  ),
+                ),
+              ),
+            )
+          else
+            ...displayedFees.map(
+              (fee) {
+                final type = fee['service_type'] as String? ?? '';
+                final name = context.strings.isEnglish
+                    ? (fee['service_name_en'] as String? ?? type)
+                    : (fee['service_name'] as String? ?? type);
+                final explanation = _feeExplanation(type);
+                final pct = fee['percentage'] ?? 0;
+                final fixed = fee['fixed_amount'] ?? 0;
+
+                return Card(
+                  elevation: 1,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isPlansTab ? Colors.blue.shade100 : Colors.purple.shade100,
+                      foregroundColor: isPlansTab ? Colors.blue.shade900 : Colors.purple.shade900,
+                      child: Icon(isPlansTab ? Icons.directions_car : Icons.build_circle_outlined),
+                    ),
+                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 2),
+                        Text(explanation, style: const TextStyle(fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Cobrança: $pct% + $currency ${fixed.toString()}',
+                          style: TextStyle(fontWeight: FontWeight.w600, color: Colors.blue.shade900),
+                        ),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Editar taxa',
+                      onPressed: () => _editFee(fee),
+                    ),
+                  ),
+                );
+              },
+            ),
         ];
       case 3:
         return _partnerFeatureManager();
@@ -2733,6 +2828,32 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         );
       }
     }
+  }
+
+  String _feeExplanation(String serviceType) {
+    return switch (serviceType) {
+      'parking_hourly' || 'hourly' || 'parking' =>
+        'Cobrada sobre estadias avulsas por hora. Taxa base aplicada ao estabelecimento e replicada a todas as filiais.',
+      'parking_daily' || 'daily' =>
+        'Cobrada sobre estadias prolongadas por diária selecionadas pelo operador no calendário.',
+      'parking_weekly' || 'weekly' =>
+        'Cobrada sobre estadias contratadas por período semanal.',
+      'parking_monthly' || 'monthly' =>
+        'Cobrada sobre assinaturas mensais de vagas para mensalistas.',
+      'establishment' =>
+        'Taxa global retida da operação do estabelecimento parceiro.',
+      'car_wash' =>
+        'Cobrada sobre serviços de lava-jato e higienização realizados no estacionamento.',
+      'additional_services' =>
+        'Cobrada sobre facilidades e serviços adicionais contratados pelo motorista.',
+      'additional_units' =>
+        'Taxa de replicação para operação de filiais adicionais da mesma empresa.',
+      'convenience_management' =>
+        'Cobrada sobre vendas de conveniência e produtos no balcão do estacionamento.',
+      'insurance' =>
+        'Taxa de proteção veicular e seguro adicional de estadia.',
+      _ => 'Taxa administrativa cobrada sobre as transações deste serviço.',
+    };
   }
 
   Future<void> _editFee(Map<String, dynamic> fee) async {

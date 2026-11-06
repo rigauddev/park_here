@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart';
 
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
-import '../../../core/widgets/api_feedback.dart';
+import '../../../core/services/local_storage_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/partner_profile_model.dart';
-import '../providers/partner_profile_provider.dart';
-import '../../payments/pages/payment_page.dart';
 
 class PartnerFeatureAccessPage extends ConsumerStatefulWidget {
   final PartnerProfileModel partner;
@@ -32,14 +29,11 @@ class _PartnerFeatureAccessPageState
   final _api = ApiService();
   late int _quantity;
   bool _submitting = false;
-  bool _hasPendingRequest = false;
   bool _paymentCompleted = false;
-  String? _requestId;
   String? _message;
   String _billingPeriod = 'monthly';
-  String _paymentMethod = 'pix';
+  String _paymentMethod = 'direct_debit';
   double? _requestTotal;
-  PlatformFile? _receipt;
 
   @override
   void initState() {
@@ -70,8 +64,6 @@ class _PartnerFeatureAccessPageState
           .firstOrNull;
       if (mounted) {
         setState(() {
-          _requestId = request?['id'] as String?;
-          _hasPendingRequest = request?['status'] == 'pending_review';
           _paymentCompleted =
               request?['status'] == 'payment_received' ||
               request?['status'] == 'pending_review';
@@ -100,7 +92,6 @@ class _PartnerFeatureAccessPageState
         (prices[_billingPeriod] as num?)?.toDouble() ??
         ((feature['billing_period'] == _billingPeriod) ? legacyPrice : 0);
     final quantityBased = feature['quantity_based'] == true;
-    final requestable = feature['requestable'] == true;
     final canRequest = widget.partner.role != 'operator';
     final resourceRequestsEnabled =
         !quantityBased || feature['is_enabled'] == true;
@@ -229,36 +220,102 @@ class _PartnerFeatureAccessPageState
                             () => _billingPeriod = value ?? 'monthly',
                           ),
                         ),
-                      const SizedBox(height: 12),
-                      SegmentedButton<String>(
-                        segments: [
-                          ButtonSegment(value: 'pix', label: Text('Pix')),
-                          ButtonSegment(
-                            value: 'credit_card',
-                            label: Text(en ? 'Credit' : 'Crédito'),
-                          ),
-                          ButtonSegment(
-                            value: 'debit_card',
-                            label: Text(en ? 'Debit' : 'Débito'),
-                          ),
-                        ],
-                        selected: {_paymentMethod},
-                        onSelectionChanged: (value) =>
-                            setState(() => _paymentMethod = value.first),
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _submitting || !_paymentCompleted
-                            ? null
-                            : _chooseReceipt,
-                        icon: const Icon(Icons.attach_file),
-                        label: Text(
-                          _receipt?.name ??
-                              (en
-                                  ? 'Attach payment proof (PDF/JPG/PNG)'
-                                  : 'Anexar comprovante (PDF/JPG/PNG)'),
+                      const SizedBox(height: 14),
+                      // Seção de Teste Grátis de 30 Dias
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.amber.shade300),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.stars, color: Colors.amber, size: 22),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Teste Grátis por 30 Dias',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Experimente todas as vantagens desta funcionalidade sem custo imediato durante 30 dias.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            const SizedBox(height: 10),
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade900),
+                              onPressed: _submitting ? null : () => _activateDirectly('trial'),
+                              icon: const Icon(Icons.timer_outlined, size: 16),
+                              label: const Text('Iniciar Teste Grátis de 30 Dias'),
+                            ),
+                          ],
                         ),
                       ),
+                      const SizedBox(height: 16),
+                      Text(
+                        en ? 'Payment method' : 'Forma de Pagamento / Cobrança',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Débito Automático via Reservas'),
+                            selected: _paymentMethod == 'direct_debit',
+                            avatar: const Icon(Icons.sync_alt, size: 16),
+                            onSelected: (_) => setState(() => _paymentMethod = 'direct_debit'),
+                          ),
+                          ChoiceChip(
+                            label: const Text('PIX'),
+                            selected: _paymentMethod == 'pix',
+                            avatar: const Icon(Icons.pix, size: 16),
+                            onSelected: (_) => setState(() => _paymentMethod = 'pix'),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Cartão de Crédito'),
+                            selected: _paymentMethod == 'credit_card',
+                            avatar: const Icon(Icons.credit_card, size: 16),
+                            onSelected: (_) => setState(() => _paymentMethod = 'credit_card'),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Cartão de Débito'),
+                            selected: _paymentMethod == 'debit_card',
+                            avatar: const Icon(Icons.credit_card_outlined, size: 16),
+                            onSelected: (_) => setState(() => _paymentMethod = 'debit_card'),
+                          ),
+                        ],
+                      ),
+                      if (_paymentMethod == 'direct_debit')
+                        Container(
+                          margin: const EdgeInsets.only(top: 10),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: const Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.info_outline, size: 18, color: Colors.blue),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Débito Automático: O valor da mensalidade da funcionalidade é guardado como débito. Ao ter uma reserva que cubra o valor do débito do estabelecimento, esse valor é cobrado nessa reserva e fica registrado como saída sobre o valor da mensalidade da funcionalidade.',
+                                  style: TextStyle(fontSize: 12, color: Colors.black87),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       const Divider(height: 28),
                       Text(
                         paid
@@ -273,7 +330,7 @@ class _PartnerFeatureAccessPageState
                         Text(
                           en
                               ? 'Minimum commitment: $minMonths months · up to $installments installment(s) · ${discount.toStringAsFixed(0)}% discount for this method.'
-                              : 'Contratação mínima: $minMonths meses · até $installments parcela(s) · desconto de ${discount.toStringAsFixed(0)}% neste meio.',
+                              : 'Contratação: $minMonths meses · até $installments parcela(s) · desconto de ${discount.toStringAsFixed(0)}% neste meio.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -302,44 +359,24 @@ class _PartnerFeatureAccessPageState
                 Text(_message!, textAlign: TextAlign.center),
               ],
               const SizedBox(height: 16),
-              if (!_paymentCompleted && !_hasPendingRequest)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: FilledButton.icon(
-                    onPressed: _submitting ? null : _pay,
-                    icon: const Icon(Icons.lock_open),
-                    label: Text(en ? 'Pay and continue' : 'Pagar e continuar'),
-                  ),
-                ),
               FilledButton.icon(
-                onPressed:
-                    _submitting ||
-                        _hasPendingRequest ||
-                        _receipt == null ||
-                        !_paymentCompleted ||
-                        (_requestId == null &&
-                            (!paid ||
-                                price <= 0 ||
-                                !requestable ||
-                                !canRequest ||
-                                !resourceRequestsEnabled))
-                    ? null
-                    : _request,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.blue.shade900,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: _submitting ? null : () => _activateDirectly(_paymentMethod),
                 icon: _submitting
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : const Icon(Icons.outgoing_mail),
+                    : const Icon(Icons.check_circle_outline),
                 label: Text(
                   _submitting
-                      ? (en ? 'Sending request…' : 'Enviando solicitação…')
-                      : _hasPendingRequest
-                      ? (en ? 'Request under review' : 'Solicitação em análise')
-                      : (en
-                            ? 'Submit proof for review'
-                            : 'Enviar comprovante para análise'),
+                      ? (en ? 'Activating feature…' : 'Ativando funcionalidade…')
+                      : (en ? 'Activate and Unlock Feature' : 'Contratar e Ativar Funcionalidade'),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
               if (!paid ||
@@ -382,129 +419,70 @@ class _PartnerFeatureAccessPageState
     );
   }
 
-  Future<void> _request() async {
+  Future<void> _activateDirectly(String modality) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
-    setState(() {
-      _submitting = true;
-      _message = null;
-    });
+    setState(() => _submitting = true);
     try {
-      var requestId = _requestId;
-      if (requestId == null) {
-        final response = await _api
-            .postAuthorized('/partners/feature-requests', {
-              'feature_key': widget.featureKey,
-              'quantity': _quantity,
-              'billing_period': _billingPeriod,
-              'payment_method': _paymentMethod,
-            }, token);
-        requestId = response['id'] as String;
-        if (mounted) {
-          setState(() {
-            _requestId = requestId;
-            _requestTotal = (response['total_price'] as num?)?.toDouble();
-          });
-        }
-      }
-      final receipt = _receipt!;
-      await _api.uploadAuthorizedFile(
-        '/partners/feature-requests/$requestId/receipt',
+      final res = await _api.postAuthorized(
+        '/partners/features/${widget.featureKey}/activate',
+        {
+          'modality': modality,
+          'billing_period': _billingPeriod,
+        },
         token,
-        receipt.name,
-        receipt.bytes!,
       );
-      if (!mounted) return;
-      setState(() {
-        _hasPendingRequest = true;
-        _message = context.strings.isEnglish
-            ? 'Request submitted. You can continue using the features already enabled.'
-            : 'Solicitação enviada. Você pode continuar usando as funcionalidades já liberadas.';
-      });
-      ref.invalidate(partnerProfileProvider);
-      await ApiFeedback.show(
-        context,
-        context.strings.isEnglish
-            ? 'Request submitted for payment review.'
-            : 'Solicitação enviada para análise do comprovante.',
-        isError: false,
-      );
-    } catch (error) {
-      if (mounted) {
-        final message =
-            '${context.strings.isEnglish ? 'Could not submit request' : 'Não foi possível solicitar'}: $error';
-        setState(() => _message = message);
-        await ApiFeedback.show(context, message);
-      }
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
 
-  Future<void> _pay() async {
-    final token = ref.read(authProvider).accessToken;
-    if (token == null) return;
-    setState(() {
-      _submitting = true;
-      _message = null;
-    });
-    try {
-      var requestId = _requestId;
-      if (requestId == null) {
-        final response = await _api
-            .postAuthorized('/partners/feature-requests', {
-              'feature_key': widget.featureKey,
-              'quantity': _quantity,
-              'billing_period': _billingPeriod,
-              'payment_method': _paymentMethod,
-            }, token);
-        requestId = response['id'] as String;
-        if (mounted) {
-          setState(() {
-            _requestId = requestId;
-            _requestTotal = (response['total_price'] as num?)?.toDouble();
-          });
-        }
-      }
       if (!mounted) return;
-      final amount = _requestTotal ?? _requestAmount();
-      final paid = await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaymentPage(
-            amount: amount,
-            featureRequestId: requestId,
-            paymentPurpose: 'feature_purchase',
-            payNow: true,
-            contractedModules: _contractedModules(context.strings.isEnglish),
-            onPaymentSuccess: () async {
-              if (!mounted) return;
-              setState(() {
-                _paymentCompleted = true;
-                _message = context.strings.isEnglish
-                    ? 'Payment completed. The requested capacity is available.'
-                    : 'Pagamento concluído. A capacidade solicitada está disponível.';
-              });
-              ref.invalidate(partnerProfileProvider);
-            },
+      setState(() => _submitting = false);
+
+      // Dialog de reinicialização e logout
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.restart_alt, size: 48, color: Colors.blue),
+          title: const Text('Reinicialização Necessária'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                res['message'] as String? ?? 'Funcionalidade ativada com sucesso!',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'O sistema precisa ser reiniciado para que todas as novas opções, permissões e menus sejam liberados no seu aplicativo.',
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Ao clicar em Confirmar, você será desconectado e os dados em cache serão limpos para refazer o login já com a funcionalidade liberada.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
           ),
+          actions: [
+            FilledButton.icon(
+              icon: const Icon(Icons.check),
+              label: const Text('Confirmar e Reiniciar'),
+              onPressed: () async {
+                await LocalStorageService().clear();
+                await ref.read(authProvider.notifier).logout();
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pushNamedAndRemoveUntil('/login', (route) => false);
+              },
+            ),
+          ],
         ),
       );
-      if (paid == true && mounted) {
-        setState(() => _paymentCompleted = true);
-        await ApiFeedback.show(
-          context,
-          context.strings.isEnglish
-              ? 'Payment approved. You can continue.'
-              : 'Pagamento aprovado. Você pode continuar.',
-          isError: false,
+    } catch (e) {
+      if (mounted) {
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao ativar funcionalidade: $e')),
         );
-        if (mounted) Navigator.pop(context, true);
       }
-    } catch (error) {
-      if (mounted) await ApiFeedback.show(context, '$error');
-    } finally {
-      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -520,30 +498,70 @@ class _PartnerFeatureAccessPageState
 
   List<String> _benefits(bool en, String key) {
     final values = switch (key) {
+      'financial_management' => en
+          ? [
+              'Complete financial dashboard with custom calendar filter',
+              'Cost centers management (Revenue, Expense, Mixed)',
+              'Manual income and expense entries with payment method tracking',
+              'Segregated revenue streams: Parking vs Convenience Store',
+              'Reconciliation and net earnings real-time calculation',
+            ]
+          : [
+              'Painel financeiro profissional com filtro por calendário e mês atual',
+              'Gestão de Centros de Custo (Receitas, Despesas e Mistos)',
+              'Lançamentos manuais de caixa com categoria e forma de pagamento',
+              'Separação clara entre receitas de estacionamento e loja de conveniência',
+              'Conciliação em tempo real e cálculo de lucro líquido real',
+            ],
+      'convenience_management' || 'convenience_store' => en
+          ? [
+              'Complete POS counter with barcode camera scanner',
+              'Cash bleed / withdrawal (Sangria) with manager receipt',
+              'Stock control, inventory alerts, and shift closing reports',
+              'Discount limits, cancellation security and non-fiscal customer receipt',
+            ]
+          : [
+              'Frente de caixa (PDV) moderna com leitor de código de barras por câmera',
+              'Sangria de caixa com emissão de comprovante e identificação de responsável',
+              'Controle de estoque, alerta de reposição e relatório de fechamento de turno',
+              'Descontos controlados, cancelamento seguro e cupom não fiscal com CPF',
+            ],
+      'team_management' => en
+          ? [
+              'Granular permissions matrix for operators and managers',
+              'Turn control, separate cash drawers for parking and store',
+              'Audit log of all actions by operator',
+            ]
+          : [
+              'Matriz granular de permissões para operadores e gestores',
+              'Controle de turnos e abertura de caixas de estacionamento e conveniência',
+              'Auditoria completa de operações por operador',
+            ],
       'additional_units' =>
         en
             ? [
                 'Centralized management for every branch',
                 'Separate services and teams by unit',
                 'Combined and individual financial reports',
+                'Consistent fee rules applied across all branches',
               ]
             : [
                 'Gestão centralizada de todas as filiais',
                 'Serviços e equipes separados por unidade',
                 'Relatórios financeiros consolidados e individuais',
+                'Taxas padronizadas aplicadas igualmente a todas as filiais',
               ],
-      'convenience_management' =>
-        en
-            ? [
-                'Point of sale with categories and barcode search',
-                'Stock control and shift closing report',
-                'Non-fiscal receipt for each sale',
-              ]
-            : [
-                'Ponto de venda com categorias e busca por código de barras',
-                'Controle de estoque e fechamento do caixa',
-                'Comprovante não fiscal para cada venda',
-              ],
+      'additional_services' => en
+          ? [
+              'Offer extra services (Car wash, valet, detailing, oil check)',
+              'Automatic calculation of extra service fees',
+              'Integrated billing on checkout',
+            ]
+          : [
+              'Oferta de serviços extras (Lava-jato, valet, estética automotiva)',
+              'Cálculo e cobrança automática de taxas sobre serviços extras',
+              'Faturamento integrado no checkout do cliente',
+            ],
       _ =>
         en
             ? [
@@ -558,51 +576,5 @@ class _PartnerFeatureAccessPageState
               ],
     };
     return values;
-  }
-
-  List<Map<String, dynamic>> _contractedModules(bool en) => [
-    for (final entry in widget.partner.features.entries)
-      if (entry.value is Map<String, dynamic>)
-        {
-          'name': en
-              ? ((entry.value as Map<String, dynamic>)['name_en'] as String? ??
-                    entry.key)
-              : ((entry.value as Map<String, dynamic>)['name'] as String? ??
-                    entry.key),
-          'is_enabled': entry.key == widget.featureKey
-              ? _paymentCompleted
-              : (entry.value as Map<String, dynamic>)['is_enabled'] == true,
-          'amount': entry.key == widget.featureKey
-              ? _requestAmount()
-              : (((entry.value as Map<String, dynamic>)['billing_prices']
-                                as Map<String, dynamic>?)?['monthly']
-                            as num?)
-                        ?.toDouble() ??
-                    ((entry.value as Map<String, dynamic>)['price'] as num?)
-                        ?.toDouble() ??
-                    0,
-        },
-  ];
-
-  Future<void> _chooseReceipt() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
-      withData: true,
-    );
-    if (!mounted || result == null || result.files.isEmpty) return;
-    final file = result.files.single;
-    if (file.bytes == null || file.size > 30 * 1024 * 1024) {
-      setState(
-        () => _message = context.strings.isEnglish
-            ? 'The file must be available in memory and no larger than 30 MB.'
-            : 'O arquivo deve estar disponível para envio e ter no máximo 30 MB.',
-      );
-      return;
-    }
-    setState(() {
-      _receipt = file;
-      _message = null;
-    });
   }
 }

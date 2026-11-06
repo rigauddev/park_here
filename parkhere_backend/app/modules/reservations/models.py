@@ -41,7 +41,10 @@ class Reservation(BaseModel):
     terms_version = Column(String(40), nullable=True)
     terms_locale = Column(String(10), nullable=True)
     accepted_terms_snapshot = Column(Text, nullable=True)
-    notification_status = Column(String(40), nullable=False, default="sent_to_parking")
+    # New fields for recurring payments and check‑in alerts
+    is_recurring = Column(Boolean, nullable=False, default=False)
+    recurring_discount_percent = Column(Float, nullable=False, default=0.0)
+    needs_checkin_alert = Column(Boolean, nullable=False, default=False)
     spot_code = Column(String(20), nullable=True)
     arrival_estimate_at = Column(DateTime(timezone=True), nullable=True)
     is_manual_arrival = Column(Boolean, nullable=False, default=False)

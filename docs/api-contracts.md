@@ -1143,3 +1143,86 @@ Response:
 O resultado final é reconciliado por webhook; o cliente não pode marcar uma
 transação como paga. Em homologação, configure `PAYMENT_PROVIDER=mercado_pago`
 e credenciais apenas no backend.
+
+## Gestão Financeira Pro: Centros de Custo e Lançamentos Manuais
+
+### 1. `GET /partners/financial-summary`
+- Parâmetros opcionais: `start_date` (YYYY-MM-DD), `end_date` (YYYY-MM-DD), `period_days` (inteiro).
+- Se omitidos, o padrão é o **mês calendário atual** (do primeiro ao último dia).
+- Response inclui:
+  - `consolidated`: Receita bruta combinada, estornos, taxas da plataforma, receita líquida real e número de operações.
+  - `parking`: Faturamento de vagas, estornos, taxas e ticket médio.
+  - `convenience`: Vendas no balcão, descontos, cancelamentos e receita líquida.
+  - `manual_entries`: `total_income`, `total_expense`, `incomes_count`, `expenses_count`.
+  - `cash_bleeds`: `total_amount`, `count`.
+
+### 2. `GET /partners/financial/cost-centers`
+- Retorna lista de centros de custo ativos do parceiro (com auto-seeding de centros padrão caso ainda não existam: Operacional, Administrativo, Manutenção, etc.).
+- Response: `[{"id": "...", "name": "...", "code": "...", "type": "both|revenue|expense", "is_active": true}]`
+
+### 3. `POST /partners/financial/cost-centers`
+- Request: `{"name": "...", "code": "...", "type": "both|revenue|expense", "parking_id": "..."}`
+- Response: Status 201 com o centro de custo criado.
+
+### 4. `DELETE /partners/financial/cost-centers/{id}`
+- Desativação lógica do centro de custo (`is_active = false`). Status 204.
+
+### 5. `GET /partners/financial/entries`
+- Filtros opcionais: `start_date`, `end_date`, `entry_type` (`income` | `expense`), `cost_center_id`. Padrão: mês atual.
+- Response: Lista ordenada por data decrescente com centro de custo vinculado, responsável, valor e forma de pagamento.
+
+### 6. `POST /partners/financial/entries`
+- Request:
+  ```json
+  {
+    "entry_type": "income|expense",
+    "category": "Manutenção",
+    "description": "Troca de lâmpadas do estacionamento",
+    "amount": 150.00,
+    "payment_method": "pix",
+    "cost_center_id": "uuid...",
+    "entry_date": "2026-10-31T12:00:00Z"
+  }
+  ```
+- Response: Status 201 com registro salvo e status `completed`.
+
+## Sangria de Caixa (Conveniência & Estacionamento)
+
+### 1. `POST /parkings/{parking_id}/cash-bleed`
+- Registra a retirada física de dinheiro da gaveta de caixa para cofre ou depósito.
+- Request: `{"amount": 200.00, "reason": "Recolhimento para cofre", "notes": "Notas altas"}`
+- Response: Dados da sangria, identificação do operador, data e comprovante emitido.
+
+### 2. `GET /parkings/{parking_id}/cash-bleeds?limit=50`
+- Retorna o histórico de sangrias do estacionamento/conveniência ordenadas por data decrescente.
+
+## Contratação e Ativação Direta de Funcionalidades
+
+### `POST /partners/features/{feature_key}/activate`
+- Permite contratação direta ou ativação de teste gratuito sem aprovação manual:
+- Request:
+  ```json
+  {
+    "modality": "trial|direct_debit|pix|credit_card|debit_card",
+    "billing_period": "monthly|annual"
+  }
+  ```
+- Regras:
+  - `trial`: Ativa teste gratuito por 30 dias (`trial_ends_at = now + 30d`, `is_trial = true`).
+  - `direct_debit`: Ativa com débito automático via split de taxas das reservas. O valor da mensalidade entra em `accumulated_debt` e é cobrado automaticamente quando houver repasses de reservas que cubram o valor.
+  - `pix`, `credit_card`, `debit_card`: Ativação direta via pagamento.
+- Response:
+  ```json
+  {
+    "success": true,
+    "feature_key": "financial_management",
+    "is_enabled": true,
+    "is_trial": false,
+    "billing_modality": "direct_debit",
+    "accumulated_debt": 79.90,
+    "requires_restart": true,
+    "message": "Funcionalidade ativada com cobrança automática via débito no split de taxas das reservas."
+  }
+  ```
+- Ao receber `requires_restart: true`, o aplicativo exibe o aviso ao usuário, limpa o cache local e desloga para refazer o login com as permissões atualizadas.
+
