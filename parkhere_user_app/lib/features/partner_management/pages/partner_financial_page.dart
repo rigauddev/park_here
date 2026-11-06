@@ -7,6 +7,7 @@ import '../models/partner_profile_model.dart';
 import '../models/partner_operational_models.dart';
 import '../providers/partner_operations_provider.dart';
 import '../providers/partner_profile_provider.dart';
+import '../providers/partner_parking_provider.dart';
 
 class PartnerFinancialPage extends ConsumerWidget {
   const PartnerFinancialPage({super.key});
@@ -138,6 +139,7 @@ class _FinancialDashboardViewState
   int? _periodDays;
   String _selectedFilter = 'month'; // 'month', 'today', '7d', '30d', 'all', 'custom'
   String _parkingSubFilter = 'paid'; // 'all', 'paid', 'refunded', 'cancelled'
+  String? _selectedParkingId;
 
   @override
   void initState() {
@@ -167,6 +169,7 @@ class _FinancialDashboardViewState
       startDate: sStr,
       endDate: eStr,
       periodDays: _periodDays,
+      parkingId: _selectedParkingId,
     );
   }
 
@@ -242,6 +245,7 @@ class _FinancialDashboardViewState
     final reservationsAsync = ref.watch(partnerFinancialReportProvider);
     final entriesAsync = ref.watch(partnerFinancialEntriesProvider(params));
     final costCentersAsync = ref.watch(partnerCostCentersProvider);
+    final parkingsAsync = ref.watch(partnerParkingProvider);
 
     return Column(
       children: [
@@ -278,6 +282,25 @@ class _FinancialDashboardViewState
                   ),
                 ],
               ),
+              parkingsAsync.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (parkings) => DropdownButtonFormField<String?>(
+                  initialValue: _selectedParkingId,
+                  decoration: const InputDecoration(
+                    labelText: 'Filtrar unidade de conveniência',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.storefront_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Todas as conveniências')),
+                    for (final parking in parkings)
+                      DropdownMenuItem<String?>(value: parking.id, child: Text(parking.name)),
+                  ],
+                  onChanged: (value) => setState(() => _selectedParkingId = value),
+                ),
+              ),
+              const SizedBox(height: 8),
               const SizedBox(height: 6),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,

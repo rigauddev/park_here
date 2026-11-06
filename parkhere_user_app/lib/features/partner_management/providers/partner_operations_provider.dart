@@ -55,11 +55,13 @@ class FinancialFilterParams {
   final int? periodDays;
   final String? startDate;
   final String? endDate;
+  final String? parkingId;
 
   const FinancialFilterParams({
     this.periodDays,
     this.startDate,
     this.endDate,
+    this.parkingId,
   });
 
   @override
@@ -69,11 +71,12 @@ class FinancialFilterParams {
           runtimeType == other.runtimeType &&
           periodDays == other.periodDays &&
           startDate == other.startDate &&
-          endDate == other.endDate;
+          endDate == other.endDate &&
+          parkingId == other.parkingId;
 
   @override
   int get hashCode =>
-      periodDays.hashCode ^ startDate.hashCode ^ endDate.hashCode;
+      periodDays.hashCode ^ startDate.hashCode ^ endDate.hashCode ^ parkingId.hashCode;
 }
 
 final partnerFilteredFinancialSummaryProvider =
@@ -88,6 +91,7 @@ final partnerFilteredFinancialSummaryProvider =
       } else if (params.periodDays != null) {
         queryParams.add('period_days=${params.periodDays}');
       }
+      if (params.parkingId != null) queryParams.add('parking_id=${params.parkingId}');
 
       final qs = queryParams.isNotEmpty ? '?${queryParams.join('&')}' : '';
       return ApiService().getAuthorizedMap(

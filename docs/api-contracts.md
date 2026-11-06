@@ -1147,7 +1147,8 @@ e credenciais apenas no backend.
 ## Gestão Financeira Pro: Centros de Custo e Lançamentos Manuais
 
 ### 1. `GET /partners/financial-summary`
-- Parâmetros opcionais: `start_date` (YYYY-MM-DD), `end_date` (YYYY-MM-DD), `period_days` (inteiro).
+- Parâmetros opcionais: `start_date` (YYYY-MM-DD), `end_date` (YYYY-MM-DD), `period_days` (inteiro) e `parking_id`.
+- `parking_id` filtra simultaneamente as receitas de reservas e as vendas de conveniência daquela unidade; sem o filtro, o resumo permanece consolidado para todo o tenant.
 - Se omitidos, o padrão é o **mês calendário atual** (do primeiro ao último dia).
 - Response inclui:
   - `consolidated`: Receita bruta combinada, estornos, taxas da plataforma, receita líquida real e número de operações.

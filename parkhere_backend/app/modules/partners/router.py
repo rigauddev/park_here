@@ -1359,6 +1359,7 @@ async def get_partner_financial_summary(
     period_days: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    parking_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1397,6 +1398,8 @@ async def get_partner_financial_summary(
         .join(Parking, Parking.id == Reservation.parking_id)
         .where(Parking.tenant_id == current_user.tenant_id)
     )
+    if parking_id:
+        res_query = res_query.where(Reservation.parking_id == parking_id)
     if start_time:
         res_query = res_query.where(Reservation.created_at >= start_time)
     if end_time:
@@ -1417,6 +1420,8 @@ async def get_partner_financial_summary(
     conv_query = select(ParkingConvenienceSale).where(
         ParkingConvenienceSale.tenant_id == current_user.tenant_id
     )
+    if parking_id:
+        conv_query = conv_query.where(ParkingConvenienceSale.parking_id == parking_id)
     if start_time:
         conv_query = conv_query.where(ParkingConvenienceSale.created_at >= start_time)
     if end_time:
