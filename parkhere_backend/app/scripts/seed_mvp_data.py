@@ -289,8 +289,9 @@ async def seed_homologation_valenca():
                                               billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
                                               notes="Homologação"))
         await db.commit()
-        print("Seed de homologação criado: Valença, estacionamento 24h, sem reservas.")
+        print("Seed de homologação criado: Valença, estacionamento 24h, locadora, 5 guias, sem reservas.")
         print("admin@parkhere.test / gestor@parkhere.test / operador1..3@parkhere.test / cliente@parkhere.test - senha 123456")
+        print("Guias: guia1@servicehub.test até guia5@servicehub.test - senha 123456")
         return
 
     async with AsyncSessionLocal() as db:
