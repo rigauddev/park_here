@@ -43,6 +43,7 @@ from app.modules.platform_fees.models import AdminAuditLog
 from app.modules.platform_fees.feature_catalog import feature_by_key, features_for_service_type
 from app.modules.tenants.models.tenant_models import Tenant
 from app.modules.partners.document_models import PartnerDocument
+from app.modules.rentals.models import RentalCompany
 from app.modules.payments.models import PartnerPaymentAccount, PartnerFeeDebt, PartnerFeeSettlement, PaymentTransaction
 from app.modules.reservations.service import (
     calculate_checkout_excess,
@@ -363,6 +364,10 @@ async def get_my_partner_profile(
         select(PartnerProfile).where(PartnerProfile.tenant_id == current_user.tenant_id)
     )
     profile = profile_result.scalar_one_or_none()
+    has_rental_service = bool(await db.scalar(select(func.count(RentalCompany.id)).where(
+        RentalCompany.tenant_id == current_user.tenant_id,
+        RentalCompany.is_active.is_(True),
+    )) or 0)
 
     payment_result = await db.execute(
         select(PartnerPaymentAccount)
@@ -484,6 +489,7 @@ async def get_my_partner_profile(
         "available_operator_permissions": OPERATOR_PERMISSION_LABELS,
         "user_email": current_user.email,
         "service_type": profile.service_type if profile else None,
+        "has_rental_service": has_rental_service,
         "document_type": profile.document_type if profile else None,
         "document_number": profile.document_number if profile else None,
         "company_name": profile.company_name if profile else None,

@@ -25,6 +25,7 @@ class PartnerProfileModel {
   final Map<String, String> availableOperatorPermissions;
   final String userEmail;
   final String? serviceType;
+  final bool hasRentalService;
   final String? companyName;
   final String approvalStatus;
   final PartnerPaymentAccountSummary? paymentAccount;
@@ -43,6 +44,7 @@ class PartnerProfileModel {
     required this.availableOperatorPermissions,
     required this.userEmail,
     required this.serviceType,
+    required this.hasRentalService,
     required this.companyName,
     required this.approvalStatus,
     required this.paymentAccount,
@@ -71,6 +73,7 @@ class PartnerProfileModel {
               .map((key, value) => MapEntry(key, value as String)),
       userEmail: json['user_email'] as String? ?? '',
       serviceType: json['service_type'] as String?,
+      hasRentalService: json['has_rental_service'] == true,
       companyName: json['company_name'] as String?,
       approvalStatus: json['approval_status'] as String? ?? 'missing_profile',
       paymentAccount: paymentJson is Map<String, dynamic>

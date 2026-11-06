@@ -18,8 +18,9 @@ alterar `alembic_version`), portanto deve ser usado somente em homologação/loc
 Se o banco foi apagado, execute os dois comandos acima novamente após subir o MySQL.
 
 O seed recria um parceiro de estacionamento 24h em Valença, um parceiro de
-locação de veículos separado, dois parceiros de guia turístico afiliados,
-cliente/veículo/cartão, operadores, taxas e escalas. Reservas não são criadas automaticamente:
+locação de veículos separado, dois parceiros de guia turístico afiliados e uma
+empresa híbrida com estacionamento e locadora de carros/motos na mesma conta,
+além de cliente/veículo/cartão, operadores, taxas e escalas. Reservas não são criadas automaticamente:
 elas devem ser geradas pelos testes manuais. A unidade de Valença usada nos testes
 permanece como cenário principal.
 Para

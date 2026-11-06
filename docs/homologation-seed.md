@@ -7,6 +7,7 @@ O seed local cria um cenário pequeno e repetível para os testes manuais:
 - veículo e cartão de teste do cliente;
 - um parceiro de locação de veículos separado, com três veículos e dois planos;
 - dois parceiros de guia turístico aprovados e afiliados ao estacionamento de Valença;
+- uma empresa multi-serviço com estacionamento e locadora de carros/moto na mesma conta;
 - escala de três operadores e taxas fictícias de homologação;
 - nenhum estacionamento de outras cidades e nenhuma reserva inicial.
 
@@ -31,6 +32,7 @@ Locação e guias:
 | Perfil | E-mail |
 | --- | --- |
 | Gestor da locadora | `gestor.locadora@servicehub.test` |
+| Gestor da empresa híbrida | `gestor.mobilidade@servicehub.test` |
 | Guia turístico 1 | `guia1@servicehub.test` |
 | Guia turístico 2 | `guia2@servicehub.test` |
 

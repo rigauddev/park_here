@@ -125,6 +125,14 @@ class _PartnerManagementBody extends StatelessWidget {
             onTap: () => _open(context, const ParkingDashboardPage()),
             featureKey: 'dashboard',
           ),
+          if (partner.hasRentalService)
+            _ManagementAction(
+              icon: Icons.directions_car_filled_outlined,
+              title: 'Locação de veículos',
+              description: 'Frota, grupos, planos e disponibilidade da locadora.',
+              onTap: () => _open(context, const RentalManagementPage()),
+              featureKey: 'rental_management',
+            ),
           _ManagementAction(
             icon: Icons.local_parking,
             title: 'Gestão de serviços',

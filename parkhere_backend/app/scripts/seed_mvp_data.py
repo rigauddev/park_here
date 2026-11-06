@@ -88,6 +88,16 @@ async def seed_homologation_valenca():
         db.add(rental_tenant)
         await db.flush()
 
+        hybrid_tenant = Tenant(
+            name="ServiceHub Mobilidade Valença",
+            cnpj="55666777000188",
+            email="gestor.mobilidade@servicehub.test",
+            plan=PlanEnum.PRO,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(hybrid_tenant)
+        await db.flush()
+
         admin = User(
             name="Administrador ParkHere", firt_name="Administrador",
             email="admin@parkhere.test", password_hash=hash_password("123456"),
@@ -121,7 +131,13 @@ async def seed_homologation_valenca():
             phone="75999990100", phone_verified=True, email_verified=True,
             role=UserRoleEnum.PARTNER_MANAGER,
         )
-        db.add_all([admin, manager, *operators, customer, rental_manager])
+        hybrid_manager = User(
+            tenant_id=hybrid_tenant.id, name="Gestor ServiceHub Mobilidade", firt_name="Gestor",
+            email="gestor.mobilidade@servicehub.test", password_hash=hash_password("123456"),
+            phone="75999990101", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.PARTNER_MANAGER,
+        )
+        db.add_all([admin, manager, *operators, customer, rental_manager, hybrid_manager])
         await db.flush()
 
         parking = Parking(
@@ -157,6 +173,40 @@ async def seed_homologation_valenca():
             description="Lavagem externa opcional", price=30, is_active=True,
         ))
 
+        hybrid_parking = Parking(
+            tenant_id=hybrid_tenant.id, name="ServiceHub Mobilidade Estacionamento",
+            address="Rua das Palmeiras, 120, Valença - BA",
+            street="Rua das Palmeiras", number="120", neighborhood="Centro",
+            postal_code="45400-000", city="Valença", lat=-13.3712, lng=-39.0719,
+            rating=4.8, total_spots=24, available_spots=24, covered_spots=10,
+            uncovered_spots=14, vip_spots=0, large_spots=0, bus_spots=0,
+            pickup_spots=0, moto_home_spots=0, has_covered_area=True,
+            has_24h_gate=True, has_security_system=True, is_active=True,
+            accepts_guide_affiliates=True, work_regime="three_shifts",
+            operating_hours=json.dumps({day: {"open": "00:00", "close": "23:59"}
+                                        for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}),
+            category_pricing=json.dumps({
+                "covered": {"first_hour_price": 14, "additional_hour_price": 7,
+                             "daily_price": 52, "weekly_price": 230, "monthly_price": 380},
+                "uncovered": {"first_hour_price": 10, "additional_hour_price": 5,
+                               "daily_price": 40, "weekly_price": 180, "monthly_price": 300},
+            }),
+            covered_first_hour_price=14, covered_additional_hour_price=7,
+            covered_daily_price=52, covered_weekly_price=230, covered_monthly_price=380,
+            uncovered_first_hour_price=10, uncovered_additional_hour_price=5,
+            uncovered_daily_price=40, uncovered_weekly_price=180, uncovered_monthly_price=300,
+            first_hour_price=10, additional_hour_price=5, daily_price=40,
+            weekly_price=180, monthly_price=300,
+        )
+        db.add(hybrid_parking)
+        await db.flush()
+        db.add(ParkingService(
+            parking_id=hybrid_parking.id, code="vehicle_rental_pickup",
+            name="Retirada de veículos alugados",
+            description="Retire ou devolva o veículo alugado nesta unidade.",
+            price=0, is_active=True,
+        ))
+
         db.add(PartnerProfile(
             tenant_id=tenant.id, service_type="parking", company_name="ParkHere Valença",
             cnpj=tenant.cnpj, document_type="cnpj", document_number=tenant.cnpj,
@@ -168,6 +218,13 @@ async def seed_homologation_valenca():
             company_name="ServiceHub Locadora Valença", cnpj=rental_tenant.cnpj,
             document_type="cnpj", document_number=rental_tenant.cnpj,
             registration_status="active", responsible_name=rental_manager.name,
+            approval_status="approved",
+        ))
+        db.add(PartnerProfile(
+            tenant_id=hybrid_tenant.id, service_type="parking",
+            company_name="ServiceHub Mobilidade Valença", cnpj=hybrid_tenant.cnpj,
+            document_type="cnpj", document_number=hybrid_tenant.cnpj,
+            registration_status="active", responsible_name=hybrid_manager.name,
             approval_status="approved",
         ))
 
@@ -202,6 +259,39 @@ async def seed_homologation_valenca():
         db.add_all([
             RentalPlan(company_id=rental_company.id, group_id=rental_groups[0].id, name="Diária econômica", description="Plano diário com quilometragem controlada.", vehicle_type="car", price_per_day=159, price_per_week=990, price_per_month=3200, deposit_amount=500, mileage_limit_per_day=200, included_items=["Proteção básica"]),
             RentalPlan(company_id=rental_company.id, group_id=rental_groups[1].id, name="SUV conforto", description="SUV para viagens e deslocamentos longos.", vehicle_type="suv", price_per_day=249, price_per_week=1540, price_per_month=4990, deposit_amount=800, mileage_limit_per_day=250, included_items=["Proteção básica", "Assistência 24h"]),
+        ])
+
+        # A mesma conta também possui um serviço de locação, demonstrando a
+        # relação matriz/filial sem misturar o inventário do estacionamento.
+        hybrid_rental = RentalCompany(
+            tenant_id=hybrid_tenant.id,
+            parent_unit_id=hybrid_parking.id,
+            parent_service_type="parking",
+            parent_parking_id=hybrid_parking.id,
+            name="ServiceHub Mobilidade Locadora",
+            service_type="vehicle_rental",
+            unit_kind="branch",
+            address="Rua das Palmeiras, 120, Valença - BA",
+            latitude=-13.3712,
+            longitude=-39.0719,
+            cnpj=hybrid_tenant.cnpj,
+            is_active=True,
+        )
+        db.add(hybrid_rental)
+        await db.flush()
+        hybrid_groups = [
+            RentalVehicleGroup(company_id=hybrid_rental.id, name="Compacto", code="COMPACT", vehicle_type="car", description="Carros econômicos para deslocamentos urbanos.", suggested_price_per_day=149, is_default=True),
+            RentalVehicleGroup(company_id=hybrid_rental.id, name="Duas rodas", code="MOTO", vehicle_type="motorcycle", description="Motocicletas para mobilidade ágil.", suggested_price_per_day=79, is_default=True),
+        ]
+        db.add_all(hybrid_groups)
+        await db.flush()
+        db.add_all([
+            RentalVehicle(company_id=hybrid_rental.id, group_id=hybrid_groups[0].id, vehicle_type="car", brand="Renault", model="Kwid", year=2025, plate="HBR1A25", price_per_day=149, status="available"),
+            RentalVehicle(company_id=hybrid_rental.id, group_id=hybrid_groups[1].id, vehicle_type="motorcycle", brand="Honda", model="CG 160", year=2025, plate="HBR2B25", price_per_day=79, status="available"),
+        ])
+        db.add_all([
+            RentalPlan(company_id=hybrid_rental.id, group_id=hybrid_groups[0].id, name="Diária compacto", description="Plano diário para carro compacto.", vehicle_type="car", price_per_day=149, price_per_week=920, price_per_month=2900, deposit_amount=450, mileage_limit_per_day=200, included_items=["Proteção básica"]),
+            RentalPlan(company_id=hybrid_rental.id, group_id=hybrid_groups[1].id, name="Diária motocicleta", description="Plano diário para motocicleta.", vehicle_type="motorcycle", price_per_day=79, price_per_week=490, price_per_month=1600, deposit_amount=250, mileage_limit_per_day=180, included_items=["Capacete"]),
         ])
 
         guide_tenants = [
@@ -313,10 +403,18 @@ async def seed_homologation_valenca():
                                               price=49.90 if feature != "dashboard" else 39.90,
                                               billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
                                               notes="Homologação"))
+        for feature in ("financial_management", "dashboard"):
+            db.add(PartnerFeatureEntitlement(tenant_id=hybrid_tenant.id, feature_key=feature,
+                                              is_enabled=(feature == "financial_management"),
+                                              is_paid=(feature != "financial_management"),
+                                              price=49.90 if feature != "dashboard" else 39.90,
+                                              billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
+                                              notes="Homologação multi-serviço"))
         await db.commit()
-        print("Seed de homologação criado: parceiros separados de estacionamento, locação e dois guias, sem reservas.")
+        print("Seed de homologação criado: estacionamento, locadora, dois guias e empresa híbrida estacionamento + locação, sem reservas.")
         print("admin@parkhere.test / gestor@parkhere.test / operador1..3@parkhere.test / cliente@parkhere.test - senha 123456")
         print("Locadora: gestor.locadora@servicehub.test / senha 123456")
+        print("Empresa híbrida: gestor.mobilidade@servicehub.test / senha 123456")
         print("Guias: guia1@servicehub.test e guia2@servicehub.test - senha 123456")
         return
 

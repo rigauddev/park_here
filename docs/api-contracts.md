@@ -227,7 +227,9 @@ estornar; o app nunca libera uma reserva apenas porque retornou da maquininha.
 - `GET /partners/me` retorna `features` como mapa por chave, inclusive os
   módulos bloqueados, com `name`, `name_en`, descrições, `is_enabled`,
   `is_paid`, `price`, `billing_period`, `requestable` e `quantity_based`. Inclui
-  também `unit_count`, `unit_limit`, `service_count` e `service_limit`.
+  também `unit_count`, `unit_limit`, `service_count`, `service_limit` e
+  `has_rental_service`. Esse último campo permite mostrar a gestão de locação
+  como serviço adicional da mesma conta, sem criar um menu ou tenant separado.
 - Rotas de estacionamento, serviços, equipe, afiliações, mapa, reservas e
   Financeiro Pro verificam entitlements no backend. Reservas também atendem o
   caixa básico, que permanece incluído.
