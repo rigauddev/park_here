@@ -6,13 +6,8 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 PARTNER_SERVICE_TYPES = {
     'parking',
-    'car_wash',
-    'hotel',
-    'restaurant',
+    'vehicle_rental',
     'tour_guide',
-    'tourism_company',
-    'transport',
-    'other',
 }
 
 

@@ -11,6 +11,7 @@ from ..models import (
     RentalCheckout, RentalPlan, RentalMaintenance, RentalItem, RentalContract, RentalFine,
 )
 from app.modules.parkings.models import Parking
+from app.modules.partners.models import PartnerProfile
 
 class RentalService:
     DEFAULT_TERMS = (
@@ -18,6 +19,17 @@ class RentalService:
         "respeitará o período contratado, os limites de quilometragem e devolverá o veículo "
         "à locadora para a vistoria final."
     )
+
+    @staticmethod
+    async def ensure_approved_partner(db: AsyncSession, current_user: User) -> None:
+        if current_user.role == UserRoleEnum.SUPER_ADMIN:
+            return
+        profile = await db.scalar(select(PartnerProfile).where(
+            PartnerProfile.tenant_id == current_user.tenant_id,
+            PartnerProfile.service_type == 'vehicle_rental',
+        ))
+        if profile is None or profile.approval_status != 'approved':
+            raise HTTPException(status_code=403, detail='A conta de locação ainda aguarda aprovação da plataforma')
 
     @staticmethod
     async def list_items(db: AsyncSession, company_id: str, current_user: User):
@@ -32,6 +44,7 @@ class RentalService:
         company = await RentalService.company(db, data.company_id, current_user)
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Sem permissão para cadastrar itens")
+        await RentalService.ensure_approved_partner(db, current_user)
         row = RentalItem(**data.model_dump())
         db.add(row); await db.commit(); await db.refresh(row); return row
 
@@ -92,6 +105,7 @@ class RentalService:
         company = await RentalService.company(db, data.company_id, current_user)
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Sem permissão para cadastrar planos")
+        await RentalService.ensure_approved_partner(db, current_user)
         plan = RentalPlan(**data.model_dump())
         db.add(plan); await db.commit(); await db.refresh(plan); return plan
 
@@ -118,6 +132,7 @@ class RentalService:
         company = await RentalService.company(db, vehicle.company_id, current_user)
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Sem permissão para registrar manutenção")
+        await RentalService.ensure_approved_partner(db, current_user)
         row = RentalMaintenance(**data.model_dump())
         db.add(row); await db.commit(); await db.refresh(row); return row
 
@@ -149,6 +164,7 @@ class RentalService:
             raise HTTPException(status_code=403, detail="Somente o gestor do parceiro pode criar uma locadora")
         if not current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Conta sem parceiro associado")
+        await RentalService.ensure_approved_partner(db, current_user)
         if data.parent_parking_id:
             parent = await db.scalar(select(Parking).where(
                 Parking.id == data.parent_parking_id,
@@ -167,6 +183,7 @@ class RentalService:
         company = await RentalService.company(db, data.company_id, current_user)
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Sem permissão para cadastrar veículos")
+        await RentalService.ensure_approved_partner(db, current_user)
         vehicle = RentalVehicle(**data.model_dump()); db.add(vehicle); await db.commit(); await db.refresh(vehicle); return vehicle
 
     @staticmethod

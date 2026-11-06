@@ -28,6 +28,8 @@ class VehicleCreate(BaseModel):
     price_per_day: float = Field(gt=0)
     plate: str | None = Field(default=None, max_length=20)
     year: int | None = Field(default=None, ge=1950, le=2100)
+    photo_urls: list[str] = Field(default_factory=list, max_length=8)
+    specifications: dict[str, Any] = Field(default_factory=dict)
 
 class VehicleOut(VehicleCreate):
     model_config = ConfigDict(from_attributes=True)

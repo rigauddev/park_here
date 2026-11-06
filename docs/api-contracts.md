@@ -1233,7 +1233,8 @@ publicadas; parceiros veem apenas as unidades do próprio tenant.
 
 `GET /rentals/companies/{company_id}/vehicles` lista veículos disponíveis.
 `POST /rentals/companies` e `POST /rentals/vehicles` são restritos ao gestor do
-tenant. O preço diário é cadastrado pelo gestor e nunca é confiado ao app.
+tenant e exigem que o parceiro de locação esteja aprovado pela plataforma. O
+preço diário é cadastrado pelo gestor e nunca é confiado ao app.
 
 `POST /rentals/reservations` recebe `company_id`, `vehicle_id`, `start_date`,
 `end_date`, `extras` e `km_start`. Somente clientes podem criar reservas; a API
@@ -1254,6 +1255,11 @@ apenas para compatibilidade com a matriz de estacionamento. A API valida a
 matriz de estacionamento quando esse campo legado é usado. `VehicleCreate` exige
 `vehicle_type` (`car`, `suv`, `pickup`, `van`, `motorcycle`, `scooter`,
 `bicycle`, `bus`, `truck`, `motorhome` ou `electric_car`).
+Também aceita `photo_urls` (até oito referências de imagens próprias ou de um
+catálogo licenciado) e `specifications` (metadados do modelo/ano). O MVP não
+baixa imagens externas automaticamente: fotos reais devem ser enviadas pelo
+parceiro ou selecionadas de um catálogo cuja licença e atribuição estejam
+registradas.
 
 Planos e frota:
 

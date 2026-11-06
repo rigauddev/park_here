@@ -13,6 +13,7 @@ import '../../features/parking_search/providers/parking_provider.dart';
 import '../../features/partner_management/pages/partner_financial_page.dart';
 import '../../features/partner_management/pages/partner_management_home_page.dart';
 import '../../features/rental/pages/rental_companies_page.dart';
+import '../../features/rental/pages/rental_management_page.dart';
 import '../../features/partner_management/pages/partner_parking_map_page.dart';
 import '../../features/partner_management/pages/partner_reservations_page.dart';
 import '../../features/partner_management/pages/partner_users_page.dart';
@@ -52,6 +53,7 @@ enum _MainArea {
   help,
   conveniencePos,
   convenienceProducts,
+  rentalManagement,
 }
 
 class MainNavigation extends ConsumerStatefulWidget {
@@ -574,6 +576,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return const _ConvenienceEntryPage(pos: true);
       case _MainArea.convenienceProducts:
         return const _ConvenienceEntryPage(pos: false);
+      case _MainArea.rentalManagement:
+        return const RentalManagementPage();
     }
   }
 
@@ -647,6 +651,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.conveniencePos:
       case _MainArea.convenienceProducts:
         return isPartner ? 0 : 0;
+      case _MainArea.rentalManagement:
+        return 0;
     }
   }
 
@@ -846,6 +852,12 @@ class _WebMenu extends ConsumerWidget {
                       'Financeiro Pro',
                       _MainArea.financial,
                     ),
+                  if (isPartner && isPartnerOwner)
+                    _MenuItem(
+                      Icons.directions_car_filled_outlined,
+                      'Gestão da locadora',
+                      _MainArea.rentalManagement,
+                    ),
                 ],
                 selectedArea: selectedArea,
                 onSelected: onSelected,
@@ -940,22 +952,16 @@ class _WebMenu extends ConsumerWidget {
                     serviceTabIndex: 0,
                   ),
                   _MenuItem(
-                    Icons.local_car_wash,
-                    'Lava jato',
+                    Icons.tour_outlined,
+                    'Guia turístico',
                     _MainArea.services,
                     serviceTabIndex: 1,
                   ),
                   _MenuItem(
-                    Icons.hotel_outlined,
-                    'Hotéis',
+                    Icons.directions_car_filled,
+                    'Locação de veículos',
                     _MainArea.services,
                     serviceTabIndex: 2,
-                  ),
-                  _MenuItem(
-                    Icons.tour_outlined,
-                    'Passeios turísticos',
-                    _MainArea.services,
-                    serviceTabIndex: 3,
                   ),
                 ],
                 selectedArea: selectedArea,
@@ -1531,8 +1537,8 @@ class _ServicesHubPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
-      initialIndex: initialIndex,
+      length: 3,
+      initialIndex: initialIndex.clamp(0, 2),
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Serviços'),
@@ -1540,9 +1546,7 @@ class _ServicesHubPage extends StatelessWidget {
             isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.local_parking), text: 'Estacionamento'),
-              Tab(icon: Icon(Icons.local_car_wash), text: 'Lava jato'),
-              Tab(icon: Icon(Icons.hotel_outlined), text: 'Hotéis'),
-              Tab(icon: Icon(Icons.tour_outlined), text: 'Passeios'),
+              Tab(icon: Icon(Icons.tour_outlined), text: 'Guia turístico'),
               Tab(icon: Icon(Icons.directions_car_filled), text: 'Locação'),
             ],
           ),
@@ -1550,8 +1554,6 @@ class _ServicesHubPage extends StatelessWidget {
         body: const TabBarView(
           children: [
             _AvailableParkingsList(),
-            _CarWashServicesList(),
-            _PromotionServicesList(serviceType: _PromotionServiceType.hotel),
             _PromotionServicesList(serviceType: _PromotionServiceType.tourism),
             RentalCompaniesPage(),
           ],
@@ -1627,61 +1629,6 @@ class _ParkingServiceCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _CarWashServicesList extends ConsumerWidget {
-  const _CarWashServicesList();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final parkings = ref.watch(parkingProvider);
-
-    return parkings.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('Erro: $error')),
-      data: (items) {
-        final carWashParkings = items
-            .where((parking) => parking.hasCarWash)
-            .toList();
-
-        if (carWashParkings.isEmpty) {
-          return const Center(child: Text('Nenhum lava jato disponível.'));
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: carWashParkings.length,
-          itemBuilder: (context, index) {
-            final parking = carWashParkings[index];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppTheme.softCyan,
-                  foregroundColor: AppTheme.primary,
-                  child: const Icon(Icons.local_car_wash),
-                ),
-                title: Text(parking.name),
-                subtitle: Text(
-                  'Lavagem a partir de R\$ ${parking.carWashPrice.toStringAsFixed(2)} | ${parking.availableSpots} vagas',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Contratação pelo app entra no próximo bloco.',
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        );
-      },
     );
   }
 }

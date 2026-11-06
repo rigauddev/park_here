@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/services/local_storage_service.dart';
 import '../services/rental_service.dart';
+import 'rental_company_page.dart';
 
 class RentalCompaniesPage extends StatefulWidget {
   const RentalCompaniesPage({super.key});
@@ -54,7 +55,10 @@ class _RentalCompaniesPageState extends State<RentalCompaniesPage> {
                     company['address'] as String? ?? 'Endereço não informado',
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showVehicles(company),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => RentalCompanyPage(company: company)),
+                  ),
                 ),
               );
             },
@@ -64,37 +68,4 @@ class _RentalCompaniesPageState extends State<RentalCompaniesPage> {
     ),
   );
 
-  Future<void> _showVehicles(Map<String, dynamic> company) async {
-    final token = (await LocalStorageService().getTokens())['access'];
-    if (token == null || !mounted) return;
-    final vehicles = await _service.vehicles(company['id'] as String, token);
-    if (!mounted) return;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              company['name'] as String? ?? 'Veículos',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-            for (final vehicle in vehicles)
-              ListTile(
-                leading: const Icon(Icons.directions_car_outlined),
-                title: Text('${vehicle['brand']} ${vehicle['model']}'),
-                subtitle: Text(
-                  'R\$ ${(vehicle['price_per_day'] as num?)?.toStringAsFixed(2) ?? '0,00'} / dia',
-                ),
-              ),
-            if (vehicles.isEmpty)
-              const Text('Nenhum veículo disponível para o período atual.'),
-          ],
-        ),
-      ),
-    );
-  }
 }

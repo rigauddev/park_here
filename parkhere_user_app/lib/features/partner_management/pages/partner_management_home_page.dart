@@ -18,6 +18,7 @@ import 'guide_services_page.dart';
 import 'partner_cash_report_page.dart';
 import 'guide_offer_settings_page.dart';
 import 'partner_feature_access_page.dart';
+import '../../rental/pages/rental_management_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -267,6 +268,30 @@ class _PartnerManagementBody extends StatelessWidget {
             description: 'Roteiros, idiomas, agenda, capacidade e valores.',
             onTap: () => _open(context, const GuideServicesPage()),
             featureKey: 'services_management',
+          ),
+        ];
+      case 'vehicle_rental':
+        return [
+          _ManagementAction(
+            icon: Icons.directions_car_filled,
+            title: 'Locadora e frota',
+            description: 'Unidades, veículos, planos e disponibilidade.',
+            onTap: () => _open(context, const RentalManagementPage()),
+            featureKey: 'rental_management',
+          ),
+          _ManagementAction(
+            icon: Icons.assignment_outlined,
+            title: 'Reservas de locação',
+            description: 'Acompanhe contratos, check-in e checkout.',
+            onTap: () => _showPending(context),
+            featureKey: 'rental_management',
+          ),
+          _ManagementAction(
+            icon: Icons.build_outlined,
+            title: 'Manutenção da frota',
+            description: 'Registre revisões, quilometragem e próximos serviços.',
+            onTap: () => _showPending(context),
+            featureKey: 'rental_management',
           ),
         ];
       case 'tourism_company':

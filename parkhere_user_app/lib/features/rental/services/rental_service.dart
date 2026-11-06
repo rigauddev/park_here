@@ -9,6 +9,21 @@ class RentalService {
     return response.cast<Map<String, dynamic>>();
   }
 
+  Future<Map<String, dynamic>> createCompany({
+    required String name,
+    required String token,
+    String? address,
+    String? cnpj,
+    String? parentUnitId,
+    String? parentServiceType,
+  }) => _api.postAuthorized('/rentals/companies', {
+    'name': name,
+    if (address != null && address.trim().isNotEmpty) 'address': address.trim(),
+    if (cnpj != null && cnpj.trim().isNotEmpty) 'cnpj': cnpj.trim(),
+    if (parentUnitId != null) 'parent_unit_id': parentUnitId,
+    if (parentServiceType != null) 'parent_service_type': parentServiceType,
+  }, token);
+
   Future<List<Map<String, dynamic>>> vehicles(
     String companyId,
     String token,
@@ -30,6 +45,29 @@ class RentalService {
     );
     return response.cast<Map<String, dynamic>>();
   }
+
+  Future<Map<String, dynamic>> createVehicle({
+    required String companyId,
+    required String token,
+    required String vehicleType,
+    required String brand,
+    required String model,
+    required double pricePerDay,
+    int? year,
+    String? plate,
+    List<String> photoUrls = const [],
+    Map<String, dynamic> specifications = const {},
+  }) => _api.postAuthorized('/rentals/vehicles', {
+    'company_id': companyId,
+    'vehicle_type': vehicleType,
+    'brand': brand.trim(),
+    'model': model.trim(),
+    'price_per_day': pricePerDay,
+    if (year != null) 'year': year,
+    if (plate != null && plate.trim().isNotEmpty) 'plate': plate.trim(),
+    'photo_urls': photoUrls,
+    'specifications': specifications,
+  }, token);
 
   Future<Map<String, dynamic>> reserve({
     required String companyId,

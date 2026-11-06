@@ -100,6 +100,8 @@ class PartnerProfileModel {
         return 'Lava jato';
       case 'tour_guide':
         return 'Guia turistico';
+      case 'vehicle_rental':
+        return 'Locação de veículos';
       case 'tourism_company':
         return 'Empresa de turismo';
       case 'hotel':

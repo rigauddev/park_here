@@ -147,6 +147,13 @@ async def seed_homologation_valenca():
             registration_status="active", responsible_name=manager.name,
             approval_status="approved",
         ))
+        db.add(PartnerProfile(
+            tenant_id=tenant.id, service_type="vehicle_rental",
+            company_name="ServiceHub Locadora Valença", cnpj=tenant.cnpj,
+            document_type="cnpj", document_number=tenant.cnpj,
+            registration_status="active", responsible_name=manager.name,
+            approval_status="approved",
+        ))
 
         # The same partner account also owns a rental service. Keeping the
         # rental domain in its own tables lets the hub consolidate reports
