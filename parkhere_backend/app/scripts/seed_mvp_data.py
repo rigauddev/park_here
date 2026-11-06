@@ -20,8 +20,10 @@ from app.modules.partners.operator_assignment_models import OperatorParkingAssig
 from app.modules.partners.work_schedule_models import OperatorWorkProfile
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.partners.guide_service_models import GuideService
+from app.modules.partners.permission_profile_models import PartnerPermissionProfile
 from app.modules.payments.models import PartnerPaymentAccount
 from app.modules.reservations.models import Reservation
+from app.modules.rentals.models import RentalCompany, RentalVehicle, RentalPlan
 from app.modules.reservations.terms_catalog import TERMS_VERSION, build_terms_snapshot
 from app.modules.tenants.models.tenant_model_plan_enum import PlanEnum
 from app.modules.tenants.models.tenant_model_status_enum import TenantStatusEnum
@@ -145,6 +147,95 @@ async def seed_homologation_valenca():
             registration_status="active", responsible_name=manager.name,
             approval_status="approved",
         ))
+
+        # The same partner account also owns a rental service. Keeping the
+        # rental domain in its own tables lets the hub consolidate reports
+        # without coupling vehicle availability to parking reservations.
+        rental_company = RentalCompany(
+            tenant_id=tenant.id,
+            name="ServiceHub Locadora Valença",
+            service_type="vehicle_rental",
+            unit_kind="branch",
+            address="Rua Desembargador Amâncio de Souza, 709, Valença - BA",
+            latitude=-13.3703,
+            longitude=-39.0731,
+            cnpj="11222333000144",
+            is_active=True,
+        )
+        db.add(rental_company)
+        await db.flush()
+        rental_vehicles = [
+            RentalVehicle(company_id=rental_company.id, vehicle_type="car", brand="Toyota", model="Yaris", year=2025, plate="RNT1A25", price_per_day=159, status="available"),
+            RentalVehicle(company_id=rental_company.id, vehicle_type="suv", brand="Chevrolet", model="Tracker", year=2025, plate="RNT2B25", price_per_day=249, status="available"),
+            RentalVehicle(company_id=rental_company.id, vehicle_type="motorcycle", brand="Honda", model="CG 160", year=2024, plate="RNT3C24", price_per_day=89, status="available"),
+        ]
+        db.add_all(rental_vehicles)
+        db.add_all([
+            RentalPlan(company_id=rental_company.id, name="Diária econômica", description="Plano diário com quilometragem controlada.", vehicle_type="car", price_per_day=159, price_per_week=990, price_per_month=3200, deposit_amount=500, mileage_limit_per_day=200, included_items=["Proteção básica"]),
+            RentalPlan(company_id=rental_company.id, name="SUV conforto", description="SUV para viagens e deslocamentos longos.", vehicle_type="suv", price_per_day=249, price_per_week=1540, price_per_month=4990, deposit_amount=800, mileage_limit_per_day=250, included_items=["Proteção básica", "Assistência 24h"]),
+        ])
+
+        guide_tenant = Tenant(
+            name="Guias Turísticos Valença",
+            cnpj="22333444000155",
+            email="guias.valenca@servicehub.test",
+            plan=PlanEnum.FREE,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(guide_tenant)
+        await db.flush()
+        db.add(PartnerProfile(
+            tenant_id=guide_tenant.id,
+            service_type="tour_guide",
+            company_name="Guias Turísticos Valença",
+            cnpj=guide_tenant.cnpj,
+            document_type="cnpj",
+            document_number=guide_tenant.cnpj,
+            registration_status="active",
+            responsible_name="Coordenação de Guias",
+            approval_status="approved",
+        ))
+        guide_users = []
+        for index in range(1, 6):
+            guide = User(
+                tenant_id=guide_tenant.id,
+                name=f"Guia Turístico {index}",
+                firt_name="Guia",
+                email=f"guia{index}@servicehub.test",
+                password_hash=hash_password("123456"),
+                phone=f"7597777000{index}",
+                cpf=f"9000000000{index:02d}",
+                phone_verified=True,
+                email_verified=True,
+                role=UserRoleEnum.TOUR_GUIDE,
+            )
+            guide_users.append(guide)
+        db.add_all(guide_users)
+        await db.flush()
+        parking.accepts_guide_affiliates = True
+        parking.guide_commission_terms = json.dumps({
+            "daily": {"type": "percentage", "value": 8},
+            "weekly": {"type": "percentage", "value": 10},
+            "monthly": {"type": "fixed", "value": 80},
+        })
+        for guide in guide_users:
+            db.add(GuideParkingLink(
+                guide_user_id=guide.id,
+                parking_id=parking.id,
+                status="approved",
+                commission_type="percentage",
+                commission_value="8",
+                commission_terms=parking.guide_commission_terms,
+            ))
+            db.add(GuideService(
+                guide_user_id=guide.id,
+                name="Passeio histórico por Valença",
+                description="Roteiro guiado pelo centro histórico e pontos culturais.",
+                price=120,
+                duration_minutes="120",
+                schedule="08:00-18:00",
+                is_active=True,
+            ))
         for operator in operators:
             db.add(OperatorParkingAssignment(operator_id=operator.id, parking_id=parking.id))
             db.add(OperatorWorkProfile(operator_id=operator.id, parking_id=parking.id,
