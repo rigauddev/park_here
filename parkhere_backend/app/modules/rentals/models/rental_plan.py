@@ -10,6 +10,7 @@ class RentalPlan(BaseModel):
     __tablename__ = "rental_plans"
 
     company_id = Column(String(36), ForeignKey("rental_companies.id"), nullable=False, index=True)
+    group_id = Column(String(36), ForeignKey("rental_vehicle_groups.id"), nullable=True, index=True)
     name = Column(String(120), nullable=False)
     description = Column(Text, nullable=True)
     vehicle_type = Column(String(30), nullable=True)

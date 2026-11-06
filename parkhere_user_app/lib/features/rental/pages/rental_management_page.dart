@@ -50,7 +50,8 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
   Future<void> _createVehicle() async {
     final company = _selected;
     if (company == null || _token == null) return;
-    final result = await _showVehicleDialog();
+    final groups = await _service.groups(company['id'] as String, _token!);
+    final result = await _showVehicleDialog(groups);
     if (result == null) return;
     try {
       await _service.createVehicle(
@@ -61,6 +62,9 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
         model: result.model,
         pricePerDay: result.price,
         year: result.year,
+        groupId: result.groupId,
+        photoUrls: result.photoUrls,
+        specifications: result.specifications,
       );
       if (mounted) setState(() => _future = _load());
     } catch (error) {
@@ -117,13 +121,30 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     ));
   }
 
-  Future<_VehicleForm?> _showVehicleDialog() async {
-    final brand = TextEditingController(); final model = TextEditingController(); final year = TextEditingController(); final price = TextEditingController();
+  Future<_VehicleForm?> _showVehicleDialog(List<Map<String, dynamic>> groups) async {
+    final brand = TextEditingController();
+    final model = TextEditingController();
+    final year = TextEditingController();
+    final price = TextEditingController();
     var type = 'car';
+    String? groupId = groups.firstOrNull?['id'] as String?;
+    List<Map<String, dynamic>> suggestions = const [];
+    List<String> photoUrls = const [];
+    Map<String, dynamic> specifications = const {};
     return showDialog<_VehicleForm>(context: context, builder: (context) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
       title: const Text('Novo veículo da frota'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [DropdownButtonFormField<String>(value: type, decoration: const InputDecoration(labelText: 'Tipo'), items: const [DropdownMenuItem(value: 'car', child: Text('Carro')), DropdownMenuItem(value: 'suv', child: Text('SUV')), DropdownMenuItem(value: 'pickup', child: Text('Picape')), DropdownMenuItem(value: 'van', child: Text('Van')), DropdownMenuItem(value: 'motorcycle', child: Text('Motocicleta')), DropdownMenuItem(value: 'electric_car', child: Text('Carro elétrico'))], onChanged: (value) => setDialogState(() => type = value ?? 'car')), TextField(controller: brand, decoration: const InputDecoration(labelText: 'Marca')), TextField(controller: model, decoration: const InputDecoration(labelText: 'Modelo')), TextField(controller: year, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ano')), TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Diária (R\$)'))])),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: () { final parsed = double.tryParse(price.text.replaceAll(',', '.')); if (brand.text.isNotEmpty && model.text.isNotEmpty && parsed != null && parsed > 0) Navigator.pop(context, _VehicleForm(type, brand.text, model.text, parsed, int.tryParse(year.text))); }, child: const Text('Salvar'))],
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        if (groups.isNotEmpty) DropdownButtonFormField<String>(initialValue: groupId, decoration: const InputDecoration(labelText: 'Grupo do veículo'), items: [for (final group in groups) DropdownMenuItem(value: group['id'] as String, child: Text(group['name'] as String? ?? 'Grupo'))], onChanged: (value) { final selected = groups.firstWhere((group) => group['id'] == value); setDialogState(() { groupId = value; type = selected['vehicle_type'] as String? ?? 'car'; if (price.text.isEmpty && selected['suggested_price_per_day'] != null) price.text = '${selected['suggested_price_per_day']}'; }); }),
+        DropdownButtonFormField<String>(initialValue: type, decoration: const InputDecoration(labelText: 'Tipo'), items: const [DropdownMenuItem(value: 'car', child: Text('Carro')), DropdownMenuItem(value: 'suv', child: Text('SUV')), DropdownMenuItem(value: 'pickup', child: Text('Picape')), DropdownMenuItem(value: 'van', child: Text('Van')), DropdownMenuItem(value: 'motorcycle', child: Text('Motocicleta')), DropdownMenuItem(value: 'electric_car', child: Text('Carro elétrico'))], onChanged: (value) => setDialogState(() => type = value ?? 'car')),
+        TextField(controller: brand, decoration: const InputDecoration(labelText: 'Marca')),
+        TextField(controller: model, decoration: const InputDecoration(labelText: 'Modelo')),
+        TextField(controller: year, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ano')),
+        Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: () async { final parsedYear = int.tryParse(year.text); if (brand.text.trim().isEmpty || parsedYear == null) return; try { final found = await _service.catalogModels(make: brand.text, year: parsedYear, vehicleType: type, token: _token!); setDialogState(() => suggestions = found); } catch (_) {} }, icon: const Icon(Icons.search), label: const Text('Buscar modelo e especificações'))),
+        if (suggestions.isNotEmpty) DropdownButtonFormField<Map<String, dynamic>>(initialValue: suggestions.first, decoration: const InputDecoration(labelText: 'Modelo encontrado'), items: [for (final item in suggestions) DropdownMenuItem(value: item, child: Text(item['model'] as String? ?? 'Modelo'))], onChanged: (value) { if (value != null) setDialogState(() { model.text = value['model'] as String? ?? model.text; photoUrls = [for (final url in (value['photo_urls'] as List<dynamic>? ?? const [])) url.toString()]; specifications = (value['specifications'] as Map<String, dynamic>?) ?? const {}; }); }),
+        if (photoUrls.isNotEmpty) Align(alignment: Alignment.centerLeft, child: Text('${photoUrls.length} foto(s) sugerida(s) encontrada(s). Você poderá substituir por fotos próprias após o cadastro.', style: Theme.of(context).textTheme.bodySmall)),
+        TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Diária (R\$)')),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: () { final parsed = double.tryParse(price.text.replaceAll(',', '.')); if (brand.text.isNotEmpty && model.text.isNotEmpty && parsed != null && parsed > 0) Navigator.pop(context, _VehicleForm(type, brand.text, model.text, parsed, int.tryParse(year.text), groupId, photoUrls, specifications)); }, child: const Text('Salvar'))],
     )));
   }
 }
@@ -142,4 +163,4 @@ class _FleetList extends StatelessWidget {
 }
 
 class _CompanyForm { final String name, address, cnpj; const _CompanyForm(this.name, this.address, this.cnpj); }
-class _VehicleForm { final String type, brand, model; final double price; final int? year; const _VehicleForm(this.type, this.brand, this.model, this.price, this.year); }
+class _VehicleForm { final String type, brand, model; final double price; final int? year; final String? groupId; final List<String> photoUrls; final Map<String, dynamic> specifications; const _VehicleForm(this.type, this.brand, this.model, this.price, this.year, this.groupId, this.photoUrls, this.specifications); }

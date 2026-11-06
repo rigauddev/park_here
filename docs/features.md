@@ -90,6 +90,13 @@ reserva de estacionamento. `parent_unit_id`/`parent_service_type` registram uma
 relação organizacional opcional com qualquer serviço, e `parent_parking_id`
 permanece como compatibilidade para a matriz de estacionamento legada.
 
+Na gestão da locadora, veículos pertencem a grupos comerciais reutilizáveis
+(por exemplo, Econômico, SUV conforto e Duas rodas). O grupo é a categoria
+comercial ligada ao plano; o modelo/ano é a unidade concreta da frota. O gestor
+pode duplicar ou editar grupos e pode buscar sugestões de marca/modelo e fotos
+de referência no catálogo integrado, sempre revisando a licença antes de
+publicar.
+
 Tipos de veículo disponíveis no cadastro: carro, SUV, picape, van, motocicleta,
 scooter, bicicleta, ônibus, caminhão, motorhome e carro elétrico. O catálogo é
 extensível por código, mas o app lista apenas tipos ativos e traduzidos.

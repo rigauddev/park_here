@@ -5,6 +5,7 @@ from app.db.base import BaseModel
 class RentalVehicle(BaseModel):
     __tablename__ = "rental_vehicles"
     company_id = Column(String(36), ForeignKey("rental_companies.id"), nullable=False, index=True)
+    group_id = Column(String(36), ForeignKey("rental_vehicle_groups.id"), nullable=True, index=True)
     vehicle_type = Column(String(30), nullable=False, default="car")
     model = Column(String(120), nullable=False)
     brand = Column(String(80), nullable=False)

@@ -1256,10 +1256,21 @@ matriz de estacionamento quando esse campo legado é usado. `VehicleCreate` exig
 `vehicle_type` (`car`, `suv`, `pickup`, `van`, `motorcycle`, `scooter`,
 `bicycle`, `bus`, `truck`, `motorhome` ou `electric_car`).
 Também aceita `photo_urls` (até oito referências de imagens próprias ou de um
-catálogo licenciado) e `specifications` (metadados do modelo/ano). O MVP não
-baixa imagens externas automaticamente: fotos reais devem ser enviadas pelo
-parceiro ou selecionadas de um catálogo cuja licença e atribuição estejam
-registradas.
+catálogo licenciado) e `specifications` (metadados do modelo/ano). A busca de
+catálogo é feita sob demanda e retorna sugestões de fontes públicas; fotos
+reais devem ser revisadas pelo parceiro ou substituídas por uploads próprios.
+
+`GET /rentals/companies/{company_id}/groups` lista os grupos comerciais da
+locadora. `POST /rentals/groups` cria um grupo editável e reutilizável; planos
+e veículos podem referenciar `group_id`. O seed fornece Econômico, SUV conforto
+e Duas rodas, mas o gestor pode duplicar/editar grupos após a aprovação.
+
+`GET /rentals/catalog/models?make=&year=&vehicle_type=&model=` consulta o vPIC
+da NHTSA para sugerir marca/modelo/ano e consulta imagens públicas do Wikimedia
+Commons. As URLs retornadas são sugestões (`photo_urls`); o parceiro deve
+revisar, substituir ou enviar fotos próprias antes de publicar. A plataforma
+não presume que uma imagem externa é licenciada para uso comercial: a fonte e
+a atribuição devem ser mantidas junto ao catálogo.
 
 Planos e frota:
 

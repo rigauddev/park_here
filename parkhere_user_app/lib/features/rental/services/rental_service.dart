@@ -35,6 +35,24 @@ class RentalService {
     return response.cast<Map<String, dynamic>>();
   }
 
+  Future<List<Map<String, dynamic>>> groups(String companyId, String token) async {
+    final response = await _api.getAuthorized('/rentals/companies/$companyId/groups', token);
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> catalogModels({
+    required String make,
+    required int year,
+    required String vehicleType,
+    String? model,
+    required String token,
+  }) async {
+    final query = StringBuffer('/rentals/catalog/models?make=${Uri.encodeQueryComponent(make)}&year=$year&vehicle_type=$vehicleType');
+    if (model != null && model.trim().isNotEmpty) query.write('&model=${Uri.encodeQueryComponent(model.trim())}');
+    final response = await _api.getAuthorized(query.toString(), token);
+    return response.cast<Map<String, dynamic>>();
+  }
+
   Future<List<Map<String, dynamic>>> plans(
     String companyId,
     String token,
@@ -55,10 +73,12 @@ class RentalService {
     required double pricePerDay,
     int? year,
     String? plate,
+    String? groupId,
     List<String> photoUrls = const [],
     Map<String, dynamic> specifications = const {},
   }) => _api.postAuthorized('/rentals/vehicles', {
     'company_id': companyId,
+    if (groupId != null) 'group_id': groupId,
     'vehicle_type': vehicleType,
     'brand': brand.trim(),
     'model': model.trim(),

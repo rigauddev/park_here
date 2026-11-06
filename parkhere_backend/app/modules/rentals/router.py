@@ -20,6 +20,18 @@ async def create_company(data: RentalCompanyCreate, db: AsyncSession = Depends(g
 async def list_vehicles(company_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.list_vehicles(db, company_id, current_user)
 
+@router.get("/companies/{company_id}/groups", response_model=list[VehicleGroupOut])
+async def list_groups(company_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.list_groups(db, company_id, current_user)
+
+@router.post("/groups", response_model=VehicleGroupOut, status_code=201)
+async def create_group(data: VehicleGroupCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.create_group(db, data, current_user)
+
+@router.get("/catalog/models", response_model=list[VehicleCatalogOut])
+async def catalog_models(make: str, year: int, vehicle_type: str = 'car', model: str | None = None, current_user: User = Depends(get_current_user)):
+    return await RentalService.catalog_models(make, year, vehicle_type, model)
+
 @router.get("/companies/{company_id}/plans", response_model=list[RentalPlanOut])
 async def list_plans(company_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.list_plans(db, company_id, current_user)

@@ -23,7 +23,7 @@ from app.modules.partners.guide_service_models import GuideService
 from app.modules.partners.permission_profile_models import PartnerPermissionProfile
 from app.modules.payments.models import PartnerPaymentAccount
 from app.modules.reservations.models import Reservation
-from app.modules.rentals.models import RentalCompany, RentalVehicle, RentalPlan
+from app.modules.rentals.models import RentalCompany, RentalVehicle, RentalPlan, RentalVehicleGroup
 from app.modules.reservations.terms_catalog import TERMS_VERSION, build_terms_snapshot
 from app.modules.tenants.models.tenant_model_plan_enum import PlanEnum
 from app.modules.tenants.models.tenant_model_status_enum import TenantStatusEnum
@@ -171,15 +171,22 @@ async def seed_homologation_valenca():
         )
         db.add(rental_company)
         await db.flush()
+        rental_groups = [
+            RentalVehicleGroup(company_id=rental_company.id, name='Econômico', code='ECON', vehicle_type='car', description='Compactos para deslocamentos urbanos.', suggested_price_per_day=159, is_default=True),
+            RentalVehicleGroup(company_id=rental_company.id, name='SUV conforto', code='SUV', vehicle_type='suv', description='Mais espaço para viagens e bagagem.', suggested_price_per_day=249, is_default=True),
+            RentalVehicleGroup(company_id=rental_company.id, name='Duas rodas', code='MOTO', vehicle_type='motorcycle', description='Motocicletas para mobilidade ágil.', suggested_price_per_day=89, is_default=True),
+        ]
+        db.add_all(rental_groups)
+        await db.flush()
         rental_vehicles = [
-            RentalVehicle(company_id=rental_company.id, vehicle_type="car", brand="Toyota", model="Yaris", year=2025, plate="RNT1A25", price_per_day=159, status="available"),
-            RentalVehicle(company_id=rental_company.id, vehicle_type="suv", brand="Chevrolet", model="Tracker", year=2025, plate="RNT2B25", price_per_day=249, status="available"),
-            RentalVehicle(company_id=rental_company.id, vehicle_type="motorcycle", brand="Honda", model="CG 160", year=2024, plate="RNT3C24", price_per_day=89, status="available"),
+            RentalVehicle(company_id=rental_company.id, group_id=rental_groups[0].id, vehicle_type="car", brand="Toyota", model="Yaris", year=2025, plate="RNT1A25", price_per_day=159, status="available"),
+            RentalVehicle(company_id=rental_company.id, group_id=rental_groups[1].id, vehicle_type="suv", brand="Chevrolet", model="Tracker", year=2025, plate="RNT2B25", price_per_day=249, status="available"),
+            RentalVehicle(company_id=rental_company.id, group_id=rental_groups[2].id, vehicle_type="motorcycle", brand="Honda", model="CG 160", year=2024, plate="RNT3C24", price_per_day=89, status="available"),
         ]
         db.add_all(rental_vehicles)
         db.add_all([
-            RentalPlan(company_id=rental_company.id, name="Diária econômica", description="Plano diário com quilometragem controlada.", vehicle_type="car", price_per_day=159, price_per_week=990, price_per_month=3200, deposit_amount=500, mileage_limit_per_day=200, included_items=["Proteção básica"]),
-            RentalPlan(company_id=rental_company.id, name="SUV conforto", description="SUV para viagens e deslocamentos longos.", vehicle_type="suv", price_per_day=249, price_per_week=1540, price_per_month=4990, deposit_amount=800, mileage_limit_per_day=250, included_items=["Proteção básica", "Assistência 24h"]),
+            RentalPlan(company_id=rental_company.id, group_id=rental_groups[0].id, name="Diária econômica", description="Plano diário com quilometragem controlada.", vehicle_type="car", price_per_day=159, price_per_week=990, price_per_month=3200, deposit_amount=500, mileage_limit_per_day=200, included_items=["Proteção básica"]),
+            RentalPlan(company_id=rental_company.id, group_id=rental_groups[1].id, name="SUV conforto", description="SUV para viagens e deslocamentos longos.", vehicle_type="suv", price_per_day=249, price_per_week=1540, price_per_month=4990, deposit_amount=800, mileage_limit_per_day=250, included_items=["Proteção básica", "Assistência 24h"]),
         ])
 
         guide_tenant = Tenant(

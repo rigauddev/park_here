@@ -22,6 +22,7 @@ class RentalCompanyOut(RentalCompanyCreate):
 
 class VehicleCreate(BaseModel):
     company_id: str
+    group_id: str | None = None
     vehicle_type: str = Field(default="car", pattern=r"^(car|suv|pickup|van|motorcycle|scooter|bicycle|bus|truck|motorhome|electric_car)$")
     model: str = Field(min_length=1, max_length=120)
     brand: str = Field(min_length=1, max_length=80)
@@ -38,8 +39,34 @@ class VehicleOut(VehicleCreate):
     is_active: bool
 
 
+class VehicleGroupCreate(BaseModel):
+    company_id: str
+    name: str = Field(min_length=2, max_length=120)
+    code: str | None = Field(default=None, max_length=20)
+    vehicle_type: str = Field(default='car', pattern=r'^(car|suv|pickup|van|motorcycle|scooter|bicycle|bus|truck|motorhome|electric_car)$')
+    description: str | None = Field(default=None, max_length=2000)
+    suggested_price_per_day: float | None = Field(default=None, gt=0)
+
+
+class VehicleGroupOut(VehicleGroupCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    is_default: bool
+    is_active: bool
+
+
+class VehicleCatalogOut(BaseModel):
+    make: str | None = None
+    model: str | None = None
+    year: int
+    vehicle_type: str
+    photo_urls: list[str] = Field(default_factory=list)
+    specifications: dict[str, Any] = Field(default_factory=dict)
+
+
 class RentalPlanCreate(BaseModel):
     company_id: str
+    group_id: str | None = None
     name: str = Field(min_length=2, max_length=120)
     description: str | None = Field(default=None, max_length=2000)
     vehicle_type: str | None = Field(default=None, max_length=30)

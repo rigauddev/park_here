@@ -1,6 +1,9 @@
+import asyncio
 import json
 from datetime import datetime, timezone
 from math import ceil
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
@@ -8,7 +11,7 @@ from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from ..models import (
     RentalCompany, RentalVehicle, RentalReservation, RentalCheckin,
-    RentalCheckout, RentalPlan, RentalMaintenance, RentalItem, RentalContract, RentalFine,
+    RentalCheckout, RentalPlan, RentalMaintenance, RentalItem, RentalContract, RentalFine, RentalVehicleGroup,
 )
 from app.modules.parkings.models import Parking
 from app.modules.partners.models import PartnerProfile
@@ -19,6 +22,89 @@ class RentalService:
         "respeitará o período contratado, os limites de quilometragem e devolverá o veículo "
         "à locadora para a vistoria final."
     )
+
+    @staticmethod
+    async def list_groups(db: AsyncSession, company_id: str, current_user: User):
+        company = await RentalService.company(db, company_id, current_user)
+        result = await db.scalars(select(RentalVehicleGroup).where(
+            RentalVehicleGroup.company_id == company.id,
+            RentalVehicleGroup.is_active.is_(True),
+        ).order_by(RentalVehicleGroup.is_default.desc(), RentalVehicleGroup.name))
+        return result.all()
+
+    @staticmethod
+    async def create_group(db: AsyncSession, data, current_user: User):
+        company = await RentalService.company(db, data.company_id, current_user)
+        if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail='Sem permissão para cadastrar grupos de veículos')
+        await RentalService.ensure_approved_partner(db, current_user)
+        row = RentalVehicleGroup(**data.model_dump())
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return row
+
+    @staticmethod
+    async def catalog_models(make: str, year: int, vehicle_type: str = 'car', model: str | None = None):
+        """Consulta o catálogo público vPIC sem persistir dados externos automaticamente."""
+        params = urlencode({'format': 'json'})
+        path_type = 'car' if vehicle_type in {'car', 'suv', 'pickup', 'van', 'electric_car'} else 'motorcycle'
+        url = f'https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/{quote(make)}/modelyear/{year}/vehicletype/{path_type}?{params}'
+
+        def fetch():
+            request = Request(url, headers={'User-Agent': 'ServiceHub/1.0'})
+            with urlopen(request, timeout=8) as response:
+                return json.loads(response.read().decode('utf-8'))
+
+        try:
+            payload = await asyncio.to_thread(fetch)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f'Catálogo de veículos indisponível: {exc}') from exc
+        rows = payload.get('Results', [])
+        if model:
+            needle = model.casefold()
+            rows = [row for row in rows if needle in str(row.get('Model_Name', '')).casefold()]
+        image_urls = await RentalService._wikimedia_vehicle_images(make, model or (rows[0].get('Model_Name') if rows else ''), year)
+        return [
+            {
+                'make': row.get('Make_Name'),
+                'model': row.get('Model_Name'),
+                'year': year,
+                'vehicle_type': vehicle_type,
+                'photo_urls': image_urls,
+                'specifications': {'source': 'NHTSA vPIC'},
+            }
+            for row in rows[:50]
+        ]
+
+    @staticmethod
+    async def _wikimedia_vehicle_images(make: str, model: str, year: int) -> list[str]:
+        if not model:
+            return []
+        query = urlencode({
+            'action': 'query', 'generator': 'search',
+            'gsrsearch': f'{make} {model} car', 'gsrnamespace': '6',
+            'gsrlimit': '4', 'prop': 'imageinfo',
+            'iiprop': 'url|extmetadata', 'iiurlwidth': '640', 'format': 'json',
+        })
+        url = f'https://commons.wikimedia.org/w/api.php?{query}'
+
+        def fetch():
+            request = Request(url, headers={'User-Agent': 'ServiceHub/1.0 (vehicle catalog)'})
+            with urlopen(request, timeout=8) as response:
+                payload = json.loads(response.read().decode('utf-8'))
+            pages = payload.get('query', {}).get('pages', {})
+            return [
+                info.get('thumburl') or info.get('url')
+                for page in pages.values()
+                for info in page.get('imageinfo', [])
+                if info.get('thumburl') or info.get('url')
+            ]
+
+        try:
+            return await asyncio.to_thread(fetch)
+        except Exception:
+            return []
 
     @staticmethod
     async def ensure_approved_partner(db: AsyncSession, current_user: User) -> None:
@@ -106,6 +192,10 @@ class RentalService:
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Sem permissão para cadastrar planos")
         await RentalService.ensure_approved_partner(db, current_user)
+        if data.group_id:
+            group = await db.scalar(select(RentalVehicleGroup).where(RentalVehicleGroup.id == data.group_id, RentalVehicleGroup.company_id == company.id, RentalVehicleGroup.is_active.is_(True)))
+            if group is None:
+                raise HTTPException(status_code=422, detail='Grupo de veículos inválido para esta locadora')
         plan = RentalPlan(**data.model_dump())
         db.add(plan); await db.commit(); await db.refresh(plan); return plan
 
@@ -184,6 +274,10 @@ class RentalService:
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Sem permissão para cadastrar veículos")
         await RentalService.ensure_approved_partner(db, current_user)
+        if data.group_id:
+            group = await db.scalar(select(RentalVehicleGroup).where(RentalVehicleGroup.id == data.group_id, RentalVehicleGroup.company_id == company.id, RentalVehicleGroup.is_active.is_(True)))
+            if group is None:
+                raise HTTPException(status_code=422, detail='Grupo de veículos inválido para esta locadora')
         vehicle = RentalVehicle(**data.model_dump()); db.add(vehicle); await db.commit(); await db.refresh(vehicle); return vehicle
 
     @staticmethod
