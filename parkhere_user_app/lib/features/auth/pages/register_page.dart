@@ -13,13 +13,8 @@ enum RegisterAccountType { customer, partner }
 
 enum PartnerServiceType {
   parking,
-  carWash,
-  hotel,
-  restaurant,
+  vehicleRental,
   tourGuide,
-  tourismCompany,
-  transport,
-  other,
 }
 
 class RegisterPage extends ConsumerStatefulWidget {
@@ -50,7 +45,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final websiteController = TextEditingController();
 
   late RegisterAccountType accountType;
-  PartnerServiceType serviceType = PartnerServiceType.parking;
+  PartnerServiceType? serviceType;
   String documentType = 'cnpj';
   bool hasInsurance = false;
   bool emailVerified = false;
@@ -64,24 +59,16 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   bool get needsInsuranceInfo => accountType == RegisterAccountType.partner;
 
-  String get serviceTypeApiValue {
-    switch (serviceType) {
+  String? get serviceTypeApiValue {
+    final selected = serviceType;
+    if (selected == null) return null;
+    switch (selected) {
       case PartnerServiceType.parking:
         return 'parking';
-      case PartnerServiceType.carWash:
-        return 'car_wash';
-      case PartnerServiceType.hotel:
-        return 'hotel';
-      case PartnerServiceType.restaurant:
-        return 'restaurant';
+      case PartnerServiceType.vehicleRental:
+        return 'vehicle_rental';
       case PartnerServiceType.tourGuide:
         return 'tour_guide';
-      case PartnerServiceType.tourismCompany:
-        return 'tourism_company';
-      case PartnerServiceType.transport:
-        return 'transport';
-      case PartnerServiceType.other:
-        return 'other';
     }
   }
 
@@ -167,7 +154,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                               borderRadius: BorderRadius.circular(14),
                             ),
                           ),
-                          onPressed: isLoading ? null : _submit,
+                          onPressed: isLoading || (isPartner && serviceType == null)
+                              ? null
+                              : _submit,
                           child: isLoading
                               ? const SizedBox(
                                   height: 20,
@@ -246,38 +235,24 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               child: Text("Estacionamento"),
             ),
             DropdownMenuItem(
-              value: PartnerServiceType.carWash,
-              child: Text("Lava-jato"),
-            ),
-            DropdownMenuItem(
-              value: PartnerServiceType.hotel,
-              child: Text("Hotel"),
-            ),
-            DropdownMenuItem(
-              value: PartnerServiceType.restaurant,
-              child: Text("Restaurante"),
+              value: PartnerServiceType.vehicleRental,
+              child: Text("Locação veicular"),
             ),
             DropdownMenuItem(
               value: PartnerServiceType.tourGuide,
               child: Text("Guia turístico / Tourist guide"),
-            ),
-            DropdownMenuItem(
-              value: PartnerServiceType.tourismCompany,
-              child: Text("Empresa de turismo / Tourism company"),
-            ),
-            DropdownMenuItem(
-              value: PartnerServiceType.transport,
-              child: Text("Transporte"),
-            ),
-            DropdownMenuItem(
-              value: PartnerServiceType.other,
-              child: Text("Outro serviço / Other service"),
             ),
           ],
           onChanged: (value) {
             if (value != null) setState(() => serviceType = value);
           },
         ),
+        if (serviceType == null)
+          const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: Text('Selecione o módulo para carregar o cadastro correspondente.'),
+          ),
+        if (serviceType != null) ...[
         const SizedBox(height: 12),
         _field(companyNameController, "Nome da empresa"),
         DropdownButtonFormField<String>(
@@ -343,6 +318,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             'insurance_policy',
             'Documento do seguro (obrigatório)',
           ),
+        ],
       ],
     );
   }
@@ -484,10 +460,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       _validate();
 
       if (accountType == RegisterAccountType.partner) {
+        final selectedServiceType = serviceTypeApiValue;
+        if (selectedServiceType == null) {
+          throw Exception('Selecione o módulo de serviço do parceiro.');
+        }
         await ref
             .read(authProvider.notifier)
             .registerPartner(
-              serviceType: serviceTypeApiValue,
+              serviceType: selectedServiceType,
               companyName: companyNameController.text,
               documentType: documentType,
               documentNumber: documentController.text,
@@ -618,6 +598,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
     if (!emailVerified) {
       throw Exception("Valide o e-mail antes de concluir o cadastro");
+    }
+
+    if (isPartner && serviceType == null) {
+      throw Exception("Selecione o módulo de serviço do parceiro");
     }
 
     if (needsInsuranceInfo &&
