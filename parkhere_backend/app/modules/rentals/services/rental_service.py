@@ -46,6 +46,8 @@ class RentalService:
             ))
             if parent is None:
                 raise HTTPException(status_code=404, detail="Estacionamento matriz não encontrado")
+        if data.parent_unit_id and not data.parent_service_type:
+            raise HTTPException(status_code=422, detail="Informe o tipo do serviço matriz")
         company = RentalCompany(tenant_id=current_user.tenant_id, **data.model_dump())
         db.add(company); await db.commit(); await db.refresh(company); return company
 

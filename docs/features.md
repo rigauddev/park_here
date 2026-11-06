@@ -67,7 +67,7 @@
 
 ## Servicos Adicionais
 
-## Locação de veículos (ServiceHub)
+## Locação de veículos (módulo ServiceHub)
 
 O módulo de locação é uma categoria de parceiro independente da operação de
 estacionamento. Uma empresa aprovada cadastra unidades e veículos com tarifa
@@ -82,12 +82,13 @@ Status iniciais: `pending`, `checked_in`, `completed`. Veículos passam por
 pausada neste bloco; a reserva deve ser ligada ao fluxo de pagamento existente
 quando o Checkout Transparente for retomado.
 
-Uma empresa pode manter o estacionamento como unidade matriz e cadastrar a
-locadora como filial do mesmo tenant. A matriz continua no agregado `parkings`;
-a filial de locação usa `rental_companies.parent_parking_id` e possui menu,
-permissões, veículos, reservas e filtros próprios. O gestor alterna entre
-serviços no mesmo cadastro, enquanto o operador recebe apenas o módulo e a
-unidade autorizados na escala.
+Uma empresa pode contratar estacionamento, locação veicular e guia turístico na
+mesma conta. O gestor alterna entre módulos pelo painel e pode marcar uma
+unidade como matriz ou filial. A locadora possui tabelas, menu, permissões,
+veículos, reservas e filtros próprios; ela não depende de uma vaga ou de uma
+reserva de estacionamento. `parent_unit_id`/`parent_service_type` registram uma
+relação organizacional opcional com qualquer serviço, e `parent_parking_id`
+permanece como compatibilidade para a matriz de estacionamento legada.
 
 Tipos de veículo disponíveis no cadastro: carro, SUV, picape, van, motocicleta,
 scooter, bicicleta, ônibus, caminhão, motorhome e carro elétrico. O catálogo é

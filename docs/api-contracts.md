@@ -1247,8 +1247,10 @@ check-in, registra quilometragem/fotos/itens/avarias, libera o veículo e move a
 reserva para `completed`. Fotos são referências temporárias; não enviar dados
 de cartão ou credenciais nesses payloads.
 
-Uma `RentalCompany` pode receber `parent_parking_id` para representar a filial
-de locação vinculada à matriz de estacionamento do mesmo tenant. A API valida
-que a matriz pertence ao gestor autenticado. `VehicleCreate` exige
+Uma `RentalCompany` representa uma unidade do módulo de locação dentro de um
+tenant de serviços. Pode receber `parent_unit_id` e `parent_service_type` para
+ser organizada como filial de qualquer outro módulo; `parent_parking_id` existe
+apenas para compatibilidade com a matriz de estacionamento. A API valida a
+matriz de estacionamento quando esse campo legado é usado. `VehicleCreate` exige
 `vehicle_type` (`car`, `suv`, `pickup`, `van`, `motorcycle`, `scooter`,
 `bicycle`, `bus`, `truck`, `motorhome` ou `electric_car`).

@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class RentalCompanyCreate(BaseModel):
     parent_parking_id: str | None = None
+    parent_unit_id: str | None = None
+    parent_service_type: str | None = Field(default=None, max_length=40)
     name: str = Field(min_length=2, max_length=120)
     address: str | None = Field(default=None, max_length=200)
     latitude: float | None = Field(default=None, ge=-90, le=90)
