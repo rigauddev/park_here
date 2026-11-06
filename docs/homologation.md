@@ -16,10 +16,12 @@ O seed está em `parkhere_backend/app/scripts/seed_mvp_data.py`, é idempotente 
 recria os dados determinísticos do piloto em Valença-BA. Se o banco foi apagado,
 execute os dois comandos acima novamente após subir o MySQL.
 
-O seed recria estacionamentos de demonstração, cliente/veículo/cartão, parceiro,
-guia, operadores, reservas em estados variados e escalas com turnos abertos e
-com operadores. Ele não apaga o volume nem os dados manuais. A matriz e a filial
-de Valença usadas nos testes permanecem com os IDs listados no roteiro. Para
+O seed recria o estacionamento 24h de Valença, uma locadora do mesmo parceiro
+com frota e planos de locação, cinco guias turísticos afiliados, cliente/veículo/
+cartão, operadores, taxas e escalas. Reservas não são criadas automaticamente:
+elas devem ser geradas pelos testes manuais. Ele não apaga o volume nem os dados
+manuais. A unidade de Valença usada nos testes permanece como cenário principal.
+Para
 homologação remota, mantenha um banco isolado dos dados de desenvolvimento e
 faça backup antes de atualizar a carga.
 

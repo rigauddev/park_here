@@ -5,6 +5,8 @@ O seed local cria um cenário pequeno e repetível para os testes manuais:
 - um parceiro e um estacionamento 24 horas em Valença-BA;
 - três operadores, um gestor, um cliente e um administrador do sistema;
 - veículo e cartão de teste do cliente;
+- uma locadora de veículos do mesmo parceiro, com três veículos e dois planos;
+- cinco guias turísticos aprovados e afiliados ao estacionamento de Valença;
 - escala de três operadores e taxas fictícias de homologação;
 - nenhum estacionamento de outras cidades e nenhuma reserva inicial.
 
@@ -23,6 +25,13 @@ Todos os usuários usam a senha `123456`:
 | Gestor | `gestor@parkhere.test` |
 | Operadores | `operador1@parkhere.test`, `operador2@parkhere.test`, `operador3@parkhere.test` |
 | Cliente | `cliente@parkhere.test` |
+
+Locação e guias:
+
+| Perfil | E-mail |
+| --- | --- |
+| Gestor da locadora | `gestor@parkhere.test` |
+| Guias turísticos | `guia1@servicehub.test` até `guia5@servicehub.test` |
 
 Os valores são fictícios e o provedor de pagamento continua simulado até as
 credenciais e o webhook de homologação serem configurados.
