@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from ..models import RentalCompany, RentalVehicle, RentalReservation, RentalCheckin, RentalCheckout
+from app.modules.parkings.models import Parking
 
 class RentalService:
     @staticmethod
@@ -37,6 +38,14 @@ class RentalService:
             raise HTTPException(status_code=403, detail="Somente o gestor do parceiro pode criar uma locadora")
         if not current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Conta sem parceiro associado")
+        if data.parent_parking_id:
+            parent = await db.scalar(select(Parking).where(
+                Parking.id == data.parent_parking_id,
+                Parking.tenant_id == current_user.tenant_id,
+                Parking.is_active.is_(True),
+            ))
+            if parent is None:
+                raise HTTPException(status_code=404, detail="Estacionamento matriz não encontrado")
         company = RentalCompany(tenant_id=current_user.tenant_id, **data.model_dump())
         db.add(company); await db.commit(); await db.refresh(company); return company
 

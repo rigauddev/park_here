@@ -82,6 +82,17 @@ Status iniciais: `pending`, `checked_in`, `completed`. Veículos passam por
 pausada neste bloco; a reserva deve ser ligada ao fluxo de pagamento existente
 quando o Checkout Transparente for retomado.
 
+Uma empresa pode manter o estacionamento como unidade matriz e cadastrar a
+locadora como filial do mesmo tenant. A matriz continua no agregado `parkings`;
+a filial de locação usa `rental_companies.parent_parking_id` e possui menu,
+permissões, veículos, reservas e filtros próprios. O gestor alterna entre
+serviços no mesmo cadastro, enquanto o operador recebe apenas o módulo e a
+unidade autorizados na escala.
+
+Tipos de veículo disponíveis no cadastro: carro, SUV, picape, van, motocicleta,
+scooter, bicicleta, ônibus, caminhão, motorhome e carro elétrico. O catálogo é
+extensível por código, mas o app lista apenas tipos ativos e traduzidos.
+
 Servicos iniciais:
 
 - Lava-jato.

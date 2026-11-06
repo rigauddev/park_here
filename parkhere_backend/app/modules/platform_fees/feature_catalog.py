@@ -5,6 +5,30 @@ Operator seat packages keep their existing request and approval workflow.
 
 PARTNER_FEATURE_CATALOG = (
     {
+        'key': 'rental_management',
+        'name': 'Gestão de locação veicular',
+        'name_en': 'Vehicle rental management',
+        'description': 'Unidades, veículos, tarifas e reservas de locação.',
+        'description_en': 'Rental units, vehicles, pricing and reservations.',
+        'service_types': ('vehicle_rental',),
+        'default_is_enabled': True,
+        'default_is_paid': False,
+        'default_billing_period': 'monthly',
+        'requestable': True,
+    },
+    {
+        'key': 'rental_operations',
+        'name': 'Operação de locação',
+        'name_en': 'Rental operations',
+        'description': 'Check-in, checkout, quilometragem, fotos e ocorrências.',
+        'description_en': 'Check-in, checkout, mileage, photos and incidents.',
+        'service_types': ('vehicle_rental',),
+        'default_is_enabled': True,
+        'default_is_paid': False,
+        'default_billing_period': 'monthly',
+        'requestable': True,
+    },
+    {
         'key': 'dashboard',
         'name': 'Dashboard',
         'name_en': 'Dashboard',

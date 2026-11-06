@@ -3,6 +3,10 @@
 ## Visão geral
 - **Objetivo:** adicionar ao sistema existente (ParkHere → ServiceHub) a funcionalidade de locação de veículos, permitindo que parceiros criem filiais do tipo "locação" e que motoristas reservem, paguem e finalizem a locação com check‑in/check‑out.
 - **Integração:** reutiliza a mesma arquitetura de módulos já existente (backend FastAPI + frontend Flutter).  O fluxo segue o padrão do módulo de estacionamento, mas inclui etapas adicionais (empresa, lista de veículos, itens opcionais, fotos, contrato PDF, compartilhamento).
+- **Unidades:** estacionamento continua sendo a matriz; a locadora é uma filial
+  do mesmo tenant, com `parent_parking_id`, catálogo e operação independentes.
+- **Serviços:** o hub do cliente filtra por serviço e usa ícone próprio para
+  locação; o gestor alterna entre os módulos sem criar outro cadastro de empresa.
 
 ## Estrutura de código
 ### Backend (`parkhere_backend/app/modules/rentals`)
