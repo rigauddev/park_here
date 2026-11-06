@@ -78,6 +78,16 @@ async def seed_homologation_valenca():
         db.add(tenant)
         await db.flush()
 
+        rental_tenant = Tenant(
+            name="ServiceHub Locadora Valença",
+            cnpj="22333444000155",
+            email="gestor.locadora@servicehub.test",
+            plan=PlanEnum.PRO,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(rental_tenant)
+        await db.flush()
+
         admin = User(
             name="Administrador ParkHere", firt_name="Administrador",
             email="admin@parkhere.test", password_hash=hash_password("123456"),
@@ -105,7 +115,13 @@ async def seed_homologation_valenca():
             phone="75988887777", phone_verified=True, email_verified=True,
             role=UserRoleEnum.CUSTOMER,
         )
-        db.add_all([admin, manager, *operators, customer])
+        rental_manager = User(
+            tenant_id=rental_tenant.id, name="Gestor ServiceHub Locadora", firt_name="Gestor",
+            email="gestor.locadora@servicehub.test", password_hash=hash_password("123456"),
+            phone="75999990100", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.PARTNER_MANAGER,
+        )
+        db.add_all([admin, manager, *operators, customer, rental_manager])
         await db.flush()
 
         parking = Parking(
@@ -148,25 +164,24 @@ async def seed_homologation_valenca():
             approval_status="approved",
         ))
         db.add(PartnerProfile(
-            tenant_id=tenant.id, service_type="vehicle_rental",
-            company_name="ServiceHub Locadora Valença", cnpj=tenant.cnpj,
-            document_type="cnpj", document_number=tenant.cnpj,
-            registration_status="active", responsible_name=manager.name,
+            tenant_id=rental_tenant.id, service_type="vehicle_rental",
+            company_name="ServiceHub Locadora Valença", cnpj=rental_tenant.cnpj,
+            document_type="cnpj", document_number=rental_tenant.cnpj,
+            registration_status="active", responsible_name=rental_manager.name,
             approval_status="approved",
         ))
 
-        # The same partner account also owns a rental service. Keeping the
-        # rental domain in its own tables lets the hub consolidate reports
-        # without coupling vehicle availability to parking reservations.
+        # A locadora is a separate partner account. Its fleet remains isolated
+        # from parking inventory while the platform can consolidate reports.
         rental_company = RentalCompany(
-            tenant_id=tenant.id,
+            tenant_id=rental_tenant.id,
             name="ServiceHub Locadora Valença",
             service_type="vehicle_rental",
             unit_kind="branch",
             address="Rua Desembargador Amâncio de Souza, 709, Valença - BA",
             latitude=-13.3703,
             longitude=-39.0731,
-            cnpj="11222333000144",
+            cnpj=rental_tenant.cnpj,
             is_active=True,
         )
         db.add(rental_company)
@@ -189,29 +204,26 @@ async def seed_homologation_valenca():
             RentalPlan(company_id=rental_company.id, group_id=rental_groups[1].id, name="SUV conforto", description="SUV para viagens e deslocamentos longos.", vehicle_type="suv", price_per_day=249, price_per_week=1540, price_per_month=4990, deposit_amount=800, mileage_limit_per_day=250, included_items=["Proteção básica", "Assistência 24h"]),
         ])
 
-        guide_tenant = Tenant(
-            name="Guias Turísticos Valença",
-            cnpj="22333444000155",
-            email="guias.valenca@servicehub.test",
-            plan=PlanEnum.FREE,
-            status=TenantStatusEnum.ACTIVE,
-        )
-        db.add(guide_tenant)
+        guide_tenants = [
+            Tenant(name="Guia Valença Histórico", cnpj="33333444000155", email="guia1@servicehub.test", plan=PlanEnum.FREE, status=TenantStatusEnum.ACTIVE),
+            Tenant(name="Guia Valença Natureza", cnpj="44444555000166", email="guia2@servicehub.test", plan=PlanEnum.FREE, status=TenantStatusEnum.ACTIVE),
+        ]
+        db.add_all(guide_tenants)
         await db.flush()
-        db.add(PartnerProfile(
-            tenant_id=guide_tenant.id,
-            service_type="tour_guide",
-            company_name="Guias Turísticos Valença",
-            cnpj=guide_tenant.cnpj,
-            document_type="cnpj",
-            document_number=guide_tenant.cnpj,
-            registration_status="active",
-            responsible_name="Coordenação de Guias",
-            approval_status="approved",
-        ))
         guide_users = []
-        for index in range(1, 6):
-            guide = User(
+        for index, guide_tenant in enumerate(guide_tenants, start=1):
+            db.add(PartnerProfile(
+                tenant_id=guide_tenant.id,
+                service_type="tour_guide",
+                company_name=guide_tenant.name,
+                cnpj=guide_tenant.cnpj,
+                document_type="cnpj",
+                document_number=guide_tenant.cnpj,
+                registration_status="active",
+                responsible_name=f"Guia Turístico {index}",
+                approval_status="approved",
+            ))
+            guide_users.append(User(
                 tenant_id=guide_tenant.id,
                 name=f"Guia Turístico {index}",
                 firt_name="Guia",
@@ -222,8 +234,7 @@ async def seed_homologation_valenca():
                 phone_verified=True,
                 email_verified=True,
                 role=UserRoleEnum.TOUR_GUIDE,
-            )
-            guide_users.append(guide)
+            ))
         db.add_all(guide_users)
         await db.flush()
         parking.accepts_guide_affiliates = True
@@ -303,9 +314,10 @@ async def seed_homologation_valenca():
                                               billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
                                               notes="Homologação"))
         await db.commit()
-        print("Seed de homologação criado: Valença, estacionamento 24h, locadora, 5 guias, sem reservas.")
+        print("Seed de homologação criado: parceiros separados de estacionamento, locação e dois guias, sem reservas.")
         print("admin@parkhere.test / gestor@parkhere.test / operador1..3@parkhere.test / cliente@parkhere.test - senha 123456")
-        print("Guias: guia1@servicehub.test até guia5@servicehub.test - senha 123456")
+        print("Locadora: gestor.locadora@servicehub.test / senha 123456")
+        print("Guias: guia1@servicehub.test e guia2@servicehub.test - senha 123456")
         return
 
     async with AsyncSessionLocal() as db:

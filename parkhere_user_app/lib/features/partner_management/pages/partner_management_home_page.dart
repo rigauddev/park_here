@@ -95,7 +95,7 @@ class _PartnerManagementBody extends StatelessWidget {
           return [
             _ManagementAction(
               icon: Icons.map_outlined,
-              title: 'Mapa de vagas',
+              title: 'Serviços',
               description: 'Vagas livres, pre-reservadas e ocupadas.',
               onTap: () => _open(context, const PartnerParkingMapPage()),
               featureKey: 'parking_operations',
@@ -127,8 +127,8 @@ class _PartnerManagementBody extends StatelessWidget {
           ),
           _ManagementAction(
             icon: Icons.local_parking,
-            title: 'Estacionamento',
-            description: 'Vagas, areas cobertas, tarifas e disponibilidade.',
+            title: 'Gestão de serviços',
+            description: 'Serviços oferecidos, unidades, tarifas e disponibilidade.',
             onTap: () => _open(context, const ParkingManagementPage()),
             featureKey: 'parking_management',
           ),
@@ -140,16 +140,8 @@ class _PartnerManagementBody extends StatelessWidget {
             featureKey: 'convenience_management',
           ),
           _ManagementAction(
-            icon: Icons.miscellaneous_services_outlined,
-            title: 'Serviços cadastrados',
-            description:
-                'Serviços extras, preços e disponibilidade por unidade.',
-            onTap: () => _open(context, const ParkingManagementPage()),
-            featureKey: 'services_management',
-          ),
-          _ManagementAction(
             icon: Icons.map_outlined,
-            title: 'Mapa de vagas',
+            title: 'Serviços',
             description:
                 'Painel visual das vagas livres, pre-reservadas e ocupadas.',
             onTap: () => _open(context, const PartnerParkingMapPage()),
