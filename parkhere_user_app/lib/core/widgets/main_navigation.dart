@@ -12,6 +12,7 @@ import '../../features/parking_search/models/parking_model.dart';
 import '../../features/parking_search/providers/parking_provider.dart';
 import '../../features/partner_management/pages/partner_financial_page.dart';
 import '../../features/partner_management/pages/partner_management_home_page.dart';
+import '../../features/rental/pages/rental_companies_page.dart';
 import '../../features/partner_management/pages/partner_parking_map_page.dart';
 import '../../features/partner_management/pages/partner_reservations_page.dart';
 import '../../features/partner_management/pages/partner_users_page.dart';
@@ -1530,7 +1531,7 @@ class _ServicesHubPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       initialIndex: initialIndex,
       child: Scaffold(
         appBar: AppBar(
@@ -1542,6 +1543,7 @@ class _ServicesHubPage extends StatelessWidget {
               Tab(icon: Icon(Icons.local_car_wash), text: 'Lava jato'),
               Tab(icon: Icon(Icons.hotel_outlined), text: 'Hotéis'),
               Tab(icon: Icon(Icons.tour_outlined), text: 'Passeios'),
+              Tab(icon: Icon(Icons.directions_car_filled), text: 'Locação'),
             ],
           ),
         ),
@@ -1551,6 +1553,7 @@ class _ServicesHubPage extends StatelessWidget {
             _CarWashServicesList(),
             _PromotionServicesList(serviceType: _PromotionServiceType.hotel),
             _PromotionServicesList(serviceType: _PromotionServiceType.tourism),
+            RentalCompaniesPage(),
           ],
         ),
       ),

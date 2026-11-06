@@ -1,83 +1,73 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
 from datetime import datetime
+from typing import Any
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-class RentalCompanyBase(BaseModel):
-    name: str = Field(..., max_length=120)
-    address: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    cnpj: Optional[str] = None
+class RentalCompanyCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    address: str | None = Field(default=None, max_length=200)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    cnpj: str | None = Field(default=None, max_length=20)
 
-class RentalCompanyCreate(RentalCompanyBase):
-    pass
-
-class RentalCompanyOut(RentalCompanyBase):
+class RentalCompanyOut(RentalCompanyCreate):
+    model_config = ConfigDict(from_attributes=True)
     id: str
+    tenant_id: str
     is_active: bool
 
-    class Config:
-        orm_mode = True
-
-class VehicleBase(BaseModel):
-    model: str = Field(..., max_length=120)
-    brand: str = Field(..., max_length=80)
-    price_per_day: float
-    status: str = Field(default="available")
-    plate: Optional[str] = None
-    year: Optional[int] = None
-
-class VehicleCreate(VehicleBase):
+class VehicleCreate(BaseModel):
     company_id: str
+    model: str = Field(min_length=1, max_length=120)
+    brand: str = Field(min_length=1, max_length=80)
+    price_per_day: float = Field(gt=0)
+    plate: str | None = Field(default=None, max_length=20)
+    year: int | None = Field(default=None, ge=1950, le=2100)
 
-class VehicleOut(VehicleBase):
+class VehicleOut(VehicleCreate):
+    model_config = ConfigDict(from_attributes=True)
     id: str
-    company_id: str
+    status: str
+    is_active: bool
 
-    class Config:
-        orm_mode = True
-
-class ReservationBase(BaseModel):
-    partner_id: str
+class ReservationCreate(BaseModel):
     company_id: str
     vehicle_id: str
     start_date: datetime
     end_date: datetime
-    extras: Optional[dict] = None
-    km_start: Optional[int] = None
+    extras: dict[str, Any] | None = None
+    km_start: int | None = Field(default=None, ge=0)
 
-class ReservationCreate(ReservationBase):
-    pass
+    @field_validator("end_date")
+    @classmethod
+    def valid_period(cls, value: datetime, info):
+        start = info.data.get("start_date")
+        if start and value <= start:
+            raise ValueError("end_date must be after start_date")
+        return value
 
-class ReservationOut(ReservationBase):
+class ReservationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
+    tenant_id: str
+    user_id: str
+    company_id: str
+    vehicle_id: str
+    start_date: datetime
+    end_date: datetime
     total_price: float
     status: str
-    km_end: Optional[int] = None
+    extras: dict[str, Any] | None = None
+    km_start: int | None = None
+    km_end: int | None = None
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
-
-class CheckinBase(BaseModel):
+class CheckinCreate(BaseModel):
     reservation_id: str
-    km: Optional[int] = None
-    photos: Optional[List[str]] = None
-    items: Optional[dict] = None
-    notes: Optional[str] = None
+    km: int | None = Field(default=None, ge=0)
+    photos: list[str] = Field(default_factory=list, max_length=8)
+    items: dict[str, Any] | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
-class CheckinCreate(CheckinBase):
-    pass
-
-class CheckoutBase(BaseModel):
-    reservation_id: str
-    km: Optional[int] = None
-    photos: Optional[List[str]] = None
-    items: Optional[dict] = None
-    notes: Optional[str] = None
-    damage_fine: Optional[float] = 0.0
-
-class CheckoutCreate(CheckoutBase):
-    pass
-
+class CheckoutCreate(CheckinCreate):
+    damage_fine: float = Field(default=0, ge=0)

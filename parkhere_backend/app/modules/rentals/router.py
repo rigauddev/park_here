@@ -1,99 +1,45 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import List
-
-from app.core.dependencies import get_db
-from .schemas.rental import (
-    RentalCompanyCreate,
-    RentalCompanyOut,
-    VehicleCreate,
-    VehicleOut,
-    ReservationCreate,
-    ReservationOut,
-    CheckinCreate,
-    CheckoutCreate,
-)
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.modules.users.models.user_model import User
+from .schemas.rental import *
 from .services.rental_service import RentalService
 
-router = APIRouter(prefix="/rentals", tags=["rentals"])
+router = APIRouter(prefix="/rentals", tags=["Rentals"])
 
-# Companies ----------------------------------------------------------
-@router.get("/companies", response_model=List[RentalCompanyOut])
-def list_companies(db: Session = Depends(get_db)):
-    service = RentalService(db)
-    return service.list_companies()
+@router.get("/companies", response_model=list[RentalCompanyOut])
+async def list_companies(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.list_companies(db, current_user)
 
-@router.post("/companies", response_model=RentalCompanyOut)
-def create_company(payload: RentalCompanyCreate, db: Session = Depends(get_db)):
-    service = RentalService(db)
-    company = RentalCompany(**payload.dict())
-    db.add(company)
-    db.commit()
-    db.refresh(company)
-    return company
+@router.post("/companies", response_model=RentalCompanyOut, status_code=201)
+async def create_company(data: RentalCompanyCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.create_company(db, data, current_user)
 
-# Vehicles -----------------------------------------------------------
-@router.get("/companies/{company_id}/vehicles", response_model=List[VehicleOut])
-def list_vehicles(company_id: str, db: Session = Depends(get_db)):
-    service = RentalService(db)
-    return service.list_vehicles(company_id)
+@router.get("/companies/{company_id}/vehicles", response_model=list[VehicleOut])
+async def list_vehicles(company_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.list_vehicles(db, company_id, current_user)
 
-@router.post("/vehicles", response_model=VehicleOut)
-def create_vehicle(payload: VehicleCreate, db: Session = Depends(get_db)):
-    service = RentalService(db)
-    vehicle = Vehicle(**payload.dict())
-    db.add(vehicle)
-    db.commit()
-    db.refresh(vehicle)
-    return vehicle
+@router.post("/vehicles", response_model=VehicleOut, status_code=201)
+async def create_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.create_vehicle(db, data, current_user)
 
-# Reservations -------------------------------------------------------
-@router.post("/reservations", response_model=ReservationOut)
-def create_reservation(payload: ReservationCreate, db: Session = Depends(get_db)):
-    service = RentalService(db)
-    reservation = service.create_reservation(
-        partner_id=payload.partner_id,
-        company_id=payload.company_id,
-        vehicle_id=payload.vehicle_id,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        extras=payload.extras,
-        km_start=payload.km_start,
-    )
-    return reservation
+@router.post("/reservations", response_model=ReservationOut, status_code=201)
+async def create_reservation(data: ReservationCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.create_reservation(db, data, current_user)
+
+@router.get("/reservations", response_model=list[ReservationOut])
+async def list_reservations(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.list_reservations(db, current_user)
 
 @router.get("/reservations/{reservation_id}", response_model=ReservationOut)
-def get_reservation(reservation_id: str, db: Session = Depends(get_db)):
-    service = RentalService(db)
-    reservation = service.get_reservation(reservation_id)
-    if not reservation:
-        raise HTTPException(status_code=404, detail="Reservation not found")
-    return reservation
+async def get_reservation(reservation_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.get_reservation(db, reservation_id, current_user)
 
-# Check‑in ----------------------------------------------------------
-@router.post("/checkin", response_model=dict)
-def register_checkin(payload: CheckinCreate, db: Session = Depends(get_db)):
-    service = RentalService(db)
-    checkin = service.register_checkin(
-        reservation_id=payload.reservation_id,
-        km=payload.km,
-        photos=payload.photos,
-        items=payload.items,
-        notes=payload.notes,
-    )
-    return {"id": checkin.id, "status": "checked_in"}
+@router.post("/checkin", status_code=201)
+async def checkin(data: CheckinCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    row = await RentalService.checkin(db, data, current_user); return {"id": row.id, "status": "checked_in"}
 
-# Checkout ----------------------------------------------------------
-@router.post("/checkout", response_model=dict)
-def register_checkout(payload: CheckoutCreate, db: Session = Depends(get_db)):
-    service = RentalService(db)
-    checkout = service.register_checkout(
-        reservation_id=payload.reservation_id,
-        km=payload.km,
-        photos=payload.photos,
-        items=payload.items,
-        notes=payload.notes,
-        damage_fine=payload.damage_fine,
-    )
-    return {"id": checkout.id, "status": "completed"}
-
+@router.post("/checkout", status_code=201)
+async def checkout(data: CheckoutCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    row = await RentalService.checkout(db, data, current_user); return {"id": row.id, "status": "completed"}

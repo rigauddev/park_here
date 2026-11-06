@@ -67,6 +67,21 @@
 
 ## Servicos Adicionais
 
+## Locação de veículos (ServiceHub)
+
+O módulo de locação é uma categoria de parceiro independente da operação de
+estacionamento. Uma empresa aprovada cadastra unidades e veículos com tarifa
+diária; o cliente escolhe o período, recebe o total calculado pelo backend,
+confirma a reserva e realiza check-in/checkout com quilometragem, fotos, itens e
+ocorrências. A locação usa os mesmos princípios de autenticação, aprovação,
+termos, pagamentos e auditoria, mas mantém suas tabelas próprias para não
+misturar veículos alugáveis com veículos dos clientes ou vagas.
+
+Status iniciais: `pending`, `checked_in`, `completed`. Veículos passam por
+`available` → `reserved` → `available`. A integração Mercado Pago permanece
+pausada neste bloco; a reserva deve ser ligada ao fluxo de pagamento existente
+quando o Checkout Transparente for retomado.
+
 Servicos iniciais:
 
 - Lava-jato.

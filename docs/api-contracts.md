@@ -1226,3 +1226,23 @@ e credenciais apenas no backend.
   ```
 - Ao receber `requires_restart: true`, o aplicativo exibe o aviso ao usuário, limpa o cache local e desloga para refazer o login com as permissões atualizadas.
 
+# Locação de veículos (ServiceHub)
+
+`GET /rentals/companies` lista empresas ativas. Clientes veem as empresas
+publicadas; parceiros veem apenas as unidades do próprio tenant.
+
+`GET /rentals/companies/{company_id}/vehicles` lista veículos disponíveis.
+`POST /rentals/companies` e `POST /rentals/vehicles` são restritos ao gestor do
+tenant. O preço diário é cadastrado pelo gestor e nunca é confiado ao app.
+
+`POST /rentals/reservations` recebe `company_id`, `vehicle_id`, `start_date`,
+`end_date`, `extras` e `km_start`. Somente clientes podem criar reservas; a API
+valida período, disponibilidade e calcula `total_price` no backend. `GET
+/rentals/reservations` retorna as reservas do cliente autenticado ou do tenant
+do parceiro.
+
+`POST /rentals/checkin` recebe `reservation_id`, quilometragem, fotos, itens e
+observações e move `pending` para `checked_in`. `POST /rentals/checkout` exige
+check-in, registra quilometragem/fotos/itens/avarias, libera o veículo e move a
+reserva para `completed`. Fotos são referências temporárias; não enviar dados
+de cartão ou credenciais nesses payloads.

@@ -1,24 +1,21 @@
-from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Integer, Boolean
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from app.db.base import BaseModel
 
 class RentalReservation(BaseModel):
     __tablename__ = "rental_reservations"
-
-    partner_id = Column(String(36), ForeignKey("partners.id"), nullable=False, index=True)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     company_id = Column(String(36), ForeignKey("rental_companies.id"), nullable=False, index=True)
-    vehicle_id = Column(String(36), ForeignKey("vehicles.id"), nullable=False, index=True)
-    start_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime, nullable=False)
+    vehicle_id = Column(String(36), ForeignKey("rental_vehicles.id"), nullable=False, index=True)
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=False)
     total_price = Column(Float, nullable=False)
-    status = Column(String(20), nullable=False, default="pending")  # pending, confirmed, cancelled, completed
-    extras = Column(String, nullable=True)  # JSON string for optional items (e.g., "cadeirinha", "tanque cheio")
+    status = Column(String(24), nullable=False, default="pending")
+    extras = Column(Text, nullable=True)
     km_start = Column(Integer, nullable=True)
     km_end = Column(Integer, nullable=True)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
-
     company = relationship("RentalCompany")
-    vehicle = relationship("Vehicle")
-    partner = relationship("Partner")
-
+    vehicle = relationship("RentalVehicle")
+    checkin = relationship("RentalCheckin", back_populates="reservation", uselist=False)
+    checkout = relationship("RentalCheckout", back_populates="reservation", uselist=False)

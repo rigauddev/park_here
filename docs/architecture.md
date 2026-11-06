@@ -50,6 +50,9 @@ Modulos recomendados para o MVP:
 - `sessions`: check-in, checkout, eventos e valores finais.
 - `payments`: transacao, status, provedor e conciliacao.
 - `incidents`: ocorrencias reportadas pelo usuario ou operador.
+- `rentals`: empresas locadoras, veículos alugáveis, reservas e registros de
+  check-in/checkout. O módulo usa `tenant_id` e `user_id` para isolamento e não
+  reutiliza a tabela `vehicles` dos veículos pessoais dos clientes.
 
 ## App Flutter
 

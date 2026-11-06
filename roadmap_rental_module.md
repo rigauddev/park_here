@@ -8,8 +8,8 @@
 ### Backend (`parkhere_backend/app/modules/rentals`)
 - `models/`
   - `rental_company.py` – tabela `rental_company`
-  - `vehicle.py` – tabela `vehicle`
-  - `rental_reservation.py` – tabela `rental_reservation`
+  - `vehicle.py` – tabela `rental_vehicles` (não reutiliza os veículos pessoais)
+  - `rental_reservation.py` – tabela `rental_reservations`, isolada por tenant e cliente
   - `rental_checkin.py` – tabela `rental_checkin`
   - `rental_checkout.py` – tabela `rental_checkout`
 - `schemas/`
@@ -41,8 +41,10 @@
   - `rental_provider.dart` (state management via Riverpod).
 - `services/`
   - `rental_service.dart` (wrapper para chamadas API).
-- **Rotas** adicionadas ao `router.dart` (go_router) com caminho `/rental/*`.
-- **Drawer** atualizado para gerar itens dinamicamente a partir de `partner.serviceModules`.
+- **Rotas** backend disponíveis em `/rentals/*`; o app Flutter expõe a aba
+  Locação no hub de serviços e já possui `RentalService` para os contratos.
+- O pagamento continua reutilizando o módulo central e está pausado enquanto a
+  integração Checkout Transparente é homologada.
 
 ## Documentação
 - `docs/api-contracts.md` – acrescentar descrição dos novos endpoints.
@@ -64,8 +66,9 @@
 7. **Check‑out** – foto final, registro de quilometragem, confirmação.
 
 ## Testes Manuais (checklist)
-- [ ] Compilar Flutter (`flutter run -d web-server`).
-- [ ] Navegar ao módulo via Drawer.
+- [x] Compilar Flutter (`flutter analyze`).
+- [x] Navegar ao módulo pelo hub de Serviços.
+- [x] Aplicar migration e carregar o router FastAPI em ambiente de API.
 - [ ] Criar reserva completa e concluir pagamento.
 - [ ] Ver PDF do contrato e compartilhar por e‑mail/WhatsApp.
 - [ ] Realizar check‑in (foto + itens) e check‑out.
