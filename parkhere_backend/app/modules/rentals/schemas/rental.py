@@ -80,3 +80,4 @@ class CheckoutBase(BaseModel):
 
 class CheckoutCreate(CheckoutBase):
     pass
+
