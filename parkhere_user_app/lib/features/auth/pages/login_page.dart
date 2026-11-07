@@ -157,260 +157,311 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 ),
               ),
             ),
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.95),
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: const [
-                        BoxShadow(
-                          blurRadius: 28,
-                          offset: Offset(0, 14),
-                          color: Color(0x33000000),
-                        ),
-                      ],
-                    ),
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth < 820) {
+                    return const SizedBox.shrink();
+                  }
+                  return Align(
+                    alignment: Alignment.centerLeft,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const _ServiceHubBrand(),
-                          const SizedBox(height: 4),
-                          Text(
-                            context.strings.loginTagline,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF55708F),
-                              fontWeight: FontWeight.w500,
-                            ),
+                      padding: const EdgeInsets.only(left: 72, right: 520),
+                      child: _ServiceHubHero(
+                        isPortuguese: isPortuguese,
+                        loginMode: loginMode,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth >= 820;
+                return Align(
+                  alignment: isWide ? Alignment.centerRight : Alignment.center,
+                  child: Padding(
+                    padding: EdgeInsets.only(right: isWide ? 72 : 0),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 360),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: const [
+                              BoxShadow(
+                                blurRadius: 28,
+                                offset: Offset(0, 14),
+                                color: Color(0x33000000),
+                              ),
+                            ],
                           ),
-                          if (!isMfaStep) ...[
-                            const SizedBox(height: 10),
-                            _AccessModeSelector(
-                              loginMode: displayedLoginMode,
-                              isPortuguese: isPortuguese,
-                              enabled: true,
-                              onChanged: (mode) {
-                                ref
-                                    .read(authProvider.notifier)
-                                    .resetLoginFlow();
-                                setState(() {
-                                  loginMode = mode;
-                                  loginError = null;
-                                  mfaController.clear();
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            _textField(
-                              controller: emailController,
-                              label: isPortuguese ? "E-mail" : "Email",
-                              icon: Icons.mail_outline,
-                            ),
-                            const SizedBox(height: 12),
-                            _textField(
-                              controller: passwordController,
-                              label: isPortuguese ? "Senha" : "Password",
-                              icon: Icons.lock_outline,
-                              obscureText: !showPassword,
-                              suffixIcon: IconButton(
-                                tooltip: showPassword
-                                    ? (isPortuguese
-                                          ? 'Ocultar senha'
-                                          : 'Hide password')
-                                    : (isPortuguese
-                                          ? 'Mostrar senha'
-                                          : 'Show password'),
-                                onPressed: () => setState(
-                                  () => showPassword = !showPassword,
-                                ),
-                                icon: Icon(
-                                  showPassword
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 50,
-                              child: FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF102657),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const _ServiceHubBrand(),
+                                const SizedBox(height: 4),
+                                Text(
+                                  context.strings.loginTagline,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xFF55708F),
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                                onPressed: isLoading ? null : _submitLogin,
-                                child: isLoading
-                                    ? const _LoginLoadingLabel()
-                                    : Text(
-                                        _loginButtonLabel(isPortuguese),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
-                                        ),
+                                if (!isMfaStep) ...[
+                                  const SizedBox(height: 10),
+                                  _AccessModeSelector(
+                                    loginMode: displayedLoginMode,
+                                    isPortuguese: isPortuguese,
+                                    enabled: true,
+                                    onChanged: (mode) {
+                                      ref
+                                          .read(authProvider.notifier)
+                                          .resetLoginFlow();
+                                      setState(() {
+                                        loginMode = mode;
+                                        loginError = null;
+                                        mfaController.clear();
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _textField(
+                                    controller: emailController,
+                                    label: isPortuguese ? "E-mail" : "Email",
+                                    icon: Icons.mail_outline,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _textField(
+                                    controller: passwordController,
+                                    label: isPortuguese ? "Senha" : "Password",
+                                    icon: Icons.lock_outline,
+                                    obscureText: !showPassword,
+                                    suffixIcon: IconButton(
+                                      tooltip: showPassword
+                                          ? (isPortuguese
+                                                ? 'Ocultar senha'
+                                                : 'Hide password')
+                                          : (isPortuguese
+                                                ? 'Mostrar senha'
+                                                : 'Show password'),
+                                      onPressed: () => setState(
+                                        () => showPassword = !showPassword,
                                       ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const ForgotPasswordPage(),
-                                  ),
-                                );
-                              },
-                              child: Text(
-                                isPortuguese
-                                    ? "Esqueci minha senha"
-                                    : "Forgot password",
-                                style: const TextStyle(
-                                  color: Color(0xFF55708F),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => RegisterPage(
-                                      initialType:
-                                          loginMode == LoginMode.customer
-                                          ? RegisterAccountType.customer
-                                          : RegisterAccountType.partner,
+                                      icon: Icon(
+                                        showPassword
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
-                              child: Text(
-                                loginMode == LoginMode.customer
-                                    ? (isPortuguese
-                                          ? "Criar conta"
-                                          : "Create account")
-                                    : (isPortuguese
-                                          ? "Cadastrar estabelecimento parceiro"
-                                          : "Register partner business"),
-                                style: const TextStyle(
-                                  color: Color(0xFF169FC4),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ] else ...[
-                            // MFA STEP: Apenas os elementos de MFA são exibidos
-                            const SizedBox(height: 8),
-                            const CircleAvatar(
-                              radius: 28,
-                              backgroundColor: Color(0xFFE8F6FA),
-                              foregroundColor: Color(0xFF169FC4),
-                              child: Icon(Icons.shield_outlined, size: 30),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              isPortuguese
-                                  ? "Verificação em Duas Etapas (MFA)"
-                                  : "Two-Factor Authentication",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: Color(0xFF102657),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              isPortuguese
-                                  ? "Digite o código gerado pelo seu aplicativo autenticador para continuar."
-                                  : "Enter the code generated by your authenticator app to proceed.",
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF55708F),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            _textField(
-                              controller: mfaController,
-                              label: isPortuguese
-                                  ? "Código de verificação"
-                                  : "Verification code",
-                              icon: Icons.verified_user_outlined,
-                            ),
-                            const SizedBox(height: 18),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 50,
-                              child: FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF169FC4),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                ),
-                                onPressed: isLoading ? null : _submitLogin,
-                                child: isLoading
-                                    ? const _LoginLoadingLabel()
-                                    : Text(
-                                        isPortuguese
-                                            ? "Verificar código"
-                                            : "Verify code",
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 50,
+                                    child: FilledButton(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF102657,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
                                         ),
                                       ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF55708F),
-                                  side: const BorderSide(
-                                    color: Color(0xFFD9E8F0),
+                                      onPressed: isLoading
+                                          ? null
+                                          : _submitLogin,
+                                      child: isLoading
+                                          ? const _LoginLoadingLabel()
+                                          : Text(
+                                              _loginButtonLabel(isPortuguese),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                    ),
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ForgotPasswordPage(),
+                                        ),
+                                      );
+                                    },
+                                    child: Text(
+                                      isPortuguese
+                                          ? "Esqueci minha senha"
+                                          : "Forgot password",
+                                      style: const TextStyle(
+                                        color: Color(0xFF55708F),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                onPressed: isLoading
-                                    ? null
-                                    : () {
-                                        emailController.clear();
-                                        passwordController.clear();
-                                        mfaController.clear();
-                                        ref
-                                            .read(authProvider.notifier)
-                                            .resetLoginFlow();
-                                      },
-                                icon: const Icon(Icons.arrow_back, size: 18),
-                                label: Text(
-                                  isPortuguese
-                                      ? 'Cancelar acesso e voltar'
-                                      : 'Cancel access and return',
-                                ),
-                              ),
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => RegisterPage(
+                                            initialType:
+                                                loginMode == LoginMode.customer
+                                                ? RegisterAccountType.customer
+                                                : RegisterAccountType.partner,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Text(
+                                      loginMode == LoginMode.customer
+                                          ? (isPortuguese
+                                                ? "Criar conta"
+                                                : "Create account")
+                                          : (isPortuguese
+                                                ? "Cadastrar estabelecimento parceiro"
+                                                : "Register partner business"),
+                                      style: const TextStyle(
+                                        color: Color(0xFF169FC4),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  // MFA STEP: Apenas os elementos de MFA são exibidos
+                                  const SizedBox(height: 8),
+                                  const CircleAvatar(
+                                    radius: 28,
+                                    backgroundColor: Color(0xFFE8F6FA),
+                                    foregroundColor: Color(0xFF169FC4),
+                                    child: Icon(
+                                      Icons.shield_outlined,
+                                      size: 30,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    isPortuguese
+                                        ? "Verificação em Duas Etapas (MFA)"
+                                        : "Two-Factor Authentication",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: Color(0xFF102657),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    isPortuguese
+                                        ? "Digite o código gerado pelo seu aplicativo autenticador para continuar."
+                                        : "Enter the code generated by your authenticator app to proceed.",
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF55708F),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _textField(
+                                    controller: mfaController,
+                                    label: isPortuguese
+                                        ? "Código de verificação"
+                                        : "Verification code",
+                                    icon: Icons.verified_user_outlined,
+                                  ),
+                                  const SizedBox(height: 18),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 50,
+                                    child: FilledButton(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF169FC4,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                      ),
+                                      onPressed: isLoading
+                                          ? null
+                                          : _submitLogin,
+                                      child: isLoading
+                                          ? const _LoginLoadingLabel()
+                                          : Text(
+                                              isPortuguese
+                                                  ? "Verificar código"
+                                                  : "Verify code",
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: const Color(
+                                          0xFF55708F,
+                                        ),
+                                        side: const BorderSide(
+                                          color: Color(0xFFD9E8F0),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                      ),
+                                      onPressed: isLoading
+                                          ? null
+                                          : () {
+                                              emailController.clear();
+                                              passwordController.clear();
+                                              mfaController.clear();
+                                              ref
+                                                  .read(authProvider.notifier)
+                                                  .resetLoginFlow();
+                                            },
+                                      icon: const Icon(
+                                        Icons.arrow_back,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        isPortuguese
+                                            ? 'Cancelar acesso e voltar'
+                                            : 'Cancel access and return',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
-                          ],
-                        ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
             if (loginError != null)
               Positioned.fill(
@@ -540,6 +591,103 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 }
 
+class _ServiceHubHero extends StatelessWidget {
+  final bool isPortuguese;
+  final LoginMode loginMode;
+  final bool compact;
+
+  const _ServiceHubHero({
+    required this.isPortuguese,
+    required this.loginMode,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = isPortuguese
+        ? const ['Estacionamento', 'Locação de veículos', 'Guia turístico']
+        : const ['Parking', 'Car rental', 'Tour guide'];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SvgPicture.asset(
+          'assets/branding/servicehub_logo_concept.svg',
+          width: compact ? 250 : 430,
+          height: compact ? 78 : 132,
+          fit: BoxFit.contain,
+        ),
+        if (!compact) ...[
+          const SizedBox(height: 26),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < labels.length; i++) ...[
+                if (i > 0)
+                  Container(
+                    height: 42,
+                    width: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 18),
+                    color: Colors.white.withValues(alpha: 0.35),
+                  ),
+                _ServiceFeature(
+                  icon: switch (i) {
+                    0 => Icons.local_parking_outlined,
+                    1 => Icons.directions_car_outlined,
+                    _ => Icons.tour_outlined,
+                  },
+                  label: labels[i],
+                ),
+              ],
+            ],
+          ),
+        ],
+        if (compact)
+          Text(
+            loginMode == LoginMode.partner
+                ? (isPortuguese ? 'Gestão de serviços' : 'Service management')
+                : (isPortuguese ? 'Seu hub de serviços' : 'Your service hub'),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.5,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ServiceFeature extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _ServiceFeature({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 110,
+    child: Column(
+      children: [
+        Icon(icon, color: Colors.white, size: 28),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _ServiceHubBrand extends StatelessWidget {
   const _ServiceHubBrand();
 
@@ -549,8 +697,8 @@ class _ServiceHubBrand extends StatelessWidget {
     children: [
       SvgPicture.asset(
         'assets/branding/servicehub_icon_concept.svg',
-        width: 52,
-        height: 52,
+        width: 62,
+        height: 62,
       ),
       const SizedBox(width: 10),
       const Text.rich(
@@ -566,7 +714,7 @@ class _ServiceHubBrand extends StatelessWidget {
             ),
           ],
         ),
-        style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+        style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
       ),
     ],
   );
