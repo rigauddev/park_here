@@ -1033,6 +1033,9 @@ class _LoginBackgroundPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final mapOverlay = Paint()..color = const Color(0xB8051730);
+    canvas.drawRect(Offset.zero & size, mapOverlay);
+
     final routePaint = Paint()
       ..color = const Color(0xFF44C8FF).withValues(alpha: 0.52)
       ..style = PaintingStyle.stroke
@@ -1131,19 +1134,27 @@ class _LoginBackgroundPainter extends CustomPainter {
     }
 
     final pulse = (math.sin(progress * math.pi * 2) + 1) / 2;
-    final movingPoint = Offset(
-      size.width * (0.18 + 0.64 * progress),
-      size.height * (0.27 + 0.10 * math.sin(progress * math.pi * 2)),
-    );
+    final movingPoint = _routePoint(size, progress);
     canvas.drawCircle(
       movingPoint,
-      5 + pulse * 10,
-      Paint()..color = const Color(0xFF8AF4FF).withValues(alpha: 0.10),
+      14 + pulse * 8,
+      Paint()..color = const Color(0xFF28D8FF).withValues(alpha: 0.14),
     );
-    canvas.drawCircle(
+    canvas.drawCircle(movingPoint, 6, Paint()..color = const Color(0xFFE9FCFF));
+
+    _drawMovingVehicle(
+      canvas,
       movingPoint,
-      4,
-      Paint()..color = Colors.white.withValues(alpha: 0.75),
+      mode == LoginMode.customer ? Icons.directions_car : Icons.storefront,
+      mode == LoginMode.customer ? 28 : 25,
+    );
+
+    final secondProgress = (progress + 0.52) % 1;
+    _drawMovingVehicle(
+      canvas,
+      _routePoint(size, secondProgress),
+      mode == LoginMode.customer ? Icons.two_wheeler : Icons.analytics_outlined,
+      mode == LoginMode.customer ? 23 : 21,
     );
 
     final path = Path()
@@ -1164,6 +1175,13 @@ class _LoginBackgroundPainter extends CustomPainter {
         size.width * 1.02,
         size.height * 0.2,
       );
+    // Rota principal com brilho, semelhante ao mapa da referência.
+    final routeGlow = Paint()
+      ..color = const Color(0xFF08B7FF).withValues(alpha: 0.22)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    canvas.drawPath(path, routeGlow);
     canvas.drawPath(path, routePaint);
 
     final lowerPath = Path()
@@ -1218,6 +1236,24 @@ class _LoginBackgroundPainter extends CustomPainter {
     }
   }
 
+  Offset _routePoint(Size size, double t) {
+    final start = Offset(size.width * 0.05, size.height * 0.25);
+    final controlOne = Offset(size.width * 0.25, size.height * 0.08);
+    final controlTwo = Offset(size.width * 0.62, size.height * 0.18);
+    final end = Offset(size.width * 0.88, size.height * 0.30);
+    final u = 1 - t;
+    return Offset(
+      u * u * u * start.dx +
+          3 * u * u * t * controlOne.dx +
+          3 * u * t * t * controlTwo.dx +
+          t * t * t * end.dx,
+      u * u * u * start.dy +
+          3 * u * u * t * controlOne.dy +
+          3 * u * t * t * controlTwo.dy +
+          t * t * t * end.dy,
+    );
+  }
+
   void _drawPin(Canvas canvas, Offset center, double size) {
     final paint = Paint()..color = Colors.white.withValues(alpha: 0.25);
     final path = Path()
@@ -1238,6 +1274,35 @@ class _LoginBackgroundPainter extends CustomPainter {
           fontFamily: icon.fontFamily,
           package: icon.fontPackage,
           color: Colors.white.withValues(alpha: 0.18),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      center - Offset(painter.width / 2, painter.height / 2),
+    );
+  }
+
+  void _drawMovingVehicle(
+    Canvas canvas,
+    Offset center,
+    IconData icon,
+    double size,
+  ) {
+    canvas.drawCircle(
+      center,
+      size * 0.82,
+      Paint()..color = const Color(0xFF071A3A).withValues(alpha: 0.88),
+    );
+    final painter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontSize: size,
+          fontFamily: icon.fontFamily,
+          package: icon.fontPackage,
+          color: const Color(0xFF9AF3FF),
         ),
       ),
       textDirection: TextDirection.ltr,
