@@ -44,6 +44,16 @@ class VehicleOut(VehicleCreate):
     status: str
     is_active: bool
 
+    @field_validator("photo_urls", mode="before")
+    @classmethod
+    def normalize_photo_urls(cls, value):
+        return value or []
+
+    @field_validator("specifications", mode="before")
+    @classmethod
+    def normalize_specifications(cls, value):
+        return value or {}
+
 class VehicleUpdate(BaseModel):
     group_id: str | None = None
     vehicle_type: str | None = Field(default=None, pattern=r"^(car|suv|pickup|van|motorcycle|scooter|bicycle|bus|truck|motorhome|electric_car)$")
@@ -58,17 +68,6 @@ class VehicleUpdate(BaseModel):
     chassis: str | None = Field(default=None, max_length=40)
     photo_urls: list[str] | None = Field(default=None, max_length=8)
     specifications: dict[str, Any] | None = None
-
-    @field_validator("photo_urls", mode="before")
-    @classmethod
-    def normalize_photo_urls(cls, value):
-        return value or []
-
-    @field_validator("specifications", mode="before")
-    @classmethod
-    def normalize_specifications(cls, value):
-        return value or {}
-
 
 class VehicleGroupCreate(BaseModel):
     company_id: str
