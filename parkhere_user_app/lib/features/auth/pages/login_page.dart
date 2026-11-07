@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/auth_state.dart';
@@ -81,14 +82,14 @@ class _LoginPageState extends ConsumerState<LoginPage>
             end: Alignment.bottomRight,
             colors: loginMode == LoginMode.customer
                 ? const [
-                    Color(0xFF071A3F),
-                    Color(0xFF0B2A5B),
-                    Color(0xFF37CDE1),
+                    Color(0xFF061A3C),
+                    Color(0xFF0B2D61),
+                    Color(0xFF1677FF),
                   ]
                 : const [
-                    Color(0xFF06142F),
-                    Color(0xFF123F75),
-                    Color(0xFF65D9E6),
+                    Color(0xFF071633),
+                    Color(0xFF123A70),
+                    Color(0xFF19AFC8),
                   ],
           ),
         ),
@@ -178,23 +179,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Image.asset(
-                            isPortuguese
-                                ? 'assets/branding/logo_park_here_portugues.png'
-                                : 'assets/branding/logo_park_here_ingles.png',
-                            height: 58,
-                            width: double.infinity,
-                            fit: BoxFit.contain,
-                          ),
-                          const SizedBox(height: 4),
-                          // Text(
-                          //   context.strings.appName,
-                          //   style: const TextStyle(
-                          //     fontSize: 23,
-                          //     fontWeight: FontWeight.w800,
-                          //     color: Color(0xFF102657),
-                          //   ),
-                          // ),
+                          const _ServiceHubBrand(),
                           const SizedBox(height: 4),
                           Text(
                             context.strings.loginTagline,
@@ -211,7 +196,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
                               isPortuguese: isPortuguese,
                               enabled: true,
                               onChanged: (mode) {
-                                ref.read(authProvider.notifier).resetLoginFlow();
+                                ref
+                                    .read(authProvider.notifier)
+                                    .resetLoginFlow();
                                 setState(() {
                                   loginMode = mode;
                                   loginError = null;
@@ -299,7 +286,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => RegisterPage(
-                                      initialType: loginMode == LoginMode.customer
+                                      initialType:
+                                          loginMode == LoginMode.customer
                                           ? RegisterAccountType.customer
                                           : RegisterAccountType.partner,
                                     ),
@@ -391,7 +379,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: const Color(0xFF55708F),
-                                  side: const BorderSide(color: Color(0xFFD9E8F0)),
+                                  side: const BorderSide(
+                                    color: Color(0xFFD9E8F0),
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -548,6 +538,38 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
     return isPortuguese ? "Entrar como cliente" : "Sign in as customer";
   }
+}
+
+class _ServiceHubBrand extends StatelessWidget {
+  const _ServiceHubBrand();
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      SvgPicture.asset(
+        'assets/branding/servicehub_icon_concept.svg',
+        width: 52,
+        height: 52,
+      ),
+      const SizedBox(width: 10),
+      const Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: 'Service',
+              style: TextStyle(color: Color(0xFF081A3A)),
+            ),
+            TextSpan(
+              text: 'Hub',
+              style: TextStyle(color: Color(0xFF1677FF)),
+            ),
+          ],
+        ),
+        style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+      ),
+    ],
+  );
 }
 
 class _LoginErrorBanner extends StatelessWidget {
