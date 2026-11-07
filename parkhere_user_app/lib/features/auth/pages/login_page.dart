@@ -160,7 +160,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
             Positioned.fill(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  if (constraints.maxWidth < 820) {
+                  if (constraints.maxWidth < 960) {
                     return const SizedBox.shrink();
                   }
                   return Align(
@@ -178,7 +178,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
             ),
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 820;
+                final isWide = constraints.maxWidth >= 960;
                 return Align(
                   alignment: isWide ? Alignment.centerRight : Alignment.center,
                   child: Padding(
@@ -611,12 +611,7 @@ class _ServiceHubHero extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SvgPicture.asset(
-          'assets/branding/servicehub_logo_concept.svg',
-          width: compact ? 250 : 430,
-          height: compact ? 78 : 132,
-          fit: BoxFit.contain,
-        ),
+        _ServiceHubBrand(scale: compact ? 1.15 : 2.15),
         if (!compact) ...[
           const SizedBox(height: 26),
           Row(
@@ -689,7 +684,9 @@ class _ServiceFeature extends StatelessWidget {
 }
 
 class _ServiceHubBrand extends StatelessWidget {
-  const _ServiceHubBrand();
+  final double scale;
+
+  const _ServiceHubBrand({this.scale = 1});
 
   @override
   Widget build(BuildContext context) => Row(
@@ -697,11 +694,11 @@ class _ServiceHubBrand extends StatelessWidget {
     children: [
       SvgPicture.asset(
         'assets/branding/servicehub_icon_concept.svg',
-        width: 62,
-        height: 62,
+        width: 62 * scale,
+        height: 62 * scale,
       ),
-      const SizedBox(width: 10),
-      const Text.rich(
+      SizedBox(width: 10 * scale),
+      Text.rich(
         TextSpan(
           children: [
             TextSpan(
@@ -714,7 +711,11 @@ class _ServiceHubBrand extends StatelessWidget {
             ),
           ],
         ),
-        style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
+        style: TextStyle(
+          fontSize: 34 * scale,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -1.2 * scale,
+        ),
       ),
     ],
   );
@@ -1033,13 +1034,13 @@ class _LoginBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final routePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.16)
+      ..color = const Color(0xFF44C8FF).withValues(alpha: 0.52)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.8;
+    final accentPaint = Paint()
+      ..color = const Color(0xFF00D8FF).withValues(alpha: 0.62)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.2;
-    final accentPaint = Paint()
-      ..color = const Color(0xFF6FE7F1).withValues(alpha: 0.22)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
 
     if (mode == LoginMode.partner) {
       // Silhuetas discretas de painel: reforçam a operação sem competir com o login.
@@ -1076,10 +1077,25 @@ class _LoginBackgroundPainter extends CustomPainter {
           Paint()..color = const Color(0xFFFFC66B).withValues(alpha: 0.26),
         );
       }
+      final partnerGridPaint = Paint()
+        ..color = const Color(0xFF8FC8F5).withValues(alpha: 0.09)
+        ..strokeWidth = 1;
+      for (var i = 1; i < 7; i++) {
+        canvas.drawLine(
+          Offset(size.width * i / 7, 0),
+          Offset(size.width * i / 7, size.height),
+          partnerGridPaint,
+        );
+        canvas.drawLine(
+          Offset(0, size.height * i / 7),
+          Offset(size.width, size.height * i / 7),
+          partnerGridPaint,
+        );
+      }
     } else {
       // Grade leve de ruas para o modo cliente.
       final gridPaint = Paint()
-        ..color = Colors.white.withValues(alpha: 0.07)
+        ..color = const Color(0xFF8FC8F5).withValues(alpha: 0.11)
         ..strokeWidth = 1;
       for (var i = 1; i < 7; i++) {
         canvas.drawLine(
@@ -1092,6 +1108,25 @@ class _LoginBackgroundPainter extends CustomPainter {
           Offset(size.width, size.height * i / 7),
           gridPaint,
         );
+      }
+
+      // Quadras sutis para aproximar a textura de mapa da referência.
+      final blockPaint = Paint()
+        ..color = const Color(0xFF8FC8F5).withValues(alpha: 0.045)
+        ..style = PaintingStyle.fill;
+      for (var row = 0; row < 4; row++) {
+        for (var column = 0; column < 6; column++) {
+          final rect = Rect.fromLTWH(
+            size.width * (column * 0.19 + 0.015),
+            size.height * (row * 0.24 + 0.04),
+            size.width * 0.15,
+            size.height * 0.16,
+          );
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(rect, const Radius.circular(5)),
+            blockPaint,
+          );
+        }
       }
     }
 
