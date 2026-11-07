@@ -6,7 +6,9 @@ import '../services/rental_service.dart';
 /// Operação da locadora pelo gestor. O módulo usa endpoints próprios e não
 /// altera mapa, vagas ou reservas do estacionamento.
 class RentalManagementPage extends StatefulWidget {
-  const RentalManagementPage({super.key});
+  final bool operatorMode;
+
+  const RentalManagementPage({super.key, this.operatorMode = false});
 
   @override
   State<RentalManagementPage> createState() => _RentalManagementPageState();
@@ -322,16 +324,18 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                       ),
                     ),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: () => _manageGroups(data.groups),
-                    icon: const Icon(Icons.block_outlined),
-                    label: const Text('Bloquear categoria'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _createVehicle,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Cadastrar veículo'),
-                  ),
+                  if (!widget.operatorMode)
+                    OutlinedButton.icon(
+                      onPressed: () => _manageGroups(data.groups),
+                      icon: const Icon(Icons.block_outlined),
+                      label: const Text('Bloquear categoria'),
+                    ),
+                  if (!widget.operatorMode)
+                    FilledButton.icon(
+                      onPressed: _createVehicle,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Cadastrar veículo'),
+                    ),
                 ],
               ),
               const SizedBox(height: 24),
@@ -415,11 +419,12 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                   ],
                 ),
               const SizedBox(height: 18),
-              OutlinedButton.icon(
-                onPressed: _createCompany,
-                icon: const Icon(Icons.add_business),
-                label: const Text('Adicionar unidade de locação'),
-              ),
+              if (!widget.operatorMode)
+                OutlinedButton.icon(
+                  onPressed: _createCompany,
+                  icon: const Icon(Icons.add_business),
+                  label: const Text('Adicionar unidade de locação'),
+                ),
             ],
           ),
         );

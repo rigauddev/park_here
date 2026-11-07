@@ -590,7 +590,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.convenienceProducts:
         return const _ConvenienceEntryPage(pos: false);
       case _MainArea.rentalManagement:
-        return const RentalManagementPage();
+        return RentalManagementPage(operatorMode: isOperator);
       case _MainArea.rentalReservations:
         return const RentalReservationsPage();
     }
