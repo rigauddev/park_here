@@ -1321,7 +1321,9 @@ Blocos operacionais adicionais:
 
 `GET /parkings/cities?q=` retorna cidades que possuem pelo menos um serviço
 ativo (estacionamento, locadora ou guia aprovado). A busca ignora acentos e
-retorna a grafia canônica para apresentação.
+retorna a grafia canônica para apresentação. Quando a consulta não encontra
+um serviço local, o app consulta o catálogo público de municípios do IBGE
+(`servicodados.ibge.gov.br`) e limita as sugestões exibidas a 100 resultados.
 
 `GET /parkings/services/map?city=&service_type=` retorna o índice público de
 unidades disponíveis para o mapa. `service_type` aceita `parking`,

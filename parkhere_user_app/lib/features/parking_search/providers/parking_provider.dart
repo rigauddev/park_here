@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../core/services/api_service.dart';
 import '../models/parking_model.dart';
@@ -149,8 +152,41 @@ final citySuggestionsProvider = FutureProvider.family<List<String>, String>((
       : '/parkings/cities?q=${Uri.encodeQueryComponent(value)}';
   final data = await ref.read(apiServiceProvider).getMap(endpoint);
   final cities = data['cities'] as List<dynamic>? ?? const <dynamic>[];
-  return cities
+  final local = cities
       .map((item) => item.toString())
       .where((item) => item.isNotEmpty)
       .toList();
+  if (local.isNotEmpty || value.length < 2) return local;
+
+  try {
+    final response = await http
+        .get(
+          Uri.parse(
+            'https://servicodados.ibge.gov.br/api/v1/localidades/municipios',
+          ),
+        )
+        .timeout(const Duration(seconds: 8));
+    if (response.statusCode == 200) {
+      final normalized = _normalizeCity(value);
+      final payload = jsonDecode(response.body) as List<dynamic>;
+      return payload
+          .whereType<Map<String, dynamic>>()
+          .map((item) => item['nome']?.toString() ?? '')
+          .where((name) => _normalizeCity(name).contains(normalized))
+          .take(100)
+          .toList();
+    }
+  } catch (_) {
+    // Mantém a lista local quando o catálogo público estiver indisponível.
+  }
+  return local;
 });
+
+String _normalizeCity(String value) => value
+    .toLowerCase()
+    .replaceAll(RegExp('[áàâãä]'), 'a')
+    .replaceAll(RegExp('[éêë]'), 'e')
+    .replaceAll(RegExp('[íìîï]'), 'i')
+    .replaceAll(RegExp('[óòôõö]'), 'o')
+    .replaceAll(RegExp('[úùûü]'), 'u')
+    .replaceAll('ç', 'c');

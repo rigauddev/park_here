@@ -105,11 +105,11 @@ class AccountNotifier extends StateNotifier<AccountState> {
       final decoded = jsonDecode(walletJson) as List<dynamic>;
       walletMethods = decoded
           .map((item) => _walletFromJson(item as Map<String, dynamic>))
-          // Customer cards are loaded from the account API. Partner payout
-          // details stay in their existing local flow and are Pix-only.
+          // Clientes mantêm cartões mascarados no cache até a sincronização
+          // com a API; parceiros mantêm somente a conta Pix de repasse.
           .where(
             (method) =>
-                role != 'customer' && method.type == WalletMethodType.pix,
+                role == 'customer' || method.type == WalletMethodType.pix,
           )
           .toList();
     }

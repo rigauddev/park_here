@@ -289,6 +289,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                     width: compact ? constraints.maxWidth : 190,
                     child: DropdownButtonFormField<String>(
                       initialValue: _categoryFilter,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Categoria'),
                       items: [
                         const DropdownMenuItem(
@@ -300,6 +301,8 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                             value: group['id'] as String,
                             child: Text(
                               group['name'] as String? ?? 'Categoria',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                       ],

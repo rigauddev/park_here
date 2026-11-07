@@ -1054,46 +1054,45 @@ class _WebMenu extends ConsumerWidget {
 
   List<_MenuItem> _operationalItems(List<PartnerServiceUnit> units) {
     final items = <_MenuItem>[];
-    for (final unit in units.where((item) => item.serviceType == 'parking')) {
-      items.add(
-        _MenuItem(
-          Icons.local_parking_outlined,
-          '${unit.name} / Mapa de vagas',
-          _MainArea.map,
-        ),
-      );
-      items.add(
-        _MenuItem(
-          Icons.confirmation_number_outlined,
-          '${unit.name} / Reservas',
-          _MainArea.reservations,
-        ),
-      );
+    final groups = <String, List<PartnerServiceUnit>>{};
+    for (final unit in units) {
+      groups.putIfAbsent(unit.serviceType, () => []).add(unit);
     }
-    for (final unit in units.where(
-      (item) => item.serviceType == 'vehicle_rental',
-    )) {
-      items.add(
-        _MenuItem(
-          Icons.directions_car_filled_outlined,
-          '${unit.name} / Operação da frota',
-          _MainArea.rentalManagement,
-        ),
-      );
-      items.add(
-        _MenuItem(
-          Icons.car_rental_outlined,
-          '${unit.name} / Veículos',
-          _MainArea.rentalManagement,
-        ),
-      );
-      items.add(
-        _MenuItem(
-          Icons.assignment_outlined,
-          '${unit.name} / Reservas',
-          _MainArea.rentalReservations,
-        ),
-      );
+    for (final entry in groups.entries) {
+      final label = entry.value.length == 1
+          ? entry.value.first.name
+          : _operationalServiceLabel(entry.key);
+      if (entry.key == 'parking') {
+        items.add(
+          _MenuItem(
+            Icons.local_parking_outlined,
+            '$label / Mapa de vagas',
+            _MainArea.map,
+          ),
+        );
+        items.add(
+          _MenuItem(
+            Icons.confirmation_number_outlined,
+            '$label / Reservas',
+            _MainArea.reservations,
+          ),
+        );
+      } else if (entry.key == 'vehicle_rental') {
+        items.add(
+          _MenuItem(
+            Icons.directions_car_filled_outlined,
+            '$label / Operação da frota',
+            _MainArea.rentalManagement,
+          ),
+        );
+        items.add(
+          _MenuItem(
+            Icons.assignment_outlined,
+            '$label / Reservas',
+            _MainArea.rentalReservations,
+          ),
+        );
+      }
     }
     if (items.isEmpty) {
       items.add(
@@ -1106,6 +1105,13 @@ class _WebMenu extends ConsumerWidget {
     }
     return items;
   }
+
+  String _operationalServiceLabel(String serviceType) => switch (serviceType) {
+    'parking' => 'Estacionamentos',
+    'vehicle_rental' => 'Locadoras',
+    'tour_guide' => 'Guias turísticos',
+    _ => 'Serviços',
+  };
 
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
     await ref.read(authProvider.notifier).logout();
@@ -1338,46 +1344,45 @@ class _MobileDrawer extends StatelessWidget {
     void Function(_MainArea area, [int? serviceTabIndex]) onSelected,
   ) {
     final items = <_MobileMenuItem>[];
-    for (final unit in units.where((item) => item.serviceType == 'parking')) {
-      items.add(
-        _MobileMenuItem(
-          icon: Icons.local_parking_outlined,
-          title: '${unit.name} / Mapa de vagas',
-          onTap: () => onSelected(_MainArea.map),
-        ),
-      );
-      items.add(
-        _MobileMenuItem(
-          icon: Icons.confirmation_number_outlined,
-          title: '${unit.name} / Reservas',
-          onTap: () => onSelected(_MainArea.reservations),
-        ),
-      );
+    final groups = <String, List<PartnerServiceUnit>>{};
+    for (final unit in units) {
+      groups.putIfAbsent(unit.serviceType, () => []).add(unit);
     }
-    for (final unit in units.where(
-      (item) => item.serviceType == 'vehicle_rental',
-    )) {
-      items.add(
-        _MobileMenuItem(
-          icon: Icons.directions_car_filled_outlined,
-          title: '${unit.name} / Operação da frota',
-          onTap: () => onSelected(_MainArea.rentalManagement),
-        ),
-      );
-      items.add(
-        _MobileMenuItem(
-          icon: Icons.car_rental_outlined,
-          title: '${unit.name} / Veículos',
-          onTap: () => onSelected(_MainArea.rentalManagement),
-        ),
-      );
-      items.add(
-        _MobileMenuItem(
-          icon: Icons.assignment_outlined,
-          title: '${unit.name} / Reservas',
-          onTap: () => onSelected(_MainArea.rentalReservations),
-        ),
-      );
+    for (final entry in groups.entries) {
+      final label = entry.value.length == 1
+          ? entry.value.first.name
+          : _operationalServiceLabel(entry.key);
+      if (entry.key == 'parking') {
+        items.add(
+          _MobileMenuItem(
+            icon: Icons.local_parking_outlined,
+            title: '$label / Mapa de vagas',
+            onTap: () => onSelected(_MainArea.map),
+          ),
+        );
+        items.add(
+          _MobileMenuItem(
+            icon: Icons.confirmation_number_outlined,
+            title: '$label / Reservas',
+            onTap: () => onSelected(_MainArea.reservations),
+          ),
+        );
+      } else if (entry.key == 'vehicle_rental') {
+        items.add(
+          _MobileMenuItem(
+            icon: Icons.directions_car_filled_outlined,
+            title: '$label / Operação da frota',
+            onTap: () => onSelected(_MainArea.rentalManagement),
+          ),
+        );
+        items.add(
+          _MobileMenuItem(
+            icon: Icons.assignment_outlined,
+            title: '$label / Reservas',
+            onTap: () => onSelected(_MainArea.rentalReservations),
+          ),
+        );
+      }
     }
     if (items.isEmpty) {
       items.add(
@@ -1390,6 +1395,13 @@ class _MobileDrawer extends StatelessWidget {
     }
     return items;
   }
+
+  String _operationalServiceLabel(String serviceType) => switch (serviceType) {
+    'parking' => 'Estacionamentos',
+    'vehicle_rental' => 'Locadoras',
+    'tour_guide' => 'Guias turísticos',
+    _ => 'Serviços',
+  };
 }
 
 class _MenuCategory extends StatelessWidget {

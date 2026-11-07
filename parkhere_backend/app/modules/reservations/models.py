@@ -45,6 +45,9 @@ class Reservation(BaseModel):
     is_recurring = Column(Boolean, nullable=False, default=False)
     recurring_discount_percent = Column(Float, nullable=False, default=0.0)
     needs_checkin_alert = Column(Boolean, nullable=False, default=False)
+    notification_status = Column(
+        String(40), nullable=False, default="none", server_default="none"
+    )
     spot_code = Column(String(20), nullable=True)
     arrival_estimate_at = Column(DateTime(timezone=True), nullable=True)
     is_manual_arrival = Column(Boolean, nullable=False, default=False)

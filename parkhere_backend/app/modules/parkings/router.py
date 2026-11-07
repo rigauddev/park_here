@@ -1,4 +1,6 @@
 import json
+import asyncio
+import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
@@ -16,6 +18,7 @@ from app.modules.rentals.models import RentalCompany, RentalVehicle
 from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/parkings", tags=["Parkings"])
+_IBGE_CITY_CACHE: list[str] | None = None
 
 
 @router.get("", response_model=list[ParkingResponse])
@@ -79,7 +82,43 @@ async def list_service_cities(
         if key not in seen:
             seen.add(key)
             values.append(canonical)
-    return {"cities": values}
+    # A cidade pode ainda não possuir serviço no ServiceHub, mas deve ser
+    # selecionável para que o cliente pesquise antes da expansão do catálogo.
+    # O IBGE é a fonte pública oficial; o cache em memória evita uma chamada a
+    # cada tecla e o catálogo local continua sendo o fallback offline.
+    if q and len(normalized_query) >= 2:
+        for city in await _ibge_cities():
+            if normalized_query in _normalize_city(city):
+                canonical = _canonical_city(city)
+                if _normalize_city(canonical) not in seen:
+                    values.append(canonical)
+                if len(values) >= 100:
+                    break
+    return {"cities": sorted(set(values), key=_normalize_city)}
+
+
+async def _ibge_cities() -> list[str]:
+    global _IBGE_CITY_CACHE
+    if _IBGE_CITY_CACHE is not None:
+        return _IBGE_CITY_CACHE
+
+    def fetch() -> list[str]:
+        request = urllib.request.Request(
+            'https://servicodados.ibge.gov.br/api/v1/localidades/municipios',
+            headers={'User-Agent': 'ServiceHub/1.0'},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+        return sorted({
+            item['nome'] for item in payload
+            if isinstance(item, dict) and item.get('nome')
+        }, key=_normalize_city)
+
+    try:
+        _IBGE_CITY_CACHE = await asyncio.to_thread(fetch)
+    except Exception:
+        _IBGE_CITY_CACHE = []
+    return _IBGE_CITY_CACHE
 
 
 @router.get('/services/map')
