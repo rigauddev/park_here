@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -234,11 +236,18 @@ class _PartnerFeatureAccessPageState
                           children: [
                             const Row(
                               children: [
-                                Icon(Icons.stars, color: Colors.amber, size: 22),
+                                Icon(
+                                  Icons.stars,
+                                  color: Colors.amber,
+                                  size: 22,
+                                ),
                                 SizedBox(width: 8),
                                 Text(
                                   'Teste Grátis por 30 Dias',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
                                 ),
                               ],
                             ),
@@ -249,10 +258,16 @@ class _PartnerFeatureAccessPageState
                             ),
                             const SizedBox(height: 10),
                             FilledButton.icon(
-                              style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade900),
-                              onPressed: _submitting ? null : () => _activateDirectly('trial'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.amber.shade900,
+                              ),
+                              onPressed: _submitting
+                                  ? null
+                                  : () => _activateDirectly('trial'),
                               icon: const Icon(Icons.timer_outlined, size: 16),
-                              label: const Text('Iniciar Teste Grátis de 30 Dias'),
+                              label: const Text(
+                                'Iniciar Teste Grátis de 30 Dias',
+                              ),
                             ),
                           ],
                         ),
@@ -271,25 +286,32 @@ class _PartnerFeatureAccessPageState
                             label: const Text('Débito Automático via Reservas'),
                             selected: _paymentMethod == 'direct_debit',
                             avatar: const Icon(Icons.sync_alt, size: 16),
-                            onSelected: (_) => setState(() => _paymentMethod = 'direct_debit'),
+                            onSelected: (_) =>
+                                setState(() => _paymentMethod = 'direct_debit'),
                           ),
                           ChoiceChip(
                             label: const Text('PIX'),
                             selected: _paymentMethod == 'pix',
                             avatar: const Icon(Icons.pix, size: 16),
-                            onSelected: (_) => setState(() => _paymentMethod = 'pix'),
+                            onSelected: (_) =>
+                                setState(() => _paymentMethod = 'pix'),
                           ),
                           ChoiceChip(
                             label: const Text('Cartão de Crédito'),
                             selected: _paymentMethod == 'credit_card',
                             avatar: const Icon(Icons.credit_card, size: 16),
-                            onSelected: (_) => setState(() => _paymentMethod = 'credit_card'),
+                            onSelected: (_) =>
+                                setState(() => _paymentMethod = 'credit_card'),
                           ),
                           ChoiceChip(
                             label: const Text('Cartão de Débito'),
                             selected: _paymentMethod == 'debit_card',
-                            avatar: const Icon(Icons.credit_card_outlined, size: 16),
-                            onSelected: (_) => setState(() => _paymentMethod = 'debit_card'),
+                            avatar: const Icon(
+                              Icons.credit_card_outlined,
+                              size: 16,
+                            ),
+                            onSelected: (_) =>
+                                setState(() => _paymentMethod = 'debit_card'),
                           ),
                         ],
                       ),
@@ -305,12 +327,19 @@ class _PartnerFeatureAccessPageState
                           child: const Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.info_outline, size: 18, color: Colors.blue),
+                              Icon(
+                                Icons.info_outline,
+                                size: 18,
+                                color: Colors.blue,
+                              ),
                               SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Débito Automático: O valor da mensalidade da funcionalidade é guardado como débito. Ao ter uma reserva que cubra o valor do débito do estabelecimento, esse valor é cobrado nessa reserva e fica registrado como saída sobre o valor da mensalidade da funcionalidade.',
-                                  style: TextStyle(fontSize: 12, color: Colors.black87),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black87,
+                                  ),
                                 ),
                               ),
                             ],
@@ -364,18 +393,27 @@ class _PartnerFeatureAccessPageState
                   backgroundColor: Colors.blue.shade900,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                onPressed: _submitting ? null : () => _activateDirectly(_paymentMethod),
+                onPressed: _submitting
+                    ? null
+                    : () => _activateDirectly(_paymentMethod),
                 icon: _submitting
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.check_circle_outline),
                 label: Text(
                   _submitting
-                      ? (en ? 'Activating feature…' : 'Ativando funcionalidade…')
-                      : (en ? 'Activate and Unlock Feature' : 'Contratar e Ativar Funcionalidade'),
+                      ? (en
+                            ? 'Activating feature…'
+                            : 'Ativando funcionalidade…')
+                      : (en
+                            ? 'Activate and Unlock Feature'
+                            : 'Contratar e Ativar Funcionalidade'),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -426,10 +464,7 @@ class _PartnerFeatureAccessPageState
     try {
       final res = await _api.postAuthorized(
         '/partners/features/${widget.featureKey}/activate',
-        {
-          'modality': modality,
-          'billing_period': _billingPeriod,
-        },
+        {'modality': modality, 'billing_period': _billingPeriod},
         token,
       );
 
@@ -440,42 +475,50 @@ class _PartnerFeatureAccessPageState
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.restart_alt, size: 48, color: Colors.blue),
-          title: const Text('Reinicialização Necessária'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                res['message'] as String? ?? 'Funcionalidade ativada com sucesso!',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'O sistema precisa ser reiniciado para que todas as novas opções, permissões e menus sejam liberados no seu aplicativo.',
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Ao clicar em Confirmar, você será desconectado e os dados em cache serão limpos para refazer o login já com a funcionalidade liberada.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+        builder: (ctx) {
+          Timer(const Duration(seconds: 10), () {
+            if (ctx.mounted && Navigator.of(ctx).canPop()) {
+              Navigator.of(ctx).pop();
+            }
+          });
+          return AlertDialog(
+            icon: const Icon(Icons.restart_alt, size: 48, color: Colors.blue),
+            title: const Text('Reinicialização Necessária'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  res['message'] as String? ??
+                      'Funcionalidade ativada com sucesso!',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'O sistema precisa ser reiniciado para que todas as novas opções, permissões e menus sejam liberados no seu aplicativo.',
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Ao clicar em Confirmar, você será desconectado e os dados em cache serão limpos para refazer o login já com a funcionalidade liberada.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            actions: [
+              FilledButton.icon(
+                icon: const Icon(Icons.check),
+                label: const Text('Confirmar e Reiniciar'),
+                onPressed: () => Navigator.of(ctx).pop(),
               ),
             ],
-          ),
-          actions: [
-            FilledButton.icon(
-              icon: const Icon(Icons.check),
-              label: const Text('Confirmar e Reiniciar'),
-              onPressed: () async {
-                await LocalStorageService().clear();
-                await ref.read(authProvider.notifier).logout();
-                if (!ctx.mounted) return;
-                Navigator.of(ctx).pushNamedAndRemoveUntil('/login', (route) => false);
-              },
-            ),
-          ],
-        ),
+          );
+        },
       );
+      if (!mounted) return;
+      await LocalStorageService().clear();
+      await ref.read(authProvider.notifier).logout();
+      if (!mounted) return;
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (e) {
       if (mounted) {
         setState(() => _submitting = false);
@@ -498,45 +541,48 @@ class _PartnerFeatureAccessPageState
 
   List<String> _benefits(bool en, String key) {
     final values = switch (key) {
-      'financial_management' => en
-          ? [
-              'Complete financial dashboard with custom calendar filter',
-              'Cost centers management (Revenue, Expense, Mixed)',
-              'Manual income and expense entries with payment method tracking',
-              'Segregated revenue streams: Parking vs Convenience Store',
-              'Reconciliation and net earnings real-time calculation',
-            ]
-          : [
-              'Painel financeiro profissional com filtro por calendário e mês atual',
-              'Gestão de Centros de Custo (Receitas, Despesas e Mistos)',
-              'Lançamentos manuais de caixa com categoria e forma de pagamento',
-              'Separação clara entre receitas de estacionamento e loja de conveniência',
-              'Conciliação em tempo real e cálculo de lucro líquido real',
-            ],
-      'convenience_management' || 'convenience_store' => en
-          ? [
-              'Complete POS counter with barcode camera scanner',
-              'Cash bleed / withdrawal (Sangria) with manager receipt',
-              'Stock control, inventory alerts, and shift closing reports',
-              'Discount limits, cancellation security and non-fiscal customer receipt',
-            ]
-          : [
-              'Frente de caixa (PDV) moderna com leitor de código de barras por câmera',
-              'Sangria de caixa com emissão de comprovante e identificação de responsável',
-              'Controle de estoque, alerta de reposição e relatório de fechamento de turno',
-              'Descontos controlados, cancelamento seguro e cupom não fiscal com CPF',
-            ],
-      'team_management' => en
-          ? [
-              'Granular permissions matrix for operators and managers',
-              'Turn control, separate cash drawers for parking and store',
-              'Audit log of all actions by operator',
-            ]
-          : [
-              'Matriz granular de permissões para operadores e gestores',
-              'Controle de turnos e abertura de caixas de estacionamento e conveniência',
-              'Auditoria completa de operações por operador',
-            ],
+      'financial_management' =>
+        en
+            ? [
+                'Complete financial dashboard with custom calendar filter',
+                'Cost centers management (Revenue, Expense, Mixed)',
+                'Manual income and expense entries with payment method tracking',
+                'Segregated revenue streams: Parking vs Convenience Store',
+                'Reconciliation and net earnings real-time calculation',
+              ]
+            : [
+                'Painel financeiro profissional com filtro por calendário e mês atual',
+                'Gestão de Centros de Custo (Receitas, Despesas e Mistos)',
+                'Lançamentos manuais de caixa com categoria e forma de pagamento',
+                'Separação clara entre receitas de estacionamento e loja de conveniência',
+                'Conciliação em tempo real e cálculo de lucro líquido real',
+              ],
+      'convenience_management' || 'convenience_store' =>
+        en
+            ? [
+                'Complete POS counter with barcode camera scanner',
+                'Cash bleed / withdrawal (Sangria) with manager receipt',
+                'Stock control, inventory alerts, and shift closing reports',
+                'Discount limits, cancellation security and non-fiscal customer receipt',
+              ]
+            : [
+                'Frente de caixa (PDV) moderna com leitor de código de barras por câmera',
+                'Sangria de caixa com emissão de comprovante e identificação de responsável',
+                'Controle de estoque, alerta de reposição e relatório de fechamento de turno',
+                'Descontos controlados, cancelamento seguro e cupom não fiscal com CPF',
+              ],
+      'team_management' =>
+        en
+            ? [
+                'Granular permissions matrix for operators and managers',
+                'Turn control, separate cash drawers for parking and store',
+                'Audit log of all actions by operator',
+              ]
+            : [
+                'Matriz granular de permissões para operadores e gestores',
+                'Controle de turnos e abertura de caixas de estacionamento e conveniência',
+                'Auditoria completa de operações por operador',
+              ],
       'additional_units' =>
         en
             ? [
@@ -551,17 +597,18 @@ class _PartnerFeatureAccessPageState
                 'Relatórios financeiros consolidados e individuais',
                 'Taxas padronizadas aplicadas igualmente a todas as filiais',
               ],
-      'additional_services' => en
-          ? [
-              'Offer extra services (Car wash, valet, detailing, oil check)',
-              'Automatic calculation of extra service fees',
-              'Integrated billing on checkout',
-            ]
-          : [
-              'Oferta de serviços extras (Lava-jato, valet, estética automotiva)',
-              'Cálculo e cobrança automática de taxas sobre serviços extras',
-              'Faturamento integrado no checkout do cliente',
-            ],
+      'additional_services' =>
+        en
+            ? [
+                'Offer extra services (Car wash, valet, detailing, oil check)',
+                'Automatic calculation of extra service fees',
+                'Integrated billing on checkout',
+              ]
+            : [
+                'Oferta de serviços extras (Lava-jato, valet, estética automotiva)',
+                'Cálculo e cobrança automática de taxas sobre serviços extras',
+                'Faturamento integrado no checkout do cliente',
+              ],
       _ =>
         en
             ? [

@@ -40,7 +40,12 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     final result = await _showCompanyDialog();
     if (result == null || _token == null) return;
     try {
-      await _service.createCompany(token: _token!, name: result.name, address: result.address, cnpj: result.cnpj);
+      await _service.createCompany(
+        token: _token!,
+        name: result.name,
+        address: result.address,
+        cnpj: result.cnpj,
+      );
       if (mounted) setState(() => _future = _load());
     } catch (error) {
       if (mounted) _message('Não foi possível criar a locadora: $error');
@@ -72,37 +77,89 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     }
   }
 
-  void _message(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _message(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gestão da locadora'),
-        actions: [IconButton(onPressed: () => setState(() => _future = _load()), icon: const Icon(Icons.refresh))],
+        actions: [
+          IconButton(
+            onPressed: () => setState(() => _future = _load()),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('${snapshot.error}')));
+          if (snapshot.connectionState == ConnectionState.waiting)
+            return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError)
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('${snapshot.error}'),
+              ),
+            );
           final companies = snapshot.data ?? const [];
-          if (companies.isEmpty) return Center(child: FilledButton.icon(onPressed: _createCompany, icon: const Icon(Icons.add_business), label: const Text('Cadastrar locadora')));
+          if (companies.isEmpty)
+            return Center(
+              child: FilledButton.icon(
+                onPressed: _createCompany,
+                icon: const Icon(Icons.add_business),
+                label: const Text('Cadastrar locadora'),
+              ),
+            );
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               DropdownButtonFormField<String>(
                 value: _selected?['id'] as String?,
-                decoration: const InputDecoration(labelText: 'Unidade de locação', border: OutlineInputBorder()),
-                items: [for (final item in companies) DropdownMenuItem(value: item['id'] as String, child: Text(item['name'] as String? ?? 'Locadora'))],
-                onChanged: (id) => setState(() => _selected = companies.firstWhere((item) => item['id'] == id)),
+                decoration: const InputDecoration(
+                  labelText: 'Unidade de locação',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final item in companies)
+                    DropdownMenuItem(
+                      value: item['id'] as String,
+                      child: Text(item['name'] as String? ?? 'Locadora'),
+                    ),
+                ],
+                onChanged: (id) => setState(
+                  () => _selected = companies.firstWhere(
+                    (item) => item['id'] == id,
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
-              Row(children: [Text('Frota', style: Theme.of(context).textTheme.titleLarge), const Spacer(), FilledButton.icon(onPressed: _createVehicle, icon: const Icon(Icons.directions_car), label: const Text('Novo veículo'))]),
+              Row(
+                children: [
+                  Text('Frota', style: Theme.of(context).textTheme.titleLarge),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: _createVehicle,
+                    icon: const Icon(Icons.directions_car),
+                    label: const Text('Novo veículo'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
-              if (_selected != null) _FleetList(companyId: _selected!['id'] as String, service: _service, token: _token!),
+              if (_selected != null)
+                _FleetList(
+                  companyId: _selected!['id'] as String,
+                  service: _service,
+                  token: _token!,
+                ),
               const SizedBox(height: 20),
-              OutlinedButton.icon(onPressed: _createCompany, icon: const Icon(Icons.add_business), label: const Text('Adicionar unidade de locação')),
+              OutlinedButton.icon(
+                onPressed: _createCompany,
+                icon: const Icon(Icons.add_business),
+                label: const Text('Adicionar unidade de locação'),
+              ),
             ],
           );
         },
@@ -114,14 +171,52 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     final name = TextEditingController();
     final address = TextEditingController();
     final cnpj = TextEditingController();
-    return showDialog<_CompanyForm>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Nova unidade de locação'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: name, decoration: const InputDecoration(labelText: 'Nome')), TextField(controller: address, decoration: const InputDecoration(labelText: 'Endereço')), TextField(controller: cnpj, decoration: const InputDecoration(labelText: 'CNPJ (opcional)'))])),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: () { if (name.text.trim().length >= 2) Navigator.pop(context, _CompanyForm(name.text, address.text, cnpj.text)); }, child: const Text('Salvar'))],
-    ));
+    return showDialog<_CompanyForm>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nova unidade de locação'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: 'Nome'),
+              ),
+              TextField(
+                controller: address,
+                decoration: const InputDecoration(labelText: 'Endereço'),
+              ),
+              TextField(
+                controller: cnpj,
+                decoration: const InputDecoration(labelText: 'CNPJ (opcional)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (name.text.trim().length >= 2)
+                Navigator.pop(
+                  context,
+                  _CompanyForm(name.text, address.text, cnpj.text),
+                );
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
   }
 
-  Future<_VehicleForm?> _showVehicleDialog(List<Map<String, dynamic>> groups) async {
+  Future<_VehicleForm?> _showVehicleDialog(
+    List<Map<String, dynamic>> groups,
+  ) async {
     final brand = TextEditingController();
     final model = TextEditingController();
     final year = TextEditingController();
@@ -131,36 +226,316 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     List<Map<String, dynamic>> suggestions = const [];
     List<String> photoUrls = const [];
     Map<String, dynamic> specifications = const {};
-    return showDialog<_VehicleForm>(context: context, builder: (context) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
-      title: const Text('Novo veículo da frota'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (groups.isNotEmpty) DropdownButtonFormField<String>(initialValue: groupId, decoration: const InputDecoration(labelText: 'Grupo do veículo'), items: [for (final group in groups) DropdownMenuItem(value: group['id'] as String, child: Text(group['name'] as String? ?? 'Grupo'))], onChanged: (value) { final selected = groups.firstWhere((group) => group['id'] == value); setDialogState(() { groupId = value; type = selected['vehicle_type'] as String? ?? 'car'; if (price.text.isEmpty && selected['suggested_price_per_day'] != null) price.text = '${selected['suggested_price_per_day']}'; }); }),
-        DropdownButtonFormField<String>(initialValue: type, decoration: const InputDecoration(labelText: 'Tipo'), items: const [DropdownMenuItem(value: 'car', child: Text('Carro')), DropdownMenuItem(value: 'suv', child: Text('SUV')), DropdownMenuItem(value: 'pickup', child: Text('Picape')), DropdownMenuItem(value: 'van', child: Text('Van')), DropdownMenuItem(value: 'motorcycle', child: Text('Motocicleta')), DropdownMenuItem(value: 'electric_car', child: Text('Carro elétrico'))], onChanged: (value) => setDialogState(() => type = value ?? 'car')),
-        TextField(controller: brand, decoration: const InputDecoration(labelText: 'Marca')),
-        TextField(controller: model, decoration: const InputDecoration(labelText: 'Modelo')),
-        TextField(controller: year, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ano')),
-        Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: () async { final parsedYear = int.tryParse(year.text); if (brand.text.trim().isEmpty || parsedYear == null) return; try { final found = await _service.catalogModels(make: brand.text, year: parsedYear, vehicleType: type, token: _token!); setDialogState(() => suggestions = found); } catch (_) {} }, icon: const Icon(Icons.search), label: const Text('Buscar modelo e especificações'))),
-        if (suggestions.isNotEmpty) DropdownButtonFormField<Map<String, dynamic>>(initialValue: suggestions.first, decoration: const InputDecoration(labelText: 'Modelo encontrado'), items: [for (final item in suggestions) DropdownMenuItem(value: item, child: Text(item['model'] as String? ?? 'Modelo'))], onChanged: (value) { if (value != null) setDialogState(() { model.text = value['model'] as String? ?? model.text; photoUrls = [for (final url in (value['photo_urls'] as List<dynamic>? ?? const [])) url.toString()]; specifications = (value['specifications'] as Map<String, dynamic>?) ?? const {}; }); }),
-        if (photoUrls.isNotEmpty) Align(alignment: Alignment.centerLeft, child: Text('${photoUrls.length} foto(s) sugerida(s) encontrada(s). Você poderá substituir por fotos próprias após o cadastro.', style: Theme.of(context).textTheme.bodySmall)),
-        TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Diária (R\$)')),
-      ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: () { final parsed = double.tryParse(price.text.replaceAll(',', '.')); if (brand.text.isNotEmpty && model.text.isNotEmpty && parsed != null && parsed > 0) Navigator.pop(context, _VehicleForm(type, brand.text, model.text, parsed, int.tryParse(year.text), groupId, photoUrls, specifications)); }, child: const Text('Salvar'))],
-    )));
+    var step = 0;
+    return showDialog<_VehicleForm>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> searchCatalog() async {
+            final parsedYear = int.tryParse(year.text);
+            if (brand.text.trim().isEmpty || parsedYear == null) return;
+            try {
+              final found = await _service.catalogModels(
+                make: brand.text,
+                year: parsedYear,
+                vehicleType: type,
+                token: _token!,
+              );
+              setDialogState(() => suggestions = found);
+            } catch (_) {}
+          }
+
+          void finish() {
+            final parsed = double.tryParse(price.text.replaceAll(',', '.'));
+            if (brand.text.trim().isEmpty ||
+                model.text.trim().isEmpty ||
+                parsed == null ||
+                parsed <= 0) {
+              return;
+            }
+            Navigator.of(dialogContext).pop(
+              _VehicleForm(
+                type,
+                brand.text,
+                model.text,
+                parsed,
+                int.tryParse(year.text),
+                groupId,
+                photoUrls,
+                specifications,
+              ),
+            );
+          }
+
+          final steps = [
+            Step(
+              title: const Text('Grupo e tipo'),
+              isActive: step >= 0,
+              content: Column(
+                children: [
+                  if (groups.isNotEmpty)
+                    DropdownButtonFormField<String>(
+                      initialValue: groupId,
+                      decoration: const InputDecoration(
+                        labelText: 'Grupo do veículo',
+                      ),
+                      items: [
+                        for (final group in groups)
+                          DropdownMenuItem(
+                            value: group['id'] as String,
+                            child: Text(group['name'] as String? ?? 'Grupo'),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        final selected = groups.firstWhere(
+                          (group) => group['id'] == value,
+                        );
+                        setDialogState(() {
+                          groupId = value;
+                          type = selected['vehicle_type'] as String? ?? 'car';
+                          if (price.text.isEmpty &&
+                              selected['suggested_price_per_day'] != null) {
+                            price.text =
+                                '${selected['suggested_price_per_day']}';
+                          }
+                        });
+                      },
+                    ),
+                  DropdownButtonFormField<String>(
+                    initialValue: type,
+                    decoration: const InputDecoration(labelText: 'Tipo'),
+                    items: const [
+                      DropdownMenuItem(value: 'car', child: Text('Carro')),
+                      DropdownMenuItem(value: 'suv', child: Text('SUV')),
+                      DropdownMenuItem(value: 'pickup', child: Text('Picape')),
+                      DropdownMenuItem(value: 'van', child: Text('Van')),
+                      DropdownMenuItem(
+                        value: 'motorcycle',
+                        child: Text('Motocicleta'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'electric_car',
+                        child: Text('Carro elétrico'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => type = value ?? 'car'),
+                  ),
+                ],
+              ),
+            ),
+            Step(
+              title: const Text('Modelo'),
+              isActive: step >= 1,
+              content: Column(
+                children: [
+                  TextField(
+                    controller: brand,
+                    decoration: const InputDecoration(labelText: 'Marca'),
+                  ),
+                  TextField(
+                    controller: model,
+                    decoration: const InputDecoration(labelText: 'Modelo'),
+                  ),
+                  TextField(
+                    controller: year,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Ano'),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: searchCatalog,
+                      icon: const Icon(Icons.search),
+                      label: const Text('Buscar modelo e especificações'),
+                    ),
+                  ),
+                  if (suggestions.isNotEmpty)
+                    DropdownButtonFormField<Map<String, dynamic>>(
+                      initialValue: suggestions.first,
+                      decoration: const InputDecoration(
+                        labelText: 'Modelo encontrado',
+                      ),
+                      items: [
+                        for (final item in suggestions)
+                          DropdownMenuItem(
+                            value: item,
+                            child: Text(item['model'] as String? ?? 'Modelo'),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() {
+                          model.text = value['model'] as String? ?? model.text;
+                          photoUrls = [
+                            for (final url
+                                in (value['photo_urls'] as List<dynamic>? ??
+                                    const []))
+                              url.toString(),
+                          ];
+                          specifications =
+                              (value['specifications']
+                                  as Map<String, dynamic>?) ??
+                              const {};
+                        });
+                      },
+                    ),
+                ],
+              ),
+            ),
+            Step(
+              title: const Text('Preço e revisão'),
+              isActive: step >= 2,
+              content: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: price,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Diária (R\$)',
+                    ),
+                  ),
+                  if (photoUrls.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        '${photoUrls.length} foto(s) sugerida(s) encontrada(s). Você poderá substituir por fotos próprias após o cadastro.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Text('Tipo: $type'),
+                  Text('Modelo: ${brand.text} ${model.text}'),
+                ],
+              ),
+            ),
+          ];
+
+          return AlertDialog(
+            title: const Text('Novo veículo da frota'),
+            content: SizedBox(
+              width: 560,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 560),
+                child: SingleChildScrollView(
+                  child: Stepper(
+                    currentStep: step,
+                    physics: const ClampingScrollPhysics(),
+                    onStepTapped: (value) => setDialogState(() => step = value),
+                    onStepContinue: () {
+                      if (step < steps.length - 1) {
+                        setDialogState(() => step += 1);
+                      } else {
+                        finish();
+                      }
+                    },
+                    onStepCancel: () {
+                      if (step > 0) {
+                        setDialogState(() => step -= 1);
+                      } else {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    },
+                    controlsBuilder: (context, details) => Row(
+                      children: [
+                        FilledButton(
+                          onPressed: details.onStepContinue,
+                          child: Text(
+                            step == steps.length - 1
+                                ? 'Salvar veículo'
+                                : 'Avançar',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: details.onStepCancel,
+                          child: Text(step == 0 ? 'Cancelar' : 'Voltar'),
+                        ),
+                      ],
+                    ),
+                    steps: steps,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
 class _FleetList extends StatelessWidget {
-  final String companyId; final RentalService service; final String token;
-  const _FleetList({required this.companyId, required this.service, required this.token});
-  @override
-  Widget build(BuildContext context) => FutureBuilder<List<Map<String, dynamic>>>(future: service.vehicles(companyId, token), builder: (context, snapshot) {
-    if (snapshot.connectionState == ConnectionState.waiting) return const LinearProgressIndicator();
-    if (snapshot.hasError) return Text('Erro ao carregar a frota: ${snapshot.error}');
-    final vehicles = snapshot.data ?? const [];
-    if (vehicles.isEmpty) return const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Nenhum veículo cadastrado.')));
-    return Column(children: [for (final vehicle in vehicles) Card(child: ListTile(leading: const Icon(Icons.directions_car_outlined), title: Text('${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''}'), subtitle: Text('${vehicle['vehicle_type'] ?? 'car'} • ${vehicle['year'] ?? '-'}'), trailing: Text('R\$ ${vehicle['price_per_day'] ?? '-'}')))]);
+  final String companyId;
+  final RentalService service;
+  final String token;
+  const _FleetList({
+    required this.companyId,
+    required this.service,
+    required this.token,
   });
+  @override
+  Widget build(
+    BuildContext context,
+  ) => FutureBuilder<List<Map<String, dynamic>>>(
+    future: service.vehicles(companyId, token),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting)
+        return const LinearProgressIndicator();
+      if (snapshot.hasError)
+        return Text('Erro ao carregar a frota: ${snapshot.error}');
+      final vehicles = snapshot.data ?? const [];
+      if (vehicles.isEmpty)
+        return const Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Nenhum veículo cadastrado.'),
+          ),
+        );
+      return Column(
+        children: [
+          for (final vehicle in vehicles)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.directions_car_outlined),
+                title: Text(
+                  '${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''}',
+                ),
+                subtitle: Text(
+                  '${vehicle['vehicle_type'] ?? 'car'} • ${vehicle['year'] ?? '-'}',
+                ),
+                trailing: Text('R\$ ${vehicle['price_per_day'] ?? '-'}'),
+              ),
+            ),
+        ],
+      );
+    },
+  );
 }
 
-class _CompanyForm { final String name, address, cnpj; const _CompanyForm(this.name, this.address, this.cnpj); }
-class _VehicleForm { final String type, brand, model; final double price; final int? year; final String? groupId; final List<String> photoUrls; final Map<String, dynamic> specifications; const _VehicleForm(this.type, this.brand, this.model, this.price, this.year, this.groupId, this.photoUrls, this.specifications); }
+class _CompanyForm {
+  final String name, address, cnpj;
+  const _CompanyForm(this.name, this.address, this.cnpj);
+}
+
+class _VehicleForm {
+  final String type, brand, model;
+  final double price;
+  final int? year;
+  final String? groupId;
+  final List<String> photoUrls;
+  final Map<String, dynamic> specifications;
+  const _VehicleForm(
+    this.type,
+    this.brand,
+    this.model,
+    this.price,
+    this.year,
+    this.groupId,
+    this.photoUrls,
+    this.specifications,
+  );
+}

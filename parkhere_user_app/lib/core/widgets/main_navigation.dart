@@ -14,6 +14,7 @@ import '../../features/partner_management/pages/partner_financial_page.dart';
 import '../../features/partner_management/pages/partner_management_home_page.dart';
 import '../../features/rental/pages/rental_companies_page.dart';
 import '../../features/rental/pages/rental_management_page.dart';
+import '../../features/rental/pages/rental_reservations_page.dart';
 import '../../features/partner_management/pages/partner_parking_map_page.dart';
 import '../../features/partner_management/pages/partner_reservations_page.dart';
 import '../../features/partner_management/pages/partner_users_page.dart';
@@ -54,6 +55,7 @@ enum _MainArea {
   conveniencePos,
   convenienceProducts,
   rentalManagement,
+  rentalReservations,
 }
 
 class MainNavigation extends ConsumerStatefulWidget {
@@ -89,11 +91,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   void initState() {
     super.initState();
     _selectedArea = _initialArea();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) {
-        _loadOperatorShiftAccess();
-      },
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadOperatorShiftAccess();
+    });
   }
 
   Future<void> _loadOperatorShiftAccess() async {
@@ -121,10 +121,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return starts.isBefore(tomorrowStart) && ends.isAfter(todayStart);
       });
 
-      final parkings = await ref.read(partnerParkingProvider.future);
-      final hasAssignedParking = parkings.isNotEmpty;
-
-      final canOperate = isCashOpen || hasActiveOrTodayShift || hasAssignedParking;
+      // A static unit assignment does not open operational access. The source
+      // of truth is an active shift for today (or an already open cash box).
+      final canOperate = isCashOpen || hasActiveOrTodayShift;
 
       if (!mounted) return;
       setState(() {
@@ -169,7 +168,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     // Se houver turno ativo agora, prioriza as unidades do turno;
     // caso contrário, disponibiliza todas as unidades autorizadas para o operador.
     final availableParkings = activeShiftParkingIds.isNotEmpty
-        ? parkings.where((p) => p.id != null && activeShiftParkingIds.contains(p.id))
+        ? parkings.where(
+            (p) => p.id != null && activeShiftParkingIds.contains(p.id),
+          )
         : parkings;
 
     return [
@@ -250,6 +251,13 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
     final isGuide = auth.isTourGuide;
     final isOperator = auth.isOperator;
     final isAdmin = auth.role == 'super_admin';
+    final partnerProfile = isPartner
+        ? ref
+              .watch(partnerProfileProvider)
+              .maybeWhen(data: (value) => value, orElse: () => null)
+        : null;
+    final serviceUnits =
+        partnerProfile?.serviceUnits ?? const <PartnerServiceUnit>[];
     if (isGuide &&
         (_selectedArea == _MainArea.financial ||
             _selectedArea == _MainArea.reservations)) {
@@ -328,6 +336,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isAdmin: isAdmin,
                 isOperator: isOperator,
                 operatorHasShiftToday: _operatorHasShiftToday,
+                serviceUnits: serviceUnits,
                 onSelected: _selectArea,
               ),
               const VerticalDivider(width: 1),
@@ -352,6 +361,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           isAdmin: isAdmin,
           isOperator: isOperator,
           operatorHasShiftToday: _operatorHasShiftToday,
+          serviceUnits: serviceUnits,
           onSelected: (area, [serviceTabIndex]) {
             Navigator.pop(context);
             _selectArea(area, serviceTabIndex);
@@ -369,6 +379,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
                 isAdmin: isAdmin,
                 isOperator: isOperator,
                 operatorHasShiftToday: _operatorHasShiftToday,
+                serviceUnits: serviceUnits,
                 onSelected: _selectArea,
               ),
             Expanded(child: page),
@@ -580,6 +591,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
         return const _ConvenienceEntryPage(pos: false);
       case _MainArea.rentalManagement:
         return const RentalManagementPage();
+      case _MainArea.rentalReservations:
+        return const RentalReservationsPage();
     }
   }
 
@@ -654,6 +667,8 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       case _MainArea.convenienceProducts:
         return isPartner ? 0 : 0;
       case _MainArea.rentalManagement:
+        return 0;
+      case _MainArea.rentalReservations:
         return 0;
     }
   }
@@ -747,6 +762,7 @@ class _WebMenu extends ConsumerWidget {
   final bool isAdmin;
   final bool isOperator;
   final bool operatorHasShiftToday;
+  final List<PartnerServiceUnit> serviceUnits;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _WebMenu({
@@ -758,6 +774,7 @@ class _WebMenu extends ConsumerWidget {
     required this.isAdmin,
     required this.isOperator,
     required this.operatorHasShiftToday,
+    required this.serviceUnits,
     required this.onSelected,
   });
 
@@ -857,9 +874,21 @@ class _WebMenu extends ConsumerWidget {
                 expanded: expanded,
                 title: 'Funcionalidades',
                 items: [
-                  _MenuItem(Icons.dashboard_outlined, 'Dashboard', _MainArea.dashboard),
-                  _MenuItem(Icons.lock_outline, 'Financeiro', _MainArea.financial),
-                  _MenuItem(Icons.schedule_outlined, 'Escalas', _MainArea.shifts),
+                  _MenuItem(
+                    Icons.dashboard_outlined,
+                    'Dashboard',
+                    _MainArea.dashboard,
+                  ),
+                  _MenuItem(
+                    Icons.lock_outline,
+                    'Financeiro',
+                    _MainArea.financial,
+                  ),
+                  _MenuItem(
+                    Icons.schedule_outlined,
+                    'Escalas',
+                    _MainArea.shifts,
+                  ),
                 ],
                 selectedArea: selectedArea,
                 onSelected: onSelected,
@@ -870,17 +899,7 @@ class _WebMenu extends ConsumerWidget {
                 title: 'Operacional',
                 items: [
                   if (!isOperator || operatorHasShiftToday)
-                    _MenuItem(
-                      Icons.local_parking_outlined,
-                      'Serviços',
-                      _MainArea.map,
-                    ),
-                  if (!isOperator || operatorHasShiftToday)
-                    _MenuItem(
-                      Icons.confirmation_number_outlined,
-                      'Reservas',
-                      _MainArea.reservations,
-                    ),
+                    ..._operationalItems(serviceUnits),
                 ],
                 selectedArea: selectedArea,
                 onSelected: onSelected,
@@ -1032,6 +1051,54 @@ class _WebMenu extends ConsumerWidget {
     );
   }
 
+  List<_MenuItem> _operationalItems(List<PartnerServiceUnit> units) {
+    final items = <_MenuItem>[];
+    for (final unit in units.where((item) => item.serviceType == 'parking')) {
+      items.add(
+        _MenuItem(
+          Icons.local_parking_outlined,
+          '${unit.name} · Serviços',
+          _MainArea.map,
+        ),
+      );
+      items.add(
+        _MenuItem(
+          Icons.confirmation_number_outlined,
+          '${unit.name} · Reservas',
+          _MainArea.reservations,
+        ),
+      );
+    }
+    for (final unit in units.where(
+      (item) => item.serviceType == 'vehicle_rental',
+    )) {
+      items.add(
+        _MenuItem(
+          Icons.directions_car_filled_outlined,
+          '${unit.name} · Veículos',
+          _MainArea.rentalManagement,
+        ),
+      );
+      items.add(
+        _MenuItem(
+          Icons.assignment_outlined,
+          '${unit.name} · Reservas',
+          _MainArea.rentalReservations,
+        ),
+      );
+    }
+    if (items.isEmpty) {
+      items.add(
+        const _MenuItem(
+          Icons.miscellaneous_services_outlined,
+          'Serviços',
+          _MainArea.map,
+        ),
+      );
+    }
+    return items;
+  }
+
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
     await ref.read(authProvider.notifier).logout();
     if (!context.mounted) return;
@@ -1049,6 +1116,7 @@ class _MobileDrawer extends StatelessWidget {
   final bool isAdmin;
   final bool isOperator;
   final bool operatorHasShiftToday;
+  final List<PartnerServiceUnit> serviceUnits;
   final void Function(_MainArea area, [int? serviceTabIndex]) onSelected;
 
   const _MobileDrawer({
@@ -1058,6 +1126,7 @@ class _MobileDrawer extends StatelessWidget {
     required this.isAdmin,
     required this.isOperator,
     required this.operatorHasShiftToday,
+    required this.serviceUnits,
     required this.onSelected,
   });
 
@@ -1132,9 +1201,21 @@ class _MobileDrawer extends StatelessWidget {
                     title: 'Funcionalidades',
                     icon: Icons.extension_outlined,
                     children: [
-                      _MobileMenuItem(icon: Icons.dashboard_outlined, title: 'Dashboard', onTap: () => onSelected(_MainArea.dashboard)),
-                      _MobileMenuItem(icon: Icons.lock_outline, title: 'Financeiro', onTap: () => onSelected(_MainArea.financial)),
-                      _MobileMenuItem(icon: Icons.schedule_outlined, title: 'Escalas', onTap: () => onSelected(_MainArea.shifts)),
+                      _MobileMenuItem(
+                        icon: Icons.dashboard_outlined,
+                        title: 'Dashboard',
+                        onTap: () => onSelected(_MainArea.dashboard),
+                      ),
+                      _MobileMenuItem(
+                        icon: Icons.lock_outline,
+                        title: 'Financeiro',
+                        onTap: () => onSelected(_MainArea.financial),
+                      ),
+                      _MobileMenuItem(
+                        icon: Icons.schedule_outlined,
+                        title: 'Escalas',
+                        onTap: () => onSelected(_MainArea.shifts),
+                      ),
                     ],
                   ),
                 _MobileMenuGroup(
@@ -1142,17 +1223,7 @@ class _MobileDrawer extends StatelessWidget {
                   icon: Icons.local_parking_outlined,
                   children: [
                     if (!isOperator || operatorHasShiftToday)
-                      _MobileMenuItem(
-                        icon: Icons.local_parking_outlined,
-                        title: 'Serviços',
-                        onTap: () => onSelected(_MainArea.map),
-                      ),
-                    if (!isOperator || operatorHasShiftToday)
-                      _MobileMenuItem(
-                        icon: Icons.confirmation_number_outlined,
-                        title: 'Reservas',
-                        onTap: () => onSelected(_MainArea.reservations),
-                      ),
+                      ..._mobileOperationalItems(serviceUnits, onSelected),
                   ],
                 ),
                 if (isPartnerOwner || (isOperator && operatorHasShiftToday))
@@ -1251,6 +1322,57 @@ class _MobileDrawer extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  List<_MobileMenuItem> _mobileOperationalItems(
+    List<PartnerServiceUnit> units,
+    void Function(_MainArea area, [int? serviceTabIndex]) onSelected,
+  ) {
+    final items = <_MobileMenuItem>[];
+    for (final unit in units.where((item) => item.serviceType == 'parking')) {
+      items.add(
+        _MobileMenuItem(
+          icon: Icons.local_parking_outlined,
+          title: '${unit.name} · Serviços',
+          onTap: () => onSelected(_MainArea.map),
+        ),
+      );
+      items.add(
+        _MobileMenuItem(
+          icon: Icons.confirmation_number_outlined,
+          title: '${unit.name} · Reservas',
+          onTap: () => onSelected(_MainArea.reservations),
+        ),
+      );
+    }
+    for (final unit in units.where(
+      (item) => item.serviceType == 'vehicle_rental',
+    )) {
+      items.add(
+        _MobileMenuItem(
+          icon: Icons.directions_car_filled_outlined,
+          title: '${unit.name} · Veículos',
+          onTap: () => onSelected(_MainArea.rentalManagement),
+        ),
+      );
+      items.add(
+        _MobileMenuItem(
+          icon: Icons.assignment_outlined,
+          title: '${unit.name} · Reservas',
+          onTap: () => onSelected(_MainArea.rentalReservations),
+        ),
+      );
+    }
+    if (items.isEmpty) {
+      items.add(
+        _MobileMenuItem(
+          icon: Icons.miscellaneous_services_outlined,
+          title: 'Serviços',
+          onTap: () => onSelected(_MainArea.map),
+        ),
+      );
+    }
+    return items;
   }
 }
 

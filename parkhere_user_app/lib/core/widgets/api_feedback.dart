@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../i18n/app_localizations.dart';
 
 /// Center-screen feedback for actionable API responses.
@@ -12,31 +13,46 @@ class ApiFeedback {
     String message, {
     bool isError = true,
     String? title,
+    Duration? autoCloseAfter,
   }) async {
     if (!context.mounted || message.trim().isEmpty) return;
     final en = context.strings.isEnglish;
-    await showDialog<void>(
+    late BuildContext dialogContext;
+    final dialogFuture = showDialog<void>(
       context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) => AlertDialog(
-        icon: Icon(
-          isError ? Icons.error_outline_rounded : Icons.check_circle_outline,
-          color: isError
-              ? Theme.of(context).colorScheme.error
-              : Theme.of(context).colorScheme.primary,
-          size: 34,
-        ),
-        title: title == null ? null : Text(title, textAlign: TextAlign.center),
-        content: Text(message, textAlign: TextAlign.center),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(en ? 'Got it' : 'Entendi'),
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogContext = ctx;
+        if (autoCloseAfter != null) {
+          Timer(autoCloseAfter, () {
+            if (ctx.mounted && Navigator.of(ctx).canPop()) {
+              Navigator.of(ctx).pop();
+            }
+          });
+        }
+        return AlertDialog(
+          icon: Icon(
+            isError ? Icons.error_outline_rounded : Icons.check_circle_outline,
+            color: isError
+                ? Theme.of(context).colorScheme.error
+                : Theme.of(context).colorScheme.primary,
+            size: 34,
           ),
-        ],
-      ),
+          title: title == null
+              ? null
+              : Text(title, textAlign: TextAlign.center),
+          content: Text(message, textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(en ? 'Got it' : 'Entendi'),
+            ),
+          ],
+        );
+      },
     );
+    await dialogFuture;
   }
 
   static Future<void> showSessionExpired() async {

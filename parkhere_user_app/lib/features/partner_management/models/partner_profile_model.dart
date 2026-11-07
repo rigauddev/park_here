@@ -18,6 +18,41 @@ class PartnerPaymentAccountSummary {
   }
 }
 
+class PartnerServiceUnit {
+  final String id;
+  final String serviceType;
+  final String name;
+  final String unitKind;
+  final String? parentUnitId;
+  final bool isActive;
+
+  const PartnerServiceUnit({
+    required this.id,
+    required this.serviceType,
+    required this.name,
+    required this.unitKind,
+    required this.parentUnitId,
+    required this.isActive,
+  });
+
+  factory PartnerServiceUnit.fromJson(Map<String, dynamic> json) =>
+      PartnerServiceUnit(
+        id: json['id'] as String? ?? '',
+        serviceType: json['service_type'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        unitKind: json['unit_kind'] as String? ?? 'branch',
+        parentUnitId: json['parent_unit_id'] as String?,
+        isActive: json['is_active'] == true,
+      );
+
+  String get serviceLabel => switch (serviceType) {
+    'parking' => 'Estacionamento',
+    'vehicle_rental' => 'Locadora de veículos',
+    'tour_guide' => 'Guia turístico',
+    _ => serviceType,
+  };
+}
+
 class PartnerProfileModel {
   final String tenantId;
   final String role;
@@ -26,6 +61,8 @@ class PartnerProfileModel {
   final String userEmail;
   final String? serviceType;
   final bool hasRentalService;
+  final List<String> serviceTypes;
+  final List<PartnerServiceUnit> serviceUnits;
   final String? companyName;
   final String approvalStatus;
   final PartnerPaymentAccountSummary? paymentAccount;
@@ -45,6 +82,8 @@ class PartnerProfileModel {
     required this.userEmail,
     required this.serviceType,
     required this.hasRentalService,
+    required this.serviceTypes,
+    required this.serviceUnits,
     required this.companyName,
     required this.approvalStatus,
     required this.paymentAccount,
@@ -74,6 +113,14 @@ class PartnerProfileModel {
       userEmail: json['user_email'] as String? ?? '',
       serviceType: json['service_type'] as String?,
       hasRentalService: json['has_rental_service'] == true,
+      serviceTypes: [
+        for (final value in (json['service_types'] as List<dynamic>? ?? []))
+          value.toString(),
+      ],
+      serviceUnits: [
+        for (final value in (json['service_units'] as List<dynamic>? ?? []))
+          if (value is Map<String, dynamic>) PartnerServiceUnit.fromJson(value),
+      ],
       companyName: json['company_name'] as String?,
       approvalStatus: json['approval_status'] as String? ?? 'missing_profile',
       paymentAccount: paymentJson is Map<String, dynamic>

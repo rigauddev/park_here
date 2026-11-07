@@ -227,9 +227,11 @@ estornar; o app nunca libera uma reserva apenas porque retornou da maquininha.
 - `GET /partners/me` retorna `features` como mapa por chave, inclusive os
   módulos bloqueados, com `name`, `name_en`, descrições, `is_enabled`,
   `is_paid`, `price`, `billing_period`, `requestable` e `quantity_based`. Inclui
-  também `unit_count`, `unit_limit`, `service_count`, `service_limit` e
-  `has_rental_service`. Esse último campo permite mostrar a gestão de locação
-  como serviço adicional da mesma conta, sem criar um menu ou tenant separado.
+  também `unit_count`, `unit_limit`, `service_count`, `service_limit`,
+  `service_types`, `service_units` e `has_rental_service`. `service_units`
+  contém id, nome, tipo, matriz/filial e unidade-pai; para operadores ele é
+  filtrado pelos turnos ativos do dia. Isso permite montar o menu operacional
+  por serviço sem criar um menu ou tenant separado para locação.
 - Rotas de estacionamento, serviços, equipe, afiliações, mapa, reservas e
   Financeiro Pro verificam entitlements no backend. Reservas também atendem o
   caixa básico, que permanece incluído.
@@ -1241,7 +1243,10 @@ preço diário é cadastrado pelo gestor e nunca é confiado ao app.
 
 `POST /rentals/reservations` recebe `company_id`, `vehicle_id`, `start_date`,
 `end_date`, `extras` e `km_start`. Somente clientes podem criar reservas; a API
-valida período, disponibilidade e calcula `total_price` no backend. `GET
+valida período, disponibilidade e calcula `base_amount`, `customer_fee_amount`,
+`establishment_fee_amount`, `platform_fee_amount`, `final_total` e o snapshot
+das taxas no backend. A taxa do cliente entra no total pago; a taxa do parceiro
+é retida no repasse. `GET
 /rentals/reservations` retorna as reservas do cliente autenticado ou do tenant
 do parceiro.
 

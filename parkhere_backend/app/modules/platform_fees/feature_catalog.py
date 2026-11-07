@@ -107,7 +107,7 @@ PARTNER_FEATURE_CATALOG = (
         'name_en': 'Team management',
         'description': 'Cadastro e gestão dos operadores do parceiro.',
         'description_en': 'Register and manage partner operators.',
-        'service_types': ('parking',),
+        'service_types': ('parking', 'vehicle_rental', 'tour_guide'),
         'default_is_enabled': True,
         'default_is_paid': False,
         'default_billing_period': 'monthly',

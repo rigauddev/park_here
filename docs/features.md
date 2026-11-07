@@ -77,6 +77,11 @@ ocorrências. A locação usa os mesmos princípios de autenticação, aprovaç�
 termos, pagamentos e auditoria, mas mantém suas tabelas próprias para não
 misturar veículos alugáveis com veículos dos clientes ou vagas.
 
+Cada reserva de locação calcula duas taxas da plataforma: `vehicle_rental_customer`,
+acrescida ao total pago pelo cliente, e `vehicle_rental_partner`, descontada do
+repasse ao parceiro. As duas são configuráveis globalmente e podem receber
+override por parceiro, com snapshot persistido na reserva.
+
 Status iniciais: `pending`, `checked_in`, `completed`. Veículos passam por
 `available` → `reserved` → `available`. A integração Mercado Pago permanece
 pausada neste bloco; a reserva deve ser ligada ao fluxo de pagamento existente

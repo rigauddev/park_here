@@ -14,7 +14,7 @@ from app.modules.customer_assets.models import (
     WalletPaymentMethod,
 )
 from app.modules.parkings.models import Parking, ParkingService
-from app.modules.platform_fees.models import PlatformFee
+from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
 from app.modules.partners.work_schedule_models import OperatorWorkProfile
@@ -390,12 +390,22 @@ async def seed_homologation_valenca():
             ("parking", "percentage", 0, 5),
             ("additional_services", "percentage", 0, 5),
             ("guide_commission", "percentage", 0, 10),
+            # Locação: a taxa do cliente entra no total pago; a taxa do
+            # parceiro é retida do repasse, ambas congeladas na reserva.
+            ("vehicle_rental_customer", "percentage", 0, 8),
+            ("vehicle_rental_partner", "percentage", 0, 5),
             ("cancellation", "fixed", 5, 0),
             ("module", "percentage", 0, 3),
         ]:
             db.add(PlatformFee(service_type=service_type, fee_mode=mode,
                                fixed_amount=fixed, percentage=percentage,
                                min_fee=0, is_active=True))
+        db.add_all([
+            PartnerPlatformFee(tenant_id=rental_tenant.id, service_type="vehicle_rental_customer", fee_mode="percentage", percentage=8, fixed_amount=0, min_fee=0, is_active=True),
+            PartnerPlatformFee(tenant_id=rental_tenant.id, service_type="vehicle_rental_partner", fee_mode="percentage", percentage=5, fixed_amount=0, min_fee=0, is_active=True),
+            PartnerPlatformFee(tenant_id=hybrid_tenant.id, service_type="vehicle_rental_customer", fee_mode="percentage", percentage=7, fixed_amount=0, min_fee=0, is_active=True),
+            PartnerPlatformFee(tenant_id=hybrid_tenant.id, service_type="vehicle_rental_partner", fee_mode="percentage", percentage=4, fixed_amount=0, min_fee=0, is_active=True),
+        ])
         for feature in ("financial_management", "dashboard", "convenience"):
             db.add(PartnerFeatureEntitlement(tenant_id=tenant.id, feature_key=feature,
                                               is_enabled=(feature == "financial_management"),
@@ -410,6 +420,17 @@ async def seed_homologation_valenca():
                                               price=49.90 if feature != "dashboard" else 39.90,
                                               billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
                                               notes="Homologação multi-serviço"))
+        for feature, price in (("rental_management", 49.90), ("rental_operations", 69.90)):
+            db.add(PartnerFeatureEntitlement(tenant_id=rental_tenant.id, feature_key=feature,
+                                              is_enabled=True, is_paid=True, price=price,
+                                              billing_period="monthly",
+                                              billing_prices=json.dumps({"monthly": price, "annual": price * 10}),
+                                              notes="Homologação locação"))
+            db.add(PartnerFeatureEntitlement(tenant_id=hybrid_tenant.id, feature_key=feature,
+                                              is_enabled=True, is_paid=True, price=price,
+                                              billing_period="monthly",
+                                              billing_prices=json.dumps({"monthly": price, "annual": price * 10}),
+                                              notes="Homologação locação multi-serviço"))
         await db.commit()
         print("Seed de homologação criado: estacionamento, locadora, dois guias e empresa híbrida estacionamento + locação, sem reservas.")
         print("admin@parkhere.test / gestor@parkhere.test / operador1..3@parkhere.test / cliente@parkhere.test - senha 123456")
@@ -2134,6 +2155,20 @@ async def ensure_platform_fees(db, commit=True):
             "fee_mode": "percentage",
             "fixed_amount": 0,
             "percentage": 10,
+            "min_fee": 0,
+            "max_fee": None,
+        },
+        "vehicle_rental_customer": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 8,
+            "min_fee": 0,
+            "max_fee": None,
+        },
+        "vehicle_rental_partner": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 5,
             "min_fee": 0,
             "max_fee": None,
         },

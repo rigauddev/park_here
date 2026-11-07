@@ -111,6 +111,12 @@ class ReservationOut(BaseModel):
     start_date: datetime
     end_date: datetime
     total_price: float
+    base_amount: float = 0
+    customer_fee_amount: float = 0
+    establishment_fee_amount: float = 0
+    platform_fee_amount: float = 0
+    final_total: float = 0
+    platform_fee_snapshot: list[dict[str, Any]] = Field(default_factory=list)
     status: str
     extras: dict[str, Any] | None = None
     km_start: int | None = None

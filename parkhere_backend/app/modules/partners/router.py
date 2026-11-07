@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, or_
 from sqlalchemy import func
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,7 +154,9 @@ class OperatorPermissionProfileRequest(BaseModel):
 
 class OperatorShiftRequest(BaseModel):
     operator_id: str | None = None
-    parking_id: str
+    parking_id: str | None = None
+    rental_company_id: str | None = None
+    service_type: str = 'parking'
     starts_at: datetime
     ends_at: datetime
 
@@ -368,6 +370,9 @@ async def get_my_partner_profile(
         RentalCompany.tenant_id == current_user.tenant_id,
         RentalCompany.is_active.is_(True),
     )) or 0)
+    service_types = {profile.service_type} if profile and profile.service_type else set()
+    if has_rental_service:
+        service_types.add('vehicle_rental')
 
     payment_result = await db.execute(
         select(PartnerPaymentAccount)
@@ -411,7 +416,12 @@ async def get_my_partner_profile(
     ))).all()
     entitlements_by_key = {item.feature_key: item for item in entitlements}
     partner_features = {}
-    for feature in features_for_service_type(profile.service_type if profile else None):
+    feature_catalog = []
+    for service_type in service_types:
+        for feature in features_for_service_type(service_type):
+            if feature['key'] not in {item['key'] for item in feature_catalog}:
+                feature_catalog.append(feature)
+    for feature in feature_catalog:
         item = entitlements_by_key.get(feature['key'])
         is_enabled = item.is_enabled if item else feature['default_is_enabled']
         if item and item.expires_at and item.expires_at.replace(tzinfo=None) <= datetime.utcnow():
@@ -482,6 +492,54 @@ async def get_my_partner_profile(
         User.deleted_at.is_(None),
     )) or 0)
 
+    parking_rows = (await db.scalars(select(Parking).where(
+        Parking.tenant_id == current_user.tenant_id,
+        Parking.is_active.is_(True),
+    ).order_by(Parking.created_at))).all()
+    if current_user.role == UserRoleEnum.OPERATOR:
+        now = _now_schedule_local()
+        active_parking_ids = set((await db.scalars(select(OperatorWorkShift.parking_id).where(
+            OperatorWorkShift.operator_id == current_user.id,
+            OperatorWorkShift.starts_at <= now,
+            OperatorWorkShift.ends_at >= now,
+        ))).all())
+        parking_rows = [row for row in parking_rows if row.id in active_parking_ids]
+    rental_rows = (await db.scalars(select(RentalCompany).where(
+        RentalCompany.tenant_id == current_user.tenant_id,
+        RentalCompany.is_active.is_(True),
+    ).order_by(RentalCompany.created_at))).all()
+    if current_user.role == UserRoleEnum.OPERATOR:
+        now = _now_schedule_local()
+        active_rental_ids = set((await db.scalars(select(OperatorWorkShift.rental_company_id).where(
+            OperatorWorkShift.operator_id == current_user.id,
+            OperatorWorkShift.service_type == 'vehicle_rental',
+            OperatorWorkShift.starts_at <= now,
+            OperatorWorkShift.ends_at >= now,
+        ))).all())
+        rental_rows = [row for row in rental_rows if row.id in active_rental_ids]
+    matrix_parking_id = parking_rows[0].id if parking_rows else None
+    service_units = [
+        {
+            'id': row.id,
+            'service_type': 'parking',
+            'name': row.name,
+            'unit_kind': 'matrix' if row.id == matrix_parking_id else 'branch',
+            'parent_unit_id': None,
+            'is_active': bool(row.is_active),
+        }
+        for row in parking_rows
+    ] + [
+        {
+            'id': row.id,
+            'service_type': 'vehicle_rental',
+            'name': row.name,
+            'unit_kind': row.unit_kind,
+            'parent_unit_id': row.parent_unit_id,
+            'is_active': bool(row.is_active),
+        }
+        for row in rental_rows
+    ]
+
     return {
         "tenant_id": current_user.tenant_id,
         "role": current_user.role.value,
@@ -489,6 +547,8 @@ async def get_my_partner_profile(
         "available_operator_permissions": OPERATOR_PERMISSION_LABELS,
         "user_email": current_user.email,
         "service_type": profile.service_type if profile else None,
+        "service_types": sorted(service_types),
+        "service_units": service_units,
         "has_rental_service": has_rental_service,
         "document_type": profile.document_type if profile else None,
         "document_number": profile.document_number if profile else None,
@@ -2388,52 +2448,101 @@ async def list_operator_shifts(db: AsyncSession = Depends(get_db), current_user:
     # A closed shift must still be visible so the operator can consult the
     # schedule and open the next cash session. Operational endpoints enforce
     # the cash-session requirement separately.
-    await _ensure_parking_profile(db, current_user)
+    await _ensure_shift_partner(db, current_user, require_manager=False)
     if current_user.role != UserRoleEnum.OPERATOR:
         await _ensure_partner_feature(db, current_user, 'team_management')
-    query = select(OperatorWorkShift).outerjoin(User, User.id == OperatorWorkShift.operator_id).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(Parking.tenant_id == current_user.tenant_id, User.deleted_at.is_(None))
+    query = (
+        select(OperatorWorkShift)
+        .outerjoin(User, User.id == OperatorWorkShift.operator_id)
+        .outerjoin(Parking, Parking.id == OperatorWorkShift.parking_id)
+        .outerjoin(RentalCompany, RentalCompany.id == OperatorWorkShift.rental_company_id)
+        .where(
+            or_(Parking.tenant_id == current_user.tenant_id,
+                RentalCompany.tenant_id == current_user.tenant_id),
+            User.deleted_at.is_(None),
+        )
+    )
     if current_user.role == UserRoleEnum.OPERATOR:
         query = query.where(OperatorWorkShift.operator_id == current_user.id)
     rows = (await db.scalars(query.order_by(OperatorWorkShift.starts_at.desc()))).all()
-    return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "starts_at": r.starts_at.isoformat(), "ends_at": r.ends_at.isoformat()} for r in rows]
+    return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id,
+             "rental_company_id": r.rental_company_id, "service_type": r.service_type,
+             "starts_at": r.starts_at.isoformat(), "ends_at": r.ends_at.isoformat()} for r in rows]
 
 @router.post("/shifts", status_code=201)
 async def create_operator_shift(data: OperatorShiftRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    await _ensure_parking_partner(db, current_user)
+    await _ensure_shift_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
     starts_at = _schedule_local(data.starts_at)
     ends_at = _schedule_local(data.ends_at)
     if ends_at <= starts_at: raise HTTPException(status_code=422, detail="Fim do turno deve ser posterior ao início")
     operator = await db.scalar(select(User).where(User.id == data.operator_id, User.tenant_id == current_user.tenant_id, User.role == UserRoleEnum.OPERATOR).with_for_update())
-    parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
-    assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id)) if data.operator_id else None
-    if not parking or (data.operator_id and (not operator or not assigned)): raise HTTPException(status_code=422, detail="Operador não está associado a este estacionamento")
+    parking = None
+    rental_company = None
+    assigned = None
+    if data.service_type == 'vehicle_rental':
+        rental_company = await db.scalar(select(RentalCompany).where(
+            RentalCompany.id == data.rental_company_id,
+            RentalCompany.tenant_id == current_user.tenant_id,
+            RentalCompany.is_active.is_(True),
+        ))
+        if rental_company is None:
+            raise HTTPException(status_code=422, detail="Unidade de locação inválida")
+    else:
+        parking = await db.scalar(select(Parking).where(Parking.id == data.parking_id, Parking.tenant_id == current_user.tenant_id))
+        assigned = await db.scalar(select(OperatorParkingAssignment).where(OperatorParkingAssignment.operator_id == data.operator_id, OperatorParkingAssignment.parking_id == data.parking_id)) if data.operator_id else None
+        if not parking or (data.operator_id and (not operator or not assigned)):
+            raise HTTPException(status_code=422, detail="Operador não está associado a este estacionamento")
+    if data.service_type == 'vehicle_rental' and data.operator_id and operator is None:
+        raise HTTPException(status_code=422, detail="Operador inválido para esta unidade")
     if data.operator_id:
         await _ensure_operator_has_no_shift_conflict(db, data.operator_id, starts_at, ends_at)
-    shift = OperatorWorkShift(operator_id=data.operator_id, parking_id=data.parking_id, starts_at=starts_at, ends_at=ends_at)
+    shift = OperatorWorkShift(
+        operator_id=data.operator_id,
+        parking_id=parking.id if parking else None,
+        rental_company_id=rental_company.id if rental_company else None,
+        service_type=data.service_type,
+        starts_at=starts_at,
+        ends_at=ends_at,
+    )
     db.add(shift); await db.commit(); await db.refresh(shift)
-    return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id, "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
+    return {"id": shift.id, "operator_id": shift.operator_id, "parking_id": shift.parking_id,
+            "rental_company_id": shift.rental_company_id, "service_type": shift.service_type,
+            "starts_at": shift.starts_at.isoformat(), "ends_at": shift.ends_at.isoformat()}
 
 @router.delete("/shifts/{shift_id}", status_code=204)
 async def cancel_operator_shift(shift_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    await _ensure_parking_partner(db, current_user)
+    await _ensure_shift_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
-    shift = await db.scalar(select(OperatorWorkShift).join(Parking, Parking.id == OperatorWorkShift.parking_id).where(OperatorWorkShift.id == shift_id, Parking.tenant_id == current_user.tenant_id))
+    shift = await db.scalar(
+        select(OperatorWorkShift)
+        .outerjoin(Parking, Parking.id == OperatorWorkShift.parking_id)
+        .outerjoin(RentalCompany, RentalCompany.id == OperatorWorkShift.rental_company_id)
+        .where(OperatorWorkShift.id == shift_id, or_(Parking.tenant_id == current_user.tenant_id, RentalCompany.tenant_id == current_user.tenant_id))
+    )
     if shift is None: raise HTTPException(status_code=404, detail="Turno não encontrado")
-    db.add(OperatorScheduleHistory(parking_id=shift.parking_id, changed_by=current_user.id, action="cancelled", details=json.dumps({"shift_id": shift_id})))
+    db.add(OperatorScheduleHistory(
+        parking_id=shift.parking_id,
+        rental_company_id=shift.rental_company_id,
+        service_type=shift.service_type,
+        changed_by=current_user.id,
+        action="cancelled",
+        details=json.dumps({"shift_id": shift_id}),
+    ))
     await db.delete(shift); await db.commit()
 
 @router.put("/shifts/{shift_id}")
 async def update_operator_shift(shift_id: str, data: OperatorShiftUpdateRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Assign or edit a shift while keeping operators conflict-free across units."""
-    await _ensure_parking_partner(db, current_user)
+    await _ensure_shift_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
     shift = await db.scalar(
         select(OperatorWorkShift)
-        .join(Parking, Parking.id == OperatorWorkShift.parking_id)
+        .outerjoin(Parking, Parking.id == OperatorWorkShift.parking_id)
+        .outerjoin(RentalCompany, RentalCompany.id == OperatorWorkShift.rental_company_id)
         .where(
             OperatorWorkShift.id == shift_id,
-            Parking.tenant_id == current_user.tenant_id,
+            or_(Parking.tenant_id == current_user.tenant_id, RentalCompany.tenant_id == current_user.tenant_id),
         )
     )
     if shift is None:
@@ -2454,7 +2563,7 @@ async def update_operator_shift(shift_id: str, data: OperatorShiftUpdateRequest,
         assigned = await db.scalar(select(OperatorParkingAssignment.id).where(
             OperatorParkingAssignment.operator_id == data.operator_id,
             OperatorParkingAssignment.parking_id == shift.parking_id,
-        ))
+        )) if shift.service_type == "parking" else True
         if operator is None or assigned is None:
             raise HTTPException(status_code=422, detail="Operador não está ativo e autorizado para esta unidade")
         await _ensure_operator_has_no_shift_conflict(
@@ -2471,6 +2580,8 @@ async def update_operator_shift(shift_id: str, data: OperatorShiftUpdateRequest,
     shift.ends_at = ends_at
     db.add(OperatorScheduleHistory(
         parking_id=shift.parking_id,
+        rental_company_id=shift.rental_company_id,
+        service_type=shift.service_type,
         changed_by=current_user.id,
         action="updated",
         details=json.dumps({"shift_id": shift.id, "before": previous, "after": {
@@ -2485,7 +2596,7 @@ async def update_operator_shift(shift_id: str, data: OperatorShiftUpdateRequest,
 
 @router.get("/work-profiles")
 async def list_work_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    await _ensure_parking_partner(db, current_user)
+    await _ensure_shift_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
     rows = (await db.scalars(select(OperatorWorkProfile).join(User, User.id == OperatorWorkProfile.operator_id).where(User.tenant_id == current_user.tenant_id))).all()
     return [{"id": r.id, "operator_id": r.operator_id, "parking_id": r.parking_id, "daily_hours": r.daily_hours, "lunch_minutes": r.lunch_minutes, "days_off": r.days_off_list(), "work_modality": r.work_modality, "bank_hours": r.bank_hours} for r in rows]
@@ -2513,8 +2624,16 @@ async def save_work_profile(data: OperatorWorkProfileRequest, db: AsyncSession =
 async def schedule_history(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     await _ensure_parking_partner(db, current_user)
     await _ensure_partner_feature(db, current_user, 'team_management')
-    rows = (await db.scalars(select(OperatorScheduleHistory).join(Parking, Parking.id == OperatorScheduleHistory.parking_id).where(Parking.tenant_id == current_user.tenant_id).order_by(OperatorScheduleHistory.created_at.desc()))).all()
-    return [{"id": r.id, "parking_id": r.parking_id, "changed_by": r.changed_by, "action": r.action, "details": json.loads(r.details or "{}"), "created_at": r.created_at.isoformat()} for r in rows]
+    rows = (await db.scalars(
+        select(OperatorScheduleHistory)
+        .outerjoin(Parking, Parking.id == OperatorScheduleHistory.parking_id)
+        .outerjoin(RentalCompany, RentalCompany.id == OperatorScheduleHistory.rental_company_id)
+        .where(or_(Parking.tenant_id == current_user.tenant_id, RentalCompany.tenant_id == current_user.tenant_id))
+        .order_by(OperatorScheduleHistory.created_at.desc())
+    )).all()
+    return [{"id": r.id, "parking_id": r.parking_id, "rental_company_id": r.rental_company_id,
+             "service_type": r.service_type, "changed_by": r.changed_by, "action": r.action,
+             "details": json.loads(r.details or "{}"), "created_at": r.created_at.isoformat()} for r in rows]
 
 @router.post("/shifts/suggest")
 async def suggest_operator_shifts(data: ShiftSuggestionRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -2975,6 +3094,28 @@ def _is_valid_password(value: str) -> bool:
 async def _ensure_parking_partner(db: AsyncSession, user: User):
     _ensure_parking_manager(user)
     await _ensure_parking_profile(db, user)
+
+
+async def _ensure_shift_partner(db: AsyncSession, user: User, require_manager: bool = True):
+    """Authorize schedule management for any approved service unit."""
+    if require_manager:
+        _ensure_parking_manager(user)
+    elif user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.PARKING_ADMIN, UserRoleEnum.OPERATOR}:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if not user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant required")
+    profile = await db.scalar(select(PartnerProfile).where(
+        PartnerProfile.tenant_id == user.tenant_id,
+        PartnerProfile.approval_status == "approved",
+    ))
+    rental_company = await db.scalar(select(RentalCompany.id).where(
+        RentalCompany.tenant_id == user.tenant_id,
+        RentalCompany.is_active.is_(True),
+    ))
+    if profile is None and rental_company is None:
+        raise HTTPException(status_code=403, detail="Partner service required")
+    if require_manager:
+        await _ensure_partner_feature(db, user, "team_management")
 
 
 async def _ensure_parking_staff(db: AsyncSession, user: User):

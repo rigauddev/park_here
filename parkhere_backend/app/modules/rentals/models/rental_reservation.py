@@ -12,6 +12,15 @@ class RentalReservation(BaseModel):
     start_date = Column(DateTime(timezone=True), nullable=False)
     end_date = Column(DateTime(timezone=True), nullable=False)
     total_price = Column(Float, nullable=False)
+    # Price snapshot: the customer fee is added to the amount paid by the
+    # customer, while the establishment fee is withheld from the partner
+    # payout. Both values are frozen when the reservation is created.
+    base_amount = Column(Float, nullable=False, default=0)
+    customer_fee_amount = Column(Float, nullable=False, default=0)
+    establishment_fee_amount = Column(Float, nullable=False, default=0)
+    platform_fee_amount = Column(Float, nullable=False, default=0)
+    final_total = Column(Float, nullable=False, default=0)
+    platform_fee_snapshot = Column(Text, nullable=True)
     status = Column(String(24), nullable=False, default="pending")
     extras = Column(Text, nullable=True)
     km_start = Column(Integer, nullable=True)

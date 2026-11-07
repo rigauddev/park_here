@@ -22,7 +22,9 @@ class OperatorWorkProfile(BaseModel):
 
 class OperatorScheduleHistory(BaseModel):
     __tablename__ = "operator_schedule_history"
-    parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=False)
+    parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=True)
+    rental_company_id = Column(String(36), ForeignKey("rental_companies.id"), nullable=True)
+    service_type = Column(String(40), nullable=False, default="parking")
     changed_by = Column(String(36), ForeignKey("users.id"), nullable=False)
     action = Column(String(40), nullable=False)
     details = Column(Text, nullable=False, default="{}")

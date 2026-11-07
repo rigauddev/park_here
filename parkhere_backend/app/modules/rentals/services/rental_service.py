@@ -15,6 +15,7 @@ from ..models import (
 )
 from app.modules.parkings.models import Parking
 from app.modules.partners.models import PartnerProfile
+from app.modules.platform_fees.service import PlatformFeeService
 
 class RentalService:
     DEFAULT_TERMS = (
@@ -110,11 +111,21 @@ class RentalService:
     async def ensure_approved_partner(db: AsyncSession, current_user: User) -> None:
         if current_user.role == UserRoleEnum.SUPER_ADMIN:
             return
+        # A partner may operate several service modules under the same tenant.
+        # Rental approval is therefore valid when the tenant has an approved
+        # profile and an active rental company, even if the original profile
+        # was created as the parking matrix service.
         profile = await db.scalar(select(PartnerProfile).where(
             PartnerProfile.tenant_id == current_user.tenant_id,
-            PartnerProfile.service_type == 'vehicle_rental',
+            PartnerProfile.approval_status == 'approved',
+        ).order_by(
+            (PartnerProfile.service_type == 'vehicle_rental').desc(),
         ))
-        if profile is None or profile.approval_status != 'approved':
+        company = await db.scalar(select(RentalCompany).where(
+            RentalCompany.tenant_id == current_user.tenant_id,
+            RentalCompany.is_active.is_(True),
+        ))
+        if profile is None or company is None:
             raise HTTPException(status_code=403, detail='A conta de locação ainda aguarda aprovação da plataforma')
 
     @staticmethod
@@ -300,10 +311,33 @@ class RentalService:
                 raise HTTPException(status_code=404, detail="Plano de locação não encontrado")
         days = max(1, ceil((data.end_date - data.start_date).total_seconds() / 86400))
         daily_price = plan.price_per_day if plan else vehicle.price_per_day
+        base_amount = round(daily_price * days, 2)
+        fee_lines = await PlatformFeeService.calculate_lines(
+            db,
+            {
+                "vehicle_rental_customer": base_amount,
+                "vehicle_rental_partner": base_amount,
+            },
+            company.tenant_id,
+        )
+        customer_fee = round(sum(
+            line.fee_amount for line in fee_lines
+            if line.service_type == "vehicle_rental_customer"
+        ), 2)
+        establishment_fee = round(sum(
+            line.fee_amount for line in fee_lines
+            if line.service_type == "vehicle_rental_partner"
+        ), 2)
+        platform_fee = round(customer_fee + establishment_fee, 2)
+        final_total = round(base_amount + customer_fee, 2)
         reservation = RentalReservation(tenant_id=company.tenant_id, user_id=current_user.id,
             company_id=company.id, vehicle_id=vehicle.id, plan_id=data.plan_id,
             start_date=data.start_date, end_date=data.end_date,
-            total_price=round(daily_price * days, 2),
+            total_price=final_total, base_amount=base_amount,
+            customer_fee_amount=customer_fee,
+            establishment_fee_amount=establishment_fee,
+            platform_fee_amount=platform_fee, final_total=final_total,
+            platform_fee_snapshot=json.dumps([line.to_dict() for line in fee_lines]),
             status="pending", extras=json.dumps(data.extras or {}), km_start=data.km_start)
         vehicle.status = "reserved"; db.add(reservation); await db.commit(); await db.refresh(reservation); return reservation
 

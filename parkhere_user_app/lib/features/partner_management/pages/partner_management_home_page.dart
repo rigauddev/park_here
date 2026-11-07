@@ -61,8 +61,35 @@ class _PartnerManagementBody extends StatelessWidget {
       children: [
         _PartnerHeader(partner: partner),
         const SizedBox(height: 16),
+        if (partner.serviceUnits.length > 1) ...[
+          Text(
+            'Serviços e unidades da conta',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          ...partner.serviceUnits.map(
+            (unit) => Card(
+              child: ListTile(
+                leading: Icon(
+                  unit.serviceType == 'vehicle_rental'
+                      ? Icons.directions_car_filled_outlined
+                      : Icons.local_parking_outlined,
+                ),
+                title: Text(unit.name),
+                subtitle: Text(
+                  '${unit.serviceLabel} · ${unit.unitKind == 'matrix' ? 'Matriz' : 'Filial'}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: unit.serviceType == 'vehicle_rental'
+                    ? () => _open(context, const RentalManagementPage())
+                    : () => _open(context, const ParkingManagementPage()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Text(
-          'Gestao disponivel',
+          'Gestão de serviços',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 10),
@@ -129,14 +156,16 @@ class _PartnerManagementBody extends StatelessWidget {
             _ManagementAction(
               icon: Icons.directions_car_filled_outlined,
               title: 'Locação de veículos',
-              description: 'Frota, grupos, planos e disponibilidade da locadora.',
+              description:
+                  'Frota, grupos, planos e disponibilidade da locadora.',
               onTap: () => _open(context, const RentalManagementPage()),
               featureKey: 'rental_management',
             ),
           _ManagementAction(
             icon: Icons.local_parking,
             title: 'Gestão de serviços',
-            description: 'Serviços oferecidos, unidades, tarifas e disponibilidade.',
+            description:
+                'Serviços oferecidos, unidades, tarifas e disponibilidade.',
             onTap: () => _open(context, const ParkingManagementPage()),
             featureKey: 'parking_management',
           ),
@@ -289,7 +318,8 @@ class _PartnerManagementBody extends StatelessWidget {
           _ManagementAction(
             icon: Icons.build_outlined,
             title: 'Manutenção da frota',
-            description: 'Registre revisões, quilometragem e próximos serviços.',
+            description:
+                'Registre revisões, quilometragem e próximos serviços.',
             onTap: () => _showPending(context),
             featureKey: 'rental_management',
           ),

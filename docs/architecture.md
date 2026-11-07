@@ -56,6 +56,11 @@ Modulos recomendados para o MVP:
   O hub de serviços trata `rentals`, `parkings` e guia como módulos equivalentes;
   uma relação opcional de matriz/filial é organizacional e não mistura tabelas.
 
+`operator_work_shifts` mantém `parking_id` para compatibilidade e aceita também
+`rental_company_id` + `service_type=vehicle_rental`. Assim o mesmo operador pode
+ser escalado para uma unidade de locação sem transformar a locadora em um
+estacionamento nem duplicar o fluxo de autenticação.
+
 ## App Flutter
 
 Padrao atual:
