@@ -15,6 +15,10 @@ class CheckoutService {
         strategy = DailyCheckoutStrategy();
         break;
 
+      case PlanType.weekly:
+        strategy = DailyCheckoutStrategy();
+        break;
+
       case PlanType.monthly:
         strategy = MonthlyCheckoutStrategy();
         break;

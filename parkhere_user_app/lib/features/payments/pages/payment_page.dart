@@ -4,25 +4,41 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../account/pages/wallet_page.dart';
 import '../../account/models/account_models.dart';
 import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/services/location_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../model/payment_method_enum.dart';
+import '../model/payment_result.dart';
 import '../services/payment_service.dart';
 
 class PaymentPage extends ConsumerStatefulWidget {
   final double amount;
   final String? reservationId;
+  final String? featureRequestId;
+  final String paymentPurpose;
+  final bool checkoutPayment;
   final bool payNow;
+  final bool requireParkingLocation;
+  final List<Map<String, dynamic>> contractedModules;
   final FutureOr<void> Function() onPaymentSuccess;
 
   const PaymentPage({
     super.key,
     required this.amount,
     this.reservationId,
+    this.featureRequestId,
+    this.paymentPurpose = 'reservation',
+    this.checkoutPayment = false,
     required this.payNow,
+    this.requireParkingLocation = false,
+    this.contractedModules = const [],
     required this.onPaymentSuccess,
   });
 
@@ -45,7 +61,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Future<void> _loadQuote() async {
     final reservationId = widget.reservationId;
     final token = ref.read(authProvider).accessToken;
-    if (reservationId == null || token == null) return;
+    if (reservationId == null || token == null || widget.checkoutPayment) {
+      return;
+    }
     try {
       final quote = await PaymentService().reservationQuote(
         reservationId,
@@ -72,16 +90,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         : _selectedMethod ?? _mapMethod(activeMethod.type);
 
     if (activeMethod == null || paymentMethod == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Selecione um método de pagamento")),
-      );
+      await ApiFeedback.show(context, 'Selecione um método de pagamento.');
       return;
     }
 
     if (_requiresCvv(activeMethod) && cvvController.text.trim().length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Informe o CVV para continuar")),
-      );
+      await ApiFeedback.show(context, 'Informe o CVV para continuar.');
       return;
     }
 
@@ -93,37 +107,50 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         throw Exception("Sessao expirada. Entre novamente.");
       }
 
-      final result = await PaymentService().processPayment(
-        amount: widget.amount,
-        method: paymentMethod,
-        accessToken: accessToken,
-        reservationId: widget.reservationId,
-      );
+      double? latitude;
+      double? longitude;
+      if (widget.requireParkingLocation) {
+        final position = await LocationService().getCurrentLocation();
+        latitude = position.latitude;
+        longitude = position.longitude;
+      }
+      final result = widget.featureRequestId != null
+          ? await PaymentService().processFeaturePayment(
+              requestId: widget.featureRequestId!,
+              amount: widget.amount,
+              method: paymentMethod,
+              accessToken: accessToken,
+            )
+          : await PaymentService().processPayment(
+              amount: widget.amount,
+              method: paymentMethod,
+              accessToken: accessToken,
+              reservationId: widget.reservationId,
+              purpose: widget.paymentPurpose,
+              latitude: latitude,
+              longitude: longitude,
+            );
 
       if (result.success) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result.isSimulated
-                  ? 'Pagamento simulado. Nenhuma cobrança foi realizada.'
-                  : 'Pagamento confirmado.',
+        await widget.onPaymentSuccess();
+        if (!mounted) return;
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentReceiptPage(
+              result: result,
+              reservationId: widget.reservationId,
             ),
           ),
         );
-        await widget.onPaymentSuccess();
-
-        if (mounted) {
-          Navigator.pop(context);
-        }
+        if (mounted) Navigator.pop(context, true);
       } else {
         throw Exception("Pagamento recusado");
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Erro: ${e.toString()}")));
+      await ApiFeedback.show(context, 'Erro: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -133,6 +160,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final en = context.strings.isEnglish;
     final account = ref.watch(accountProvider);
     final activeMethod = account.activePaymentMethod;
 
@@ -196,6 +224,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 if (_requiresCvv(activeMethod))
                   TextField(
                     controller: cvvController,
+                    onChanged: (_) => setState(() {}),
                     keyboardType: TextInputType.number,
                     obscureText: true,
                     inputFormatters: [
@@ -244,7 +273,11 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 ),
 
               Text(
-                widget.payNow
+                widget.checkoutPayment
+                    ? (widget.paymentPurpose == 'checkout_excess'
+                          ? 'Pagamento do excedente de permanência'
+                          : 'Pagamento pendente para liberar o checkout')
+                    : widget.payNow
                     ? "Pagamento necessário para iniciar"
                     : "Pagamento no checkout",
                 style: const TextStyle(fontSize: 18),
@@ -259,7 +292,46 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              if (_quote != null)
+              if (widget.contractedModules.isNotEmpty)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          en
+                              ? 'Partner module summary'
+                              : 'Resumo dos módulos do parceiro',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        for (final module in widget.contractedModules)
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              module['is_enabled'] == true
+                                  ? Icons.check_circle_outline
+                                  : Icons.lock_outline,
+                            ),
+                            title: Text(module['name'] as String? ?? ''),
+                            subtitle: Text(
+                              '${module['is_enabled'] == true ? (en ? 'Already enabled' : 'Já contratado/liberado') : (en ? 'Included in this request' : 'Incluído nesta solicitação')} · '
+                              '${en ? 'Amount' : 'Valor'}: R\$ ${((module['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                            ),
+                          ),
+                        const Divider(),
+                        Text(
+                          en
+                              ? 'Total for this purchase: the amount above. The server recalculates the final charge.'
+                              : 'Total desta contratação: o valor acima. A cobrança final é recalculada pelo servidor.',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (_quote != null && !widget.checkoutPayment)
                 Card(
                   child: Column(
                     children: [
@@ -335,12 +407,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isLoading || !account.hasActivePaymentMethod
+                  onPressed:
+                      _isLoading ||
+                          activeMethod == null ||
+                          !account.hasActivePaymentMethod ||
+                          (_requiresCvv(activeMethod) &&
+                              cvvController.text.trim().length < 3)
                       ? null
                       : _processPayment,
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("Confirmar Pagamento"),
+                      : const Text("Realizar pagamento"),
                 ),
               ),
             ],
@@ -377,5 +454,129 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     }
   }
 
-  String _money(dynamic value) => ((value as num?)?.toDouble() ?? widget.amount).toStringAsFixed(2);
+  String _money(dynamic value) =>
+      ((value as num?)?.toDouble() ?? widget.amount).toStringAsFixed(2);
+}
+
+class PaymentReceiptPage extends StatelessWidget {
+  final PaymentResult result;
+  final String? reservationId;
+
+  const PaymentReceiptPage({
+    super.key,
+    required this.result,
+    required this.reservationId,
+  });
+
+  String get _methodLabel => switch (result.method) {
+    'pix' => 'Pix',
+    'credit_card' => 'Cartão de crédito',
+    'debit_card' => 'Cartão de débito',
+    'cash' => 'Dinheiro',
+    _ => result.method,
+  };
+
+  Future<List<int>> _pdfBytes() async {
+    final document = pw.Document();
+    document.addPage(
+      pw.Page(
+        build: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              'ParkHere — Comprovante de pagamento',
+              style: pw.TextStyle(fontSize: 18),
+            ),
+            pw.SizedBox(height: 18),
+            pw.Text('Transação: ${result.transactionId}'),
+            pw.Text('Reserva: ${reservationId ?? 'não informada'}'),
+            pw.Text('Método: $_methodLabel'),
+            pw.Text('Valor: R\$ ${result.amount.toStringAsFixed(2)}'),
+            pw.Text('Status: Pagamento confirmado'),
+          ],
+        ),
+      ),
+    );
+    return document.save();
+  }
+
+  Future<void> _share() async {
+    await Printing.sharePdf(
+      bytes: Uint8List.fromList(await _pdfBytes()),
+      filename: 'comprovante-parkhere-${result.transactionId}.pdf',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Comprovante de pagamento')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 58),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Pagamento confirmado',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 18),
+                  _ReceiptRow(
+                    label: 'Valor',
+                    value: 'R\$ ${result.amount.toStringAsFixed(2)}',
+                  ),
+                  _ReceiptRow(label: 'Método', value: _methodLabel),
+                  _ReceiptRow(label: 'Reserva', value: reservationId ?? '—'),
+                  _ReceiptRow(label: 'Transação', value: result.transactionId),
+                  if (result.isSimulated)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 14),
+                      child: Text(
+                        'Pagamento simulado para homologação.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: _share,
+            icon: const Icon(Icons.ios_share),
+            label: const Text('Exportar ou compartilhar PDF'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Concluir'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReceiptRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ReceiptRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label),
+        Flexible(child: Text(value, textAlign: TextAlign.right)),
+      ],
+    ),
+  );
 }

@@ -2,6 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiConstants {
+  /// Optional provider key. Never commit a real value; inject it via CI or
+  /// `--dart-define=MAPS_API_KEY=...` when a commercial map SDK is enabled.
+  static String get mapsApiKey {
+    const defineKey = String.fromEnvironment('MAPS_API_KEY');
+    if (defineKey.isNotEmpty) return defineKey;
+    return dotenv.isInitialized ? (dotenv.env['MAPS_API_KEY'] ?? '') : '';
+  }
+
   static String get baseUrl {
     const defineUrl = String.fromEnvironment('API_URL');
     if (defineUrl.isNotEmpty) return defineUrl;

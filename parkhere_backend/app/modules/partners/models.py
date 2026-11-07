@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, String
+from sqlalchemy import Boolean, Column, Float, ForeignKey, String
 
 from app.db.base import BaseModel
 
@@ -20,3 +20,9 @@ class PartnerProfile(BaseModel):
     website = Column(String(255), nullable=True)
     social_links = Column(String(500), nullable=True)
     approval_status = Column(String(40), nullable=False, default="waiting_documents")
+    # Localização opcional do serviço para descoberta pública por cidade.
+    # Mantemos os campos no perfil para que guias também possam aparecer no
+    # mapa sem misturar dados operacionais de estacionamentos/locadoras.
+    city = Column(String(120), nullable=True, index=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)

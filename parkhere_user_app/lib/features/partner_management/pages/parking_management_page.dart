@@ -1,12 +1,37 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../models/managed_parking_model.dart';
 import '../providers/partner_parking_provider.dart';
 import '../models/partner_profile_model.dart';
 import '../providers/partner_profile_provider.dart';
 import 'partner_feature_access_page.dart';
+import 'parking_convenience_page.dart';
+
+class CepInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final limited = digits.substring(0, digits.length.clamp(0, 8));
+    final formatted = limited.length > 5
+        ? '${limited.substring(0, 5)}-${limited.substring(5)}'
+        : limited;
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class ParkingManagementPage extends ConsumerWidget {
   const ParkingManagementPage({super.key});
@@ -28,9 +53,9 @@ class ParkingManagementPage extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
+        onPressed: () async {
           if (partner != null && partner.unitCount >= partner.unitLimit) {
-            Navigator.push(
+            final unlocked = await Navigator.push<bool>(
               context,
               MaterialPageRoute(
                 builder: (_) => PartnerFeatureAccessPage(
@@ -39,6 +64,10 @@ class ParkingManagementPage extends ConsumerWidget {
                 ),
               ),
             );
+            if (unlocked == true) {
+              ref.invalidate(partnerProfileProvider);
+              ref.invalidate(partnerParkingProvider);
+            }
             return;
           }
           _openForm(context, partner: partner);
@@ -67,12 +96,46 @@ class ParkingManagementPage extends ConsumerWidget {
                 parking: items[index],
                 onEdit: () =>
                     _openForm(context, parking: items[index], partner: partner),
+                onConveniences: () =>
+                    _openConveniences(context, partner, items[index]),
               );
             },
           );
         },
       ),
     );
+  }
+
+  Future<void> _openConveniences(
+    BuildContext context,
+    PartnerProfileModel? partner,
+    ManagedParkingModel parking,
+  ) async {
+    if (partner == null || parking.id == null) return;
+    final feature = partner.featureDetails('convenience_management');
+    if (feature?['is_enabled'] != true) {
+      await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartnerFeatureAccessPage(
+            partner: partner,
+            featureKey: 'convenience_management',
+          ),
+        ),
+      );
+      return;
+    }
+    if (context.mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ParkingConveniencePage(
+            parkingId: parking.id!,
+            parkingName: parking.name,
+          ),
+        ),
+      );
+    }
   }
 
   void _openForm(
@@ -187,8 +250,13 @@ class _OperatingHoursEditor extends StatelessWidget {
 class _ManagedParkingCard extends StatelessWidget {
   final ManagedParkingModel parking;
   final VoidCallback onEdit;
+  final VoidCallback onConveniences;
 
-  const _ManagedParkingCard({required this.parking, required this.onEdit});
+  const _ManagedParkingCard({
+    required this.parking,
+    required this.onEdit,
+    required this.onConveniences,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -233,6 +301,14 @@ class _ManagedParkingCard extends StatelessWidget {
                   icon: const Icon(Icons.edit_outlined),
                 ),
               ],
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: onConveniences,
+                icon: const Icon(Icons.shopping_bag_outlined),
+                label: const Text('Conveniência'),
+              ),
             ),
             const SizedBox(height: 14),
             Wrap(
@@ -322,12 +398,15 @@ class ParkingManagementFormPage extends ConsumerStatefulWidget {
 class _ParkingManagementFormPageState
     extends ConsumerState<ParkingManagementFormPage> {
   final nameController = TextEditingController();
-  final addressController = TextEditingController();
+  final streetController = TextEditingController();
+  final numberController = TextEditingController();
+  final neighborhoodController = TextEditingController();
+  final cepController = TextEditingController();
+  final streetSearchController = TextEditingController();
   final cityController = TextEditingController();
   final latController = TextEditingController();
   final lngController = TextEditingController();
   final totalController = TextEditingController();
-  final availableController = TextEditingController();
   final arrivalToleranceController = TextEditingController();
   final coveredController = TextEditingController();
   final uncoveredController = TextEditingController();
@@ -353,11 +432,12 @@ class _ParkingManagementFormPageState
     'bus': List.generate(5, (_) => TextEditingController()),
     'pickup': List.generate(5, (_) => TextEditingController()),
   };
+  final Set<String> enabledSpecialTypes = <String>{};
 
-  final serviceNameController = TextEditingController();
-  final servicePriceController = TextEditingController();
+  final serviceDescriptionController = TextEditingController();
 
   bool has24hGate = false;
+  String workRegime = 'commercial';
   bool hasSecuritySystem = false;
   bool wantsAutomaticAccess = false;
   bool hasAutomaticAccess = false;
@@ -369,6 +449,9 @@ class _ParkingManagementFormPageState
   String serviceCode = 'car_wash';
   List<ManagedParkingServiceModel> services = [];
   bool isSaving = false;
+  bool isSearchingCep = false;
+  String? cepMessage;
+  String? invalidField;
 
   int _sumSpots() => [
     coveredController,
@@ -383,10 +466,6 @@ class _ParkingManagementFormPageState
     final total = _sumSpots();
     if (totalController.text != total.toString()) {
       totalController.text = total.toString();
-    }
-    if (widget.parking == null &&
-        availableController.text != total.toString()) {
-      availableController.text = total.toString();
     }
   }
 
@@ -410,7 +489,6 @@ class _ParkingManagementFormPageState
       lngController.text = '-39.0731';
       coveredController.text = '0';
       uncoveredController.text = '0';
-      availableController.text = '0';
       arrivalToleranceController.text = '15';
       vipController.text = '0';
       largeController.text = '0';
@@ -420,12 +498,14 @@ class _ParkingManagementFormPageState
     }
 
     nameController.text = parking.name;
-    addressController.text = parking.address;
+    streetController.text = parking.street ?? '';
+    numberController.text = parking.number ?? '';
+    neighborhoodController.text = parking.neighborhood ?? '';
+    cepController.text = parking.postalCode ?? '';
     cityController.text = parking.city;
     latController.text = parking.lat.toString();
     lngController.text = parking.lng.toString();
     totalController.text = parking.totalSpots.toString();
-    availableController.text = parking.availableSpots.toString();
     arrivalToleranceController.text = parking.arrivalToleranceMinutes
         .toString();
     coveredController.text = parking.coveredSpots.toString();
@@ -434,7 +514,11 @@ class _ParkingManagementFormPageState
     largeController.text = parking.largeSpots.toString();
     busController.text = parking.busSpots.toString();
     pickupController.text = parking.pickupSpots.toString();
+    for (final type in specialPricing.keys) {
+      if (_countFor(type) > 0) enabledSpecialTypes.add(type);
+    }
     has24hGate = parking.has24hGate;
+    workRegime = parking.workRegime;
     operatingHours
       ..clear()
       ..addAll(parking.operatingHours);
@@ -468,12 +552,15 @@ class _ParkingManagementFormPageState
   void dispose() {
     for (final controller in [
       nameController,
-      addressController,
+      streetController,
+      numberController,
+      neighborhoodController,
+      cepController,
+      streetSearchController,
       cityController,
       latController,
       lngController,
       totalController,
-      availableController,
       arrivalToleranceController,
       coveredController,
       uncoveredController,
@@ -491,8 +578,7 @@ class _ParkingManagementFormPageState
       coveredDailyController,
       coveredWeeklyController,
       coveredMonthlyController,
-      serviceNameController,
-      servicePriceController,
+      serviceDescriptionController,
       ...specialPricing.values.expand((items) => items),
     ]) {
       controller.dispose();
@@ -517,7 +603,80 @@ class _ParkingManagementFormPageState
             title: 'Estabelecimento',
             children: [
               _field(nameController, 'Nome'),
-              _field(addressController, 'Endereço'),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: _field(
+                      cepController,
+                      'CEP',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [CepInputFormatter()],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: FilledButton.tonalIcon(
+                      onPressed: isSearchingCep ? null : _searchCep,
+                      icon: isSearchingCep
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.search),
+                      label: const Text('Buscar'),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _field(
+                      streetSearchController,
+                      'Buscar por rua e número',
+                      keyboardType: TextInputType.streetAddress,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: FilledButton.tonalIcon(
+                      onPressed: isSearchingCep ? null : _searchStreet,
+                      icon: const Icon(Icons.location_searching),
+                      label: const Text('Buscar rua'),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _field(streetController, 'Nome da rua')),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 96,
+                    child: _field(
+                      numberController,
+                      'Número',
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              _field(neighborhoodController, 'Bairro'),
+              if (cepMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    cepMessage!,
+                    style: const TextStyle(color: AppTheme.textMuted),
+                  ),
+                ),
               _field(cityController, 'Cidade'),
               Row(
                 children: [
@@ -540,20 +699,10 @@ class _ParkingManagementFormPageState
           _Section(
             title: 'Vagas',
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _field(totalController, 'Total', readOnly: true),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _field(
-                      availableController,
-                      'Disponíveis',
-                      readOnly: true,
-                    ),
-                  ),
-                ],
+              _field(
+                totalController,
+                'Total de vagas (calculado)',
+                readOnly: true,
               ),
               _field(arrivalToleranceController, 'Tolerância de chegada (min)'),
               Row(
@@ -569,15 +718,14 @@ class _ParkingManagementFormPageState
                 'bus': 'Ônibus',
                 'pickup': 'Picape',
               }.entries)
-                if (_countFor(entry.key) > 0)
+                if (enabledSpecialTypes.contains(entry.key))
                   _PricingSection(
                     title: 'Tarifas ${entry.value}',
                     controllers: specialPricing[entry.key]!,
+                    invalidField: invalidField,
                   ),
               OutlinedButton.icon(
-                onPressed: () => _showMessage(
-                  'Para criar um tipo especial, informe quantidade acima de zero e suas tarifas.',
-                ),
+                onPressed: _addSpecialType,
                 icon: const Icon(Icons.add),
                 label: const Text('Adicionar tipo especial'),
               ),
@@ -590,25 +738,67 @@ class _ParkingManagementFormPageState
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: _field(vipController, 'VIP')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(largeController, 'Carro grande')),
-                ],
-              ),
-              Row(
-                children: [
-                  Expanded(child: _field(busController, 'Ônibus')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(pickupController, 'Picape')),
-                ],
-              ),
+              for (final entry in {
+                'vip': 'VIP',
+                'large': 'Carro grande / picape',
+                'bus': 'Ônibus',
+                'pickup': 'Picape',
+              }.entries)
+                if (enabledSpecialTypes.contains(entry.key))
+                  _specialSpotCountField(entry.key, entry.value),
               SwitchListTile(
                 value: has24hGate,
                 onChanged: (value) => setState(() => has24hGate = value),
                 title: const Text('Portaria 24h'),
                 contentPadding: EdgeInsets.zero,
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: workRegime,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: context.strings.isEnglish
+                      ? 'Work-schedule regime'
+                      : 'Jornada usada para gerar escalas',
+                  helperText: context.strings.isEnglish
+                      ? 'Gate access hours and employee shifts are separate settings.'
+                      : 'O funcionamento da portaria e a jornada dos operadores são configurações diferentes.',
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: 'commercial',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? 'Commercial schedule'
+                          : 'Horário comercial',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'three_shifts',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? '24h coverage · three 8h shifts'
+                          : 'Cobertura 24h · três turnos de 8h',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: '24h_on_3off',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? '24h on · three days off'
+                          : 'Plantão de 24h · três dias de folga',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'administrative_8h',
+                    child: Text(
+                      context.strings.isEnglish
+                          ? 'Administrative · 8h per day'
+                          : 'Administrativo · 8h por dia',
+                    ),
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => workRegime = value ?? 'commercial'),
               ),
               _OperatingHoursEditor(
                 hours: operatingHours,
@@ -652,6 +842,7 @@ class _ParkingManagementFormPageState
               uncoveredWeeklyController,
               uncoveredMonthlyController,
             ],
+            invalidField: invalidField,
           ),
           _PricingSection(
             title: 'Taxas área coberta',
@@ -662,6 +853,7 @@ class _ParkingManagementFormPageState
               coveredWeeklyController,
               coveredMonthlyController,
             ],
+            invalidField: invalidField,
           ),
           _Section(
             title: 'Serviços extras',
@@ -674,48 +866,39 @@ class _ParkingManagementFormPageState
                         ? Icons.local_car_wash
                         : Icons.add_business_outlined,
                   ),
-                  title: Text(service.name),
-                  subtitle: Text('R\$ ${service.price.toStringAsFixed(2)}'),
+                  title: Text(_serviceLabel(service.code)),
+                  subtitle: Text(
+                    service.description?.trim().isNotEmpty == true
+                        ? service.description!
+                        : 'Serviço extra disponível nesta unidade.',
+                  ),
                   trailing: IconButton(
                     tooltip: 'Remover',
                     onPressed: () => setState(() => services.remove(service)),
                     icon: const Icon(Icons.delete_outline),
                   ),
                 ),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: serviceCode,
-                      decoration: const InputDecoration(labelText: 'Tipo'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'car_wash',
-                          child: Text('Lava jato'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'insurance',
-                          child: Text('Seguro'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'transport',
-                          child: Text('Transporte'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'vip_spot',
-                          child: Text('Vaga VIP'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) setState(() => serviceCode = value);
-                      },
-                    ),
+              DropdownButtonFormField<String>(
+                initialValue: serviceCode,
+                decoration: const InputDecoration(labelText: 'Tipo'),
+                items: const [
+                  DropdownMenuItem(value: 'car_wash', child: Text('Lava jato')),
+                  DropdownMenuItem(value: 'insurance', child: Text('Seguro')),
+                  DropdownMenuItem(
+                    value: 'transport',
+                    child: Text('Transporte'),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(servicePriceController, 'Preço')),
+                  DropdownMenuItem(value: 'vip_spot', child: Text('Vaga VIP')),
                 ],
+                onChanged: (value) {
+                  if (value != null) setState(() => serviceCode = value);
+                },
               ),
-              _field(serviceNameController, 'Nome do serviço'),
+              _field(
+                serviceDescriptionController,
+                'Descrição do serviço (opcional)',
+                keyboardType: TextInputType.text,
+              ),
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
@@ -744,39 +927,159 @@ class _ParkingManagementFormPageState
     );
   }
 
+  Future<void> _searchCep() async {
+    final cep = cepController.text.replaceAll(RegExp(r'\D'), '');
+    if (cep.length != 8) {
+      setState(() => cepMessage = 'Informe um CEP válido com 8 dígitos.');
+      return;
+    }
+    setState(() {
+      isSearchingCep = true;
+      cepMessage = null;
+    });
+    try {
+      final response = await http.get(
+        Uri.parse('https://viacep.com.br/ws/$cep/json/'),
+      );
+      if (response.statusCode != 200) throw Exception('CEP não encontrado.');
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['erro'] == true) throw Exception('CEP não encontrado.');
+      final street = (data['logradouro'] as String? ?? '').trim();
+      final neighborhood = (data['bairro'] as String? ?? '').trim();
+      final city = (data['localidade'] as String? ?? '').trim();
+      final state = (data['uf'] as String? ?? '').trim();
+      final address = [
+        street,
+        neighborhood,
+        city,
+        state,
+      ].where((part) => part.isNotEmpty).join(', ');
+      if (!mounted) return;
+      streetController.text = street;
+      neighborhoodController.text = neighborhood;
+      cityController.text = city;
+
+      // ViaCEP does not provide coordinates. Nominatim fills them from the
+      // selected address; the user can still edit the result before saving.
+      final query = Uri.encodeQueryComponent('$address, Brasil');
+      final geo = await http.get(
+        Uri.parse(
+          'https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1',
+        ),
+        headers: const {'User-Agent': 'ParkHere/1.0 address lookup'},
+      );
+      if (geo.statusCode == 200) {
+        final rows = jsonDecode(geo.body) as List<dynamic>;
+        if (rows.isNotEmpty && mounted) {
+          final first = rows.first as Map<String, dynamic>;
+          latController.text = '${first['lat']}';
+          lngController.text = '${first['lon']}';
+        }
+      }
+      if (mounted) {
+        setState(
+          () => cepMessage =
+              'Endereço encontrado. Revise e salve para confirmar.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => cepMessage = error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isSearchingCep = false);
+    }
+  }
+
+  Future<void> _searchStreet() async {
+    final street = streetSearchController.text.trim();
+    if (street.length < 3) {
+      setState(() => cepMessage = 'Informe pelo menos o nome da rua.');
+      return;
+    }
+    setState(() {
+      isSearchingCep = true;
+      cepMessage = null;
+    });
+    try {
+      final query = Uri.encodeQueryComponent(
+        '$street, ${cityController.text.trim()}, Brasil',
+      );
+      final response = await http.get(
+        Uri.parse(
+          'https://nominatim.openstreetmap.org/search?q=$query&format=json&addressdetails=1&limit=5',
+        ),
+        headers: const {'User-Agent': 'ParkHere/1.0 address lookup'},
+      );
+      if (response.statusCode != 200) throw Exception('Rua não encontrada.');
+      final rows = jsonDecode(response.body) as List<dynamic>;
+      if (rows.isEmpty) throw Exception('Rua não encontrada.');
+      final first = rows.first as Map<String, dynamic>;
+      final details = first['address'] as Map<String, dynamic>? ?? const {};
+      if (!mounted) return;
+      final displayName = first['display_name'] as String?;
+      if (displayName != null && displayName.trim().isNotEmpty) {}
+      final road = details['road'] as String?;
+      if (road != null) streetController.text = road;
+      final houseNumber = details['house_number'] as String?;
+      if (houseNumber != null) numberController.text = houseNumber;
+      final neighborhood =
+          (details['neighbourhood'] ?? details['suburb']) as String?;
+      if (neighborhood != null) neighborhoodController.text = neighborhood;
+      final city =
+          (details['city'] ?? details['town'] ?? details['municipality'])
+              as String?;
+      if (city != null && city.isNotEmpty) cityController.text = city;
+      latController.text = '${first['lat']}';
+      lngController.text = '${first['lon']}';
+      setState(
+        () =>
+            cepMessage = 'Endereço encontrado. Revise e salve para confirmar.',
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => cepMessage = error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isSearchingCep = false);
+    }
+  }
+
   Widget _field(
     TextEditingController controller,
     String label, {
     bool readOnly = false,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
         controller: controller,
         keyboardType:
-            label == 'Nome' ||
-                label == 'Endereço' ||
-                label == 'Cidade' ||
-                label == 'Nome do serviço'
-            ? TextInputType.text
-            : const TextInputType.numberWithOptions(decimal: true),
+            keyboardType ??
+            (label == 'Nome' ||
+                    label == 'Endereço' ||
+                    label == 'Cidade' ||
+                    label == 'Nome do serviço'
+                ? TextInputType.text
+                : const TextInputType.numberWithOptions(decimal: true)),
         readOnly: readOnly,
-        decoration: InputDecoration(labelText: label),
+        inputFormatters: inputFormatters,
+        // Keep the invalid control visible after an API/form validation error.
+        decoration: InputDecoration(
+          labelText: label,
+          errorText: invalidField == label ? 'Corrija este campo' : null,
+        ),
       ),
     );
   }
 
   void _addService() {
-    final name = serviceNameController.text.trim();
-    final price = double.tryParse(
-      servicePriceController.text.replaceAll(',', '.'),
-    );
-
-    if (name.isEmpty || price == null || !price.isFinite || price < 0) {
-      _showMessage('Informe nome e preço válido, maior ou igual a zero.');
-      return;
-    }
-
     if (services.any((service) => service.code == serviceCode)) {
       _showMessage('Este tipo de serviço já foi adicionado.');
       return;
@@ -820,29 +1123,57 @@ class _ParkingManagementFormPageState
         ...services,
         ManagedParkingServiceModel(
           code: serviceCode,
-          name: name,
-          price: price,
+          name: _serviceLabel(serviceCode),
+          description: serviceDescriptionController.text.trim().isEmpty
+              ? null
+              : serviceDescriptionController.text.trim(),
+          // The extra service itself is not charged. The platform fee for
+          // adding extra services is managed centrally by the admin panel.
+          price: 0,
           isActive: true,
         ),
       ];
-      serviceNameController.clear();
-      servicePriceController.clear();
+      serviceDescriptionController.clear();
     });
   }
 
+  String _serviceLabel(String code) => switch (code) {
+    'car_wash' => 'Lava jato',
+    'insurance' => 'Seguro',
+    'transport' => 'Transporte',
+    'vip_spot' => 'Vaga VIP',
+    _ => code,
+  };
+
   Future<void> _save() async {
     try {
+      setState(() => invalidField = null);
       final parking = _buildParking();
       setState(() => isSaving = true);
       await ref.read(partnerParkingProvider.notifier).save(parking);
       if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Estacionamento salvo.')));
+      await ApiFeedback.show(context, 'Estacionamento salvo.', isError: false);
+      if (mounted) Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
-      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      if (error is _FieldValidationException) {
+        setState(() => invalidField = error.field);
+      } else {
+        final message = error.toString().toLowerCase();
+        final field = message.contains('diária') || message.contains('daily')
+            ? 'Diária'
+            : message.contains('semanal') || message.contains('weekly')
+            ? 'Semanal'
+            : message.contains('mensal') || message.contains('monthly')
+            ? 'Mensal'
+            : message.contains('hora') || message.contains('hour')
+            ? 'Primeira hora'
+            : message.contains('cep') || message.contains('postal')
+            ? 'CEP'
+            : null;
+        if (field != null) setState(() => invalidField = field);
+      }
+      await _showMessage(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
@@ -852,7 +1183,7 @@ class _ParkingManagementFormPageState
     final total = _sumSpots();
     final covered = _int(coveredController, 'Cobertas');
     final uncovered = _int(uncoveredController, 'Descobertas');
-    final available = _int(availableController, 'Disponíveis');
+    final available = widget.parking?.availableSpots ?? total;
     final arrivalTolerance = _int(
       arrivalToleranceController,
       'Tolerância de chegada',
@@ -870,11 +1201,22 @@ class _ParkingManagementFormPageState
       throw Exception('Tolerância deve ficar entre 1 e 120 minutos.');
     }
 
+    final street = _required(streetController, 'Nome da rua');
+    final number = _required(numberController, 'Número');
+    final neighborhood = _required(neighborhoodController, 'Bairro');
+    final city = _required(cityController, 'Cidade');
+    final fullAddress = '$street, $number, $neighborhood, $city';
     return ManagedParkingModel(
       id: widget.parking?.id,
       name: _required(nameController, 'Nome'),
-      address: _required(addressController, 'Endereço'),
-      city: _required(cityController, 'Cidade'),
+      address: fullAddress,
+      street: street,
+      number: number,
+      neighborhood: neighborhood,
+      postalCode: cepController.text.trim().isEmpty
+          ? null
+          : cepController.text.trim(),
+      city: city,
       lat: _double(latController, 'Latitude'),
       lng: _double(lngController, 'Longitude'),
       totalSpots: total,
@@ -888,6 +1230,7 @@ class _ParkingManagementFormPageState
       pickupSpots: pickup,
       hasVipSpots: vip > 0,
       has24hGate: has24hGate,
+      workRegime: workRegime,
       hasSecuritySystem: hasSecuritySystem,
       wantsAutomaticAccess: wantsAutomaticAccess,
       hasAutomaticAccess: hasAutomaticAccess,
@@ -922,6 +1265,52 @@ class _ParkingManagementFormPageState
     _ => _int(pickupController, 'Picape'),
   };
 
+  Widget _specialSpotCountField(String key, String label) {
+    final controller = switch (key) {
+      'vip' => vipController,
+      'large' => largeController,
+      'bus' => busController,
+      _ => pickupController,
+    };
+    return _field(
+      controller,
+      '$label · quantidade',
+      keyboardType: TextInputType.number,
+    );
+  }
+
+  Future<void> _addSpecialType() async {
+    final options = {
+      'vip': 'VIP',
+      'large': 'Carro grande / picape',
+      'bus': 'Ônibus',
+      'pickup': 'Picape',
+    }..removeWhere((key, _) => enabledSpecialTypes.contains(key));
+    if (options.isEmpty) {
+      await _showMessage('Todos os tipos especiais já foram adicionados.');
+      return;
+    }
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final entry in options.entries)
+              ListTile(
+                leading: const Icon(Icons.add_circle_outline),
+                title: Text(entry.value),
+                onTap: () => Navigator.pop(context, entry.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    setState(() => enabledSpecialTypes.add(selected));
+  }
+
   ParkingAreaPricingModel _pricing(List<TextEditingController> controllers) {
     if (controllers.any((controller) => _double(controller, 'Tarifa') < 0)) {
       throw Exception('Tarifas não podem ser negativas.');
@@ -948,14 +1337,16 @@ class _ParkingManagementFormPageState
 
   String _required(TextEditingController controller, String label) {
     final value = controller.text.trim();
-    if (value.isEmpty) throw Exception('Informe $label.');
+    if (value.isEmpty) {
+      throw _FieldValidationException(label, 'Informe $label.');
+    }
     return value;
   }
 
   int _int(TextEditingController controller, String label) {
     final value = int.tryParse(controller.text.trim());
     if (value == null || value < 0) {
-      throw Exception('Informe $label corretamente.');
+      throw _FieldValidationException(label, 'Informe $label corretamente.');
     }
     return value;
   }
@@ -963,16 +1354,23 @@ class _ParkingManagementFormPageState
   double _double(TextEditingController controller, String label) {
     final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
     if (value == null || !value.isFinite) {
-      throw Exception('Informe $label corretamente.');
+      throw _FieldValidationException(label, 'Informe $label corretamente.');
     }
     return value;
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  Future<void> _showMessage(String message) async {
+    await ApiFeedback.show(context, message);
   }
+}
+
+class _FieldValidationException implements Exception {
+  final String field;
+  final String message;
+  const _FieldValidationException(this.field, this.message);
+
+  @override
+  String toString() => message;
 }
 
 class _Section extends StatelessWidget {
@@ -1003,8 +1401,13 @@ class _Section extends StatelessWidget {
 class _PricingSection extends StatelessWidget {
   final String title;
   final List<TextEditingController> controllers;
+  final String? invalidField;
 
-  const _PricingSection({required this.title, required this.controllers});
+  const _PricingSection({
+    required this.title,
+    required this.controllers,
+    this.invalidField,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1036,7 +1439,11 @@ class _PricingSection extends StatelessWidget {
       child: TextField(
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(labelText: label, prefixText: 'R\$ '),
+        decoration: InputDecoration(
+          labelText: label,
+          prefixText: 'R\$ ',
+          errorText: invalidField == label ? 'Corrija este campo' : null,
+        ),
       ),
     );
   }

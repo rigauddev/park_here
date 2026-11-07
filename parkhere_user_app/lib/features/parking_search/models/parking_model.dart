@@ -18,6 +18,7 @@ class ParkingModel {
 
   // ✅ Precificação completa
   final ParkingPricing pricing;
+  final Map<String, ParkingPricing> categoryPricing;
 
   // Serviços adicionais
   final bool hasCarWash;
@@ -25,6 +26,8 @@ class ParkingModel {
   final bool hasTransportService;
   final bool hasCoveredArea;
   final bool hasVipSpots;
+  final bool isOpen;
+  final Map<String, dynamic> operatingHours;
 
   final double carWashPrice;
   final double tourGuidePrice;
@@ -46,6 +49,7 @@ class ParkingModel {
     this.pickupSpots = 0,
     this.motoHomeSpots = 0,
     required this.pricing,
+    this.categoryPricing = const {},
     required this.hasCarWash,
     required this.hasTourGuide,
     required this.hasTransportService,
@@ -54,6 +58,8 @@ class ParkingModel {
     required this.transportPrice,
     required this.hasCoveredArea,
     required this.hasVipSpots,
+    this.isOpen = true,
+    this.operatingHours = const {},
   });
 
   factory ParkingModel.fromJson(Map<String, dynamic> json) {
@@ -74,6 +80,8 @@ class ParkingModel {
       motoHomeSpots: json["motoHomeSpots"] ?? 0,
       hasCoveredArea: json["hasCoveredArea"],
       hasVipSpots: json["hasVipSpots"],
+      isOpen: json["isOpen"] as bool? ?? true,
+      operatingHours: json["operating_hours"] as Map<String, dynamic>? ?? const {},
       hasCarWash: json["hasCarWash"],
       hasTourGuide: json["hasTourGuide"],
       hasTransportService: json["hasTransportService"],
@@ -81,6 +89,13 @@ class ParkingModel {
       tourGuidePrice: (json["tourGuidePrice"] as num).toDouble(),
       transportPrice: (json["transportPrice"] as num).toDouble(),
       pricing: ParkingPricing.fromJson(json["pricing"]),
+      categoryPricing: (json['category_pricing'] as Map<String, dynamic>? ?? {})
+          .map(
+            (key, value) => MapEntry(
+              key,
+              ParkingPricing.fromCategoryJson(value as Map<String, dynamic>),
+            ),
+          ),
     );
   }
 }

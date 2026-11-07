@@ -1,6 +1,6 @@
-# ParkHere
+# ServiceHub (ParkHere)
 
-ParkHere e um gestor de estacionamentos e servicos adicionais. O MVP conecta motoristas a estacionamentos com vagas disponiveis, permite pre-reserva enquanto o usuario se desloca, reserva com plano de pagamento, contratacao de servicos extras e check-in/checkout validado no fluxo do app ou pela portaria.
+ServiceHub é a evolução do ParkHere: uma plataforma de serviços locais que começa com estacionamento e locação de veículos, conectando clientes e parceiros com reservas, pagamentos e operação auditável.
 
 ## Estado Atual
 

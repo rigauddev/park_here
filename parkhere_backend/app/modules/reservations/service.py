@@ -44,7 +44,10 @@ class ReservationService:
     VALID_SPOT_TYPES = {"uncovered", "covered", "vip", "large", "bus", "pickup", "motorhome"}
     VALID_PLANS = {"hourly", "daily", "weekly", "monthly"}
     FREE_CANCELLATION_MINUTES = 5
-    CHECKOUT_GRACE_MINUTES = 15
+    # Hourly reservations have a ten-minute checkout window after the
+    # contracted period. Expiry is handled by the operator, never by a list
+    # or map request (which must remain read-only).
+    CHECKOUT_GRACE_MINUTES = 10
 
     @staticmethod
     async def create_pre_checkin(
@@ -76,6 +79,34 @@ class ReservationService:
         await _ensure_reservation_permission(db, data, current_user, parking)
 
         await expire_parking_reservations(db, parking)
+        # The route screen can retry after a mobile timeout. If the first
+        # request was committed, return that same hold instead of creating a
+        # second reservation or showing a misleading conflict.
+        if current_user.role == UserRoleEnum.CUSTOMER:
+            active = await db.scalar(
+                select(Reservation)
+                .where(
+                    Reservation.user_id == current_user.id,
+                    Reservation.status.in_([
+                        "pre_reserved",
+                        "pending_operator_approval",
+                        "confirmed",
+                        "checked_in",
+                    ]),
+                    (Reservation.status != "pre_reserved")
+                    | (Reservation.hold_expires_at > datetime.utcnow()),
+                )
+                .order_by(Reservation.created_at.desc())
+                .limit(1)
+            )
+            if active is not None:
+                if active.parking_id == parking.id:
+                    active.parking_name = parking.name
+                    return to_response(active)
+                raise HTTPException(
+                    status_code=409,
+                    detail="Finalize ou cancele sua reserva ativa antes de criar outra.",
+                )
         if parking.available_spots <= 0:
             raise HTTPException(status_code=409, detail="No available spots")
 
@@ -87,10 +118,35 @@ class ReservationService:
         )
         parking.available_spots -= 1
         arrival_estimate_at = _arrival_estimate(data)
+        outside_operating_hours = not _arrival_within_operating_hours(
+            parking, arrival_estimate_at
+        )
 
         reservation = Reservation(
             parking_id=parking.id,
-            user_id=current_user.id,
+            status=(
+                "pending_operator_approval"
+                if outside_operating_hours
+                else "pre_reserved"
+            ),
+            user_id=(
+                None
+                if data.is_manual_arrival and current_user.role in {
+                    UserRoleEnum.OPERATOR,
+                    UserRoleEnum.PARTNER_MANAGER,
+                    UserRoleEnum.PARKING_ADMIN,
+                }
+                else current_user.id
+            ),
+            created_by_user_id=(
+                current_user.id
+                if data.is_manual_arrival and current_user.role in {
+                    UserRoleEnum.OPERATOR,
+                    UserRoleEnum.PARTNER_MANAGER,
+                    UserRoleEnum.PARKING_ADMIN,
+                }
+                else None
+            ),
             vehicle_id=data.vehicle_id,
             guide_user_id=data.guide_user_id,
             guide_commission_amount=guide_commission_amount,
@@ -111,6 +167,11 @@ class ReservationService:
             services_amount=pricing.services_amount,
             platform_fee_amount=pricing.platform_fee_amount,
             final_total=pricing.final_total,
+            notification_status=(
+                "awaiting_operating_hours_approval"
+                if outside_operating_hours
+                else "sent_to_parking"
+            ),
             selected_services_snapshot=json.dumps(
                 [service.model_dump() for service in pricing.services_snapshot]
             ),
@@ -127,7 +188,7 @@ class ReservationService:
         db.add(reservation)
         await db.commit()
         await db.refresh(reservation)
-
+        reservation.parking_name = parking.name
         return to_response(reservation)
 
     @staticmethod
@@ -140,10 +201,38 @@ class ReservationService:
         reservation, parking = await _get_reservation_with_parking(db, reservation_id)
         _ensure_cancel_permission(current_user, reservation, parking)
 
-        if reservation.status in {"cancelled", "completed", "checked_out", "expired"}:
+        if reservation.status in {"completed", "checked_out", "expired"}:
             raise HTTPException(
                 status_code=409,
                 detail="Reservation cannot be cancelled",
+            )
+
+        # Mobile retries are common after a timeout. The first request may
+        # already have committed the cancellation, so return the persisted
+        # state instead of reporting a misleading error.
+        if reservation.status == "cancelled":
+            actor_name = None
+            if reservation.cancelled_by_user_id:
+                actor = await db.scalar(
+                    select(User).where(User.id == reservation.cancelled_by_user_id)
+                )
+                actor_name = actor.name if actor else None
+            return to_response(reservation).model_copy(
+                update={"cancelled_by_name": actor_name}
+            )
+
+        if reservation.payment_status == "paid":
+            raise HTTPException(
+                status_code=409,
+                detail="Paid reservations require a refund request; cancellation cannot substitute for a refund.",
+            )
+        if current_user.role == UserRoleEnum.CUSTOMER and reservation.status not in {
+            "pre_reserved",
+            "pending_operator_approval",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="Only an unpaid pre-reservation can be cancelled directly.",
             )
 
         if reservation.status == "checked_in" and current_user.role not in {
@@ -155,7 +244,11 @@ class ReservationService:
                 detail="Only partner administrator can cancel after check-in",
             )
 
-        fee_amount = await _calculate_cancellation_fee(db, reservation)
+        fee_amount = (
+            0.0
+            if current_user.role == UserRoleEnum.CUSTOMER
+            else await _calculate_cancellation_fee(db, reservation)
+        )
         credit_amount = max((reservation.final_total or 0) - fee_amount, 0) if reservation.payment_status == "paid" else 0
 
         reservation.status = "cancelled"
@@ -168,6 +261,45 @@ class ReservationService:
             reservation.payment_status = "cancelled"
 
         parking.available_spots = min(parking.available_spots + 1, parking.total_spots)
+        await db.commit()
+        await db.refresh(reservation)
+        response = to_response(reservation)
+        return response.model_copy(update={"cancelled_by_name": current_user.name})
+
+    @staticmethod
+    async def approve_arrival(
+        db: AsyncSession,
+        reservation_id: str,
+        decision: str,
+        current_user: User,
+    ) -> ReservationResponse:
+        reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+        if current_user.role not in {
+            UserRoleEnum.OPERATOR,
+            UserRoleEnum.PARTNER_MANAGER,
+            UserRoleEnum.PARKING_ADMIN,
+        } or current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        if reservation.status != "pending_operator_approval":
+            raise HTTPException(status_code=409, detail="Reservation is not awaiting approval")
+        if decision == "approve":
+            reservation.status = "confirmed" if reservation.payment_status in {
+                "paid_pending_approval", "paid"
+            } else "pre_reserved"
+            reservation.payment_status = (
+                "paid" if reservation.payment_status == "paid_pending_approval"
+                else reservation.payment_status
+            )
+            reservation.notification_status = "approved_by_parking"
+        else:
+            reservation.status = "cancelled"
+            reservation.payment_status = "refunded_pending" if reservation.payment_status in {
+                "paid_pending_approval", "paid"
+            } else "cancelled"
+            reservation.cancelled_at = datetime.utcnow()
+            reservation.cancellation_reason = "Entrada fora do horário recusada pelo estacionamento."
+            parking.available_spots = min(parking.total_spots, parking.available_spots + 1)
+            reservation.notification_status = "arrival_rejected"
         await db.commit()
         await db.refresh(reservation)
         return to_response(reservation)
@@ -190,12 +322,13 @@ class ReservationService:
                     detail="Ative a localização para fazer check-in. É necessário informar sua posição.",
                 )
             distance = _distance_meters(latitude, longitude, parking.lat, parking.lng)
-            if distance > 150:
+            if distance > 70:
                 raise HTTPException(
                     status_code=403,
                     detail=(
                         "Você precisa estar dentro do estacionamento para fazer check-in. "
-                        "Ative a localização e tente novamente."
+                        f"Distância calculada: {round(distance)} m (limite: 70 m). "
+                        "Confirme a localização do estacionamento no mapa e tente novamente."
                     ),
                 )
 
@@ -208,9 +341,14 @@ class ReservationService:
             UserRoleEnum.OPERATOR,
         } and reservation.payment_status in {"pending_checkin", "payment_pending"}
 
+        customer_pre_reservation = (
+            current_user.role == UserRoleEnum.CUSTOMER
+            and reservation.status == "pre_reserved"
+        )
         if reservation.status not in {"pre_reserved", "confirmed"} or (
             reservation.payment_status != "paid"
             and not staff_can_checkin_for_checkout_payment
+            and not customer_pre_reservation
         ):
             raise HTTPException(
                 status_code=409,
@@ -279,6 +417,40 @@ class ReservationService:
         await db.refresh(reservation)
         return to_response(reservation)
 
+    @staticmethod
+    async def operator_checkout_without_customer(
+        db: AsyncSession,
+        reservation_id: str,
+        current_user: User,
+        reason: str,
+    ) -> ReservationResponse:
+        """Release a checked-in vehicle when the customer left without checkout.
+
+        This is an explicit operator action: it never runs from a read/list
+        endpoint and it requires one spot photo to be uploaded separately.
+        """
+        reservation, parking = await _get_reservation_with_parking(db, reservation_id)
+        if current_user.role not in {
+            UserRoleEnum.OPERATOR,
+            UserRoleEnum.PARTNER_MANAGER,
+            UserRoleEnum.PARKING_ADMIN,
+        } or current_user.tenant_id != parking.tenant_id:
+            raise HTTPException(status_code=403, detail="Reservation not allowed")
+        if reservation.status != "checked_in":
+            raise HTTPException(status_code=409, detail="Reservation must be checked in before checkout")
+
+        excess_minutes, excess_amount = calculate_checkout_excess(reservation, parking)
+        reservation.checkout_grace_minutes = ReservationService.CHECKOUT_GRACE_MINUTES
+        reservation.checkout_excess_minutes = excess_minutes
+        reservation.checkout_excess_amount = excess_amount
+        reservation.status = "completed"
+        reservation.checked_out_at = datetime.utcnow()
+        reservation.cancellation_reason = (reason or "Cliente deixou o estacionamento sem realizar o checkout.").strip()
+        parking.available_spots = min(parking.available_spots + 1, parking.total_spots)
+        await db.commit()
+        await db.refresh(reservation)
+        return to_response(reservation)
+
 
 async def _get_parking_with_services(db: AsyncSession, parking_id: str) -> Parking:
     result = await db.execute(
@@ -330,6 +502,9 @@ async def _get_reservation_with_parking(
         raise HTTPException(status_code=404, detail="Reservation not found")
     parking = await db.scalar(select(Parking).where(Parking.id == parking_id).with_for_update().execution_options(populate_existing=True))
     reservation = await db.scalar(select(Reservation).where(Reservation.id == reservation_id).with_for_update().execution_options(populate_existing=True))
+    reservation.parking_lat = parking.lat
+    reservation.parking_lng = parking.lng
+    reservation.parking_city = parking.city
     return reservation, parking
 
 
@@ -356,19 +531,6 @@ async def _ensure_reservation_permission(
         )
         if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=403, detail="Vehicle not allowed")
-        active = await db.scalar(
-            select(Reservation.id).where(
-                Reservation.user_id == current_user.id,
-                Reservation.status.in_(["pre_reserved", "confirmed", "checked_in"]),
-                (Reservation.status != "pre_reserved")
-                | (Reservation.hold_expires_at > datetime.utcnow()),
-            ).limit(1)
-        )
-        if active is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="Finalize ou cancele sua reserva ativa antes de criar outra.",
-            )
         return
 
     if current_user.role in {
@@ -480,6 +642,31 @@ def _arrival_estimate(data: PreCheckinReservationRequest) -> datetime:
     return now + timedelta(minutes=data.route_minutes)
 
 
+def _arrival_within_operating_hours(parking: Parking, arrival: datetime) -> bool:
+    """Return whether the requested arrival is inside configured hours."""
+    if not parking.operating_hours:
+        return True
+    try:
+        hours = json.loads(parking.operating_hours)
+    except (TypeError, json.JSONDecodeError):
+        return True
+    local = arrival.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Bahia"))
+    keys = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    rule = hours.get(keys[local.weekday()])
+    if not rule or rule.get("closed") is True:
+        return False
+    try:
+        opening = datetime.strptime(rule["open"], "%H:%M").time()
+        closing = datetime.strptime(rule["close"], "%H:%M").time()
+    except (KeyError, TypeError, ValueError):
+        return True
+    current = local.time()
+    if opening <= closing:
+        return opening <= current <= closing
+    # overnight operation, e.g. 18:00–06:00
+    return current >= opening or current <= closing
+
+
 def physical_spot_type(index, parking):
     limit = 0
     for kind, count in [("vip", parking.vip_spots), ("bus", parking.bus_spots),
@@ -493,15 +680,47 @@ def physical_spot_type(index, parking):
 
 async def expire_parking_reservations(db, parking):
     expired = (await db.scalars(select(Reservation).where(
-        Reservation.parking_id == parking.id, Reservation.status == "pre_reserved",
+        Reservation.parking_id == parking.id,
+        Reservation.status.in_(["pre_reserved", "pending_operator_approval"]),
         Reservation.hold_expires_at <= datetime.utcnow(),
         Reservation.payment_status != "paid",
     ).with_for_update().execution_options(populate_existing=True))).all()
     for reservation in expired:
-        reservation.status = "expired"
+        reservation.status = "cancelled"
         reservation.payment_status = "expired"
+        reservation.cancelled_at = datetime.utcnow()
+        reservation.cancellation_reason = "Pré-reserva expirada automaticamente."
     parking.available_spots = min(parking.total_spots, parking.available_spots + len(expired))
     await db.flush()
+
+
+async def expire_user_reservations(db: AsyncSession, user_id: str) -> None:
+    """Expire stale holds for one customer before returning their history."""
+    rows = (await db.scalars(
+        select(Reservation).where(
+            Reservation.user_id == user_id,
+            Reservation.status.in_(["pre_reserved", "pending_operator_approval"]),
+            Reservation.hold_expires_at <= datetime.utcnow(),
+            Reservation.payment_status != "paid",
+        ).with_for_update()
+    )).all()
+    if not rows:
+        return
+    parking_ids = {row.parking_id for row in rows}
+    parkings = {
+        parking.id: parking
+        for parking in (await db.scalars(select(Parking).where(Parking.id.in_(parking_ids)))).all()
+    }
+    now = datetime.utcnow()
+    for reservation in rows:
+        reservation.status = "cancelled"
+        reservation.payment_status = "expired"
+        reservation.cancelled_at = now
+        reservation.cancellation_reason = "Pré-reserva expirada automaticamente."
+        parking = parkings.get(reservation.parking_id)
+        if parking:
+            parking.available_spots = min(parking.total_spots, parking.available_spots + 1)
+    await db.commit()
 
 
 async def allocate_spot(db, parking, requested, kind):
@@ -546,8 +765,9 @@ async def _calculate_pricing(
     selected_services = _selected_services(parking.services, data.service_codes)
     services_amount = sum(service.price for service in selected_services)
     service_amounts = {"parking": base_amount}
-    for service in selected_services:
-        service_amounts[service.code] = service_amounts.get(service.code, 0) + service.price
+    if services_amount > 0:
+        # One global rate covers optional services sold inside the parking.
+        service_amounts["additional_services"] = services_amount
 
     platform_fee_lines = await PlatformFeeService.calculate_lines(
         db, service_amounts, parking.tenant_id, parking.id
@@ -624,31 +844,38 @@ def _base_amount(
     duration_hours: int,
 ) -> float:
     configured = json.loads(getattr(parking, "category_pricing", None) or "{}").get(spot_type)
-    if configured:
-        first_hour = configured.get("first_hour_price", 0)
-        additional_hour = configured.get("additional_hour_price", 0)
-        daily = configured.get("daily_price", 0)
-        weekly = configured.get("weekly_price", 0)
-        monthly = configured.get("monthly_price", 0)
-    elif spot_type in {"covered", "vip"}:
-        first_hour = parking.covered_first_hour_price
-        additional_hour = parking.covered_additional_hour_price
-        daily = parking.covered_daily_price
-        weekly = parking.covered_weekly_price
-        monthly = parking.covered_monthly_price
+    if spot_type in {"covered", "vip"}:
+        fallback = {
+            "first_hour_price": parking.covered_first_hour_price,
+            "additional_hour_price": parking.covered_additional_hour_price,
+            "daily_price": parking.covered_daily_price,
+            "weekly_price": parking.covered_weekly_price,
+            "monthly_price": parking.covered_monthly_price,
+        }
     else:
-        first_hour = parking.uncovered_first_hour_price or parking.first_hour_price
-        additional_hour = (
-            parking.uncovered_additional_hour_price or parking.additional_hour_price
-        )
-        daily = parking.uncovered_daily_price or parking.daily_price
-        weekly = parking.uncovered_weekly_price or parking.weekly_price
-        monthly = parking.uncovered_monthly_price or parking.monthly_price
+        fallback = {
+            "first_hour_price": parking.uncovered_first_hour_price or parking.first_hour_price,
+            "additional_hour_price": parking.uncovered_additional_hour_price or parking.additional_hour_price,
+            "daily_price": parking.uncovered_daily_price or parking.daily_price,
+            "weekly_price": parking.uncovered_weekly_price or parking.weekly_price,
+            "monthly_price": parking.uncovered_monthly_price or parking.monthly_price,
+        }
+
+    # Older MVP seed rows used {hourly, daily, weekly, monthly}; accept those
+    # rows while new management writes the explicit *_price shape. Zero/missing
+    # fields inherit the area's configured rate instead of silently charging 0.
+    configured = configured or {}
+    first_hour = configured.get("first_hour_price", configured.get("hourly", 0)) or fallback["first_hour_price"]
+    additional_hour = configured.get("additional_hour_price", configured.get("hourly", 0)) or fallback["additional_hour_price"]
+    daily = configured.get("daily_price", configured.get("daily", 0)) or fallback["daily_price"]
+    weekly = configured.get("weekly_price", configured.get("weekly", 0)) or fallback["weekly_price"]
+    monthly = configured.get("monthly_price", configured.get("monthly", 0)) or fallback["monthly_price"]
 
     if pricing_plan == "hourly":
         return first_hour + max(duration_hours - 1, 0) * additional_hour
     if pricing_plan == "daily":
-        return daily
+        days = max(ceil(duration_hours / 24), 1) if duration_hours > 0 else 1
+        return round(daily * days, 2)
     if pricing_plan == "weekly":
         return weekly
     return monthly
@@ -736,27 +963,30 @@ def to_response(reservation: Reservation) -> ReservationResponse:
 
     return ReservationResponse(
         id=reservation.id,
+        created_at=_utc_iso(reservation.created_at),
+        created_by_name=None,
+        created_by_phone=None,
         walk_in_plate=reservation.walk_in_plate,
         walk_in_phone=reservation.walk_in_phone,
         parking_id=reservation.parking_id,
+        parking_name=getattr(reservation, "parking_name", None),
+        parking_lat=getattr(reservation, "parking_lat", None),
+        parking_lng=getattr(reservation, "parking_lng", None),
+        parking_city=getattr(reservation, "parking_city", None),
         status=reservation.status,
-        checked_in_at=reservation.checked_in_at.isoformat() + "Z"
-        if reservation.checked_in_at
-        else None,
-        checked_out_at=reservation.checked_out_at.isoformat() + "Z"
-        if reservation.checked_out_at
-        else None,
+        checked_in_at=_utc_iso(reservation.checked_in_at),
+        checked_out_at=_utc_iso(reservation.checked_out_at),
         spot_code=reservation.spot_code,
         arrival_estimate_at=(
-            reservation.arrival_estimate_at.isoformat() + "Z"
+            _utc_iso(reservation.arrival_estimate_at)
             if reservation.arrival_estimate_at
             else (
-                reservation.created_at + timedelta(minutes=reservation.route_minutes)
-            ).isoformat() + "Z"
+                _utc_iso(reservation.created_at + timedelta(minutes=reservation.route_minutes))
+            )
         ),
         is_manual_arrival=reservation.is_manual_arrival,
         route_minutes=reservation.route_minutes,
-        hold_expires_at=reservation.hold_expires_at.isoformat() + "Z",
+        hold_expires_at=_utc_iso(reservation.hold_expires_at),
         estimated_total=reservation.estimated_total,
         spot_type=reservation.spot_type,
         pricing_plan=reservation.pricing_plan,
@@ -773,24 +1003,26 @@ def to_response(reservation: Reservation) -> ReservationResponse:
         platform_fees=platform_fees,
         payment_status=reservation.payment_status,
         payment_method=getattr(reservation, "payment_method", None),
-        terms_accepted_at=(
-            reservation.terms_accepted_at.isoformat() + "Z"
-            if reservation.terms_accepted_at
-            else None
-        ),
+        terms_accepted_at=_utc_iso(reservation.terms_accepted_at),
         terms_version=reservation.terms_version,
         terms_locale=reservation.terms_locale,
         accepted_terms=accepted_terms,
         notification_status=reservation.notification_status,
-        cancelled_at=reservation.cancelled_at.isoformat() + "Z"
-        if reservation.cancelled_at
-        else None,
+        cancelled_at=_utc_iso(reservation.cancelled_at),
+        cancelled_by_user_id=reservation.cancelled_by_user_id,
         cancellation_fee_amount=reservation.cancellation_fee_amount,
         cancellation_credit_amount=reservation.cancellation_credit_amount,
         checkout_grace_minutes=reservation.checkout_grace_minutes,
         checkout_excess_minutes=reservation.checkout_excess_minutes,
         checkout_excess_amount=reservation.checkout_excess_amount,
-        checkout_excess_paid_at=reservation.checkout_excess_paid_at.isoformat() + "Z"
-        if reservation.checkout_excess_paid_at
-        else None,
+        checkout_excess_paid_at=_utc_iso(reservation.checkout_excess_paid_at),
     )
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    """Serialize database timestamps as unambiguous UTC for mobile clients."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

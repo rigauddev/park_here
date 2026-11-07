@@ -22,6 +22,7 @@ from app.modules.users.models.user_model import User
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
 from app.modules.partners.models import PartnerProfile
 from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
+from app.modules.partners.work_schedule_models import OperatorScheduleHistory
 from app.modules.parkings.models import Parking, ParkingService
 from app.modules.reservations.models import Reservation
 from app.modules.payments.models import PaymentTransaction, PartnerFeeDebt, PartnerFeeSettlement
@@ -34,7 +35,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
         self.session = async_sessionmaker(self.engine, expire_on_commit=False)
-        self.tenants, self.users, self.parkings = [], [], []
+        self.tenants, self.users, self.parkings, self.extra_users = [], [], [], []
         async with self.session() as db:
             for index in range(2):
                 uid = uuid.uuid4().hex
@@ -70,9 +71,11 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             vehicle = Vehicle(user_id=customer.id, nickname='Carro', plate='ABC1D23', brand='Fiat', model='Uno', color='Prata', vehicle_document='test', ownership_type='owner', is_active=True)
             db.add(vehicle)
             operator = User(tenant_id=self.tenants[0], name='Pilot operator', firt_name='Pilot', email=f'o{uuid.uuid4().hex}@test.invalid', password_hash='not-a-login', role=UserRoleEnum.OPERATOR)
-            db.add(operator)
+            second_operator = User(tenant_id=self.tenants[0], name='Pilot operator 2', firt_name='Pilot', email=f'o{uuid.uuid4().hex}@test.invalid', password_hash='not-a-login', role=UserRoleEnum.OPERATOR)
+            db.add_all([operator, second_operator])
             await db.commit()
             self.customer, self.vehicle, self.operator = customer, vehicle, operator
+            self.second_operator = second_operator
             branch = Parking(tenant_id=self.tenants[0], name='Pilot Branch', address='Valenca BA', city='Valenca', lat=-13.36, lng=-39.06, total_spots=5, available_spots=5, uncovered_spots=5, first_hour_price=7, uncovered_first_hour_price=7, additional_hour_price=2, uncovered_additional_hour_price=2)
             db.add(branch)
             await db.commit()
@@ -139,6 +142,48 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         primary = next(item for item in layout['parkings'] if item['id'] == self.parkings[0])
         self.assertEqual(primary['available_spots'], 10)
 
+    async def test_paid_overstay_checkout_requires_only_server_calculated_excess(self):
+        reservation = await self.request('/reservations/pre-checkin', {
+            'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
+            'route_minutes': 10, 'spot_type': 'uncovered', 'terms_accepted': True,
+            'terms_version': 'reservation-terms-2026-09-v1', 'terms_locale': 'pt_BR',
+        }, user=self.customer)
+        initial_intent = await self.request(
+            f'/payments/reservations/{reservation["id"]}/intent',
+            {'method': 'pix'}, user=self.customer,
+        )
+        await self.request(
+            f'/payments/{initial_intent["id"]}/confirm', {}, user=self.customer,
+        )
+        await self.request(
+            f'/reservations/{reservation["id"]}/checkin?latitude=-13.37&longitude=-39.07',
+            {}, user=self.customer,
+        )
+        async with self.session() as db:
+            row = await db.get(Reservation, reservation['id'])
+            row.duration_hours = 1
+            row.checked_in_at = datetime.utcnow() - timedelta(hours=3)
+            await db.commit()
+
+        status, blocked = await self.request(
+            f'/reservations/{reservation["id"]}/checkout', {},
+            user=self.customer, expected=None,
+        )
+        self.assertEqual(status, 402, blocked)
+        excess = blocked['detail']['checkout_excess_amount']
+        self.assertGreater(excess, 0)
+        intent = await self.request(
+            f'/payments/reservations/{reservation["id"]}/intent',
+            {'method': 'credit_card', 'purpose': 'checkout_excess'},
+            user=self.customer,
+        )
+        self.assertEqual(intent['gross_amount'], excess)
+        await self.request(f'/payments/{intent["id"]}/confirm', {}, user=self.customer)
+        completed = await self.request(
+            f'/reservations/{reservation["id"]}/checkout', {}, user=self.customer,
+        )
+        self.assertEqual(completed['status'], 'completed')
+
     async def test_reservation_requires_current_terms_acceptance(self):
         payload = {
             'parking_id': self.parkings[0], 'vehicle_id': self.vehicle.id,
@@ -169,6 +214,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
         cancelled = await self.request(f'/reservations/{r["id"]}/cancel', {})
         self.assertEqual(cancelled['cancellation_fee_amount'], 0)
         self.assertEqual(cancelled['cancellation_credit_amount'], 0)
+        self.assertEqual(cancelled['cancelled_by_name'], self.users[0].name)
         await self.request(f'/payments/reservations/{r["id"]}/intent', {'method': 'pix'}, expected=409)
         await self.reserve()
 
@@ -243,8 +289,13 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             'opening_time': '08:00',
             'closing_time': '18:00',
         })
-        self.assertEqual(len(suggestion['suggestions']), 1)
-        self.assertIsNone(suggestion['suggestions'][0]['operator_id'])
+        # A 10-hour commercial opening window exceeds an 8-hour workday, so
+        # the generator creates overlapping coverage slots and leaves both
+        # unassigned for later staffing.
+        self.assertEqual(len(suggestion['suggestions']), 2)
+        self.assertTrue(
+            all(item['operator_id'] is None for item in suggestion['suggestions'])
+        )
         created = await self.request('/partners/shifts', {
             'operator_id': None,
             'parking_id': self.branch_parking,
@@ -252,6 +303,58 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             'ends_at': suggestion['suggestions'][0]['ends_at'],
         }, expected=201)
         self.assertEqual(created['parking_id'], self.branch_parking)
+        await self.request(f'/partners/operators/{self.second_operator.id}/parkings', {
+            'parking_ids': [self.branch_parking],
+        }, method='PUT')
+        payload = {
+            'operator_id': self.operator.id,
+            'starts_at': suggestion['suggestions'][0]['starts_at'],
+            'ends_at': suggestion['suggestions'][0]['ends_at'],
+        }
+        await self.request(f'/partners/shifts/{created["id"]}', payload, method='PUT', expected=409)
+        payload['operator_id'] = self.second_operator.id
+        updated = await self.request(f'/partners/shifts/{created["id"]}', payload, method='PUT')
+        self.assertEqual(updated['operator_id'], self.second_operator.id)
+        loaded_shifts = await self.request('/partners/shifts')
+        self.assertIn(updated['id'], [item['id'] for item in loaded_shifts])
+
+        # Four operators can cover a repeating 24h-on/3-days-off cycle. With
+        # fewer operators, uncovered days remain open instead of violating rest.
+        async with self.session() as db:
+            operators = []
+            for index in range(4):
+                operator = User(
+                    tenant_id=self.tenants[0], name=f'24h operator {index}',
+                    firt_name='Pilot', email=f'24h-{uuid.uuid4().hex}@test.invalid',
+                    password_hash='not-a-login', role=UserRoleEnum.OPERATOR,
+                )
+                db.add(operator)
+                await db.flush()
+                db.add(OperatorParkingAssignment(
+                    operator_id=operator.id, parking_id=self.branch_parking,
+                ))
+                operators.append(operator)
+            await db.commit()
+            self.extra_users.extend(operators)
+        cycle_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=10)
+        cycle = await self.request('/partners/shifts/suggest', {
+            'parking_id': self.branch_parking,
+            'operator_ids': [operator.id for operator in operators],
+            'starts_on': cycle_start.date().isoformat(),
+            'ends_on': (cycle_start + timedelta(days=7)).date().isoformat(),
+            'daily_hours': 24,
+            'work_regime': '24h_on_3off',
+        })
+        assigned_days = [
+            (datetime.fromisoformat(row['starts_at']).date(), row['operator_id'])
+            for row in cycle['suggestions'] if row['operator_id'] is not None
+        ]
+        self.assertEqual(len(assigned_days), 8)
+        last_work_day = {}
+        for day, operator_id in assigned_days:
+            if operator_id in last_work_day:
+                self.assertGreaterEqual((day - last_work_day[operator_id]).days, 4)
+            last_work_day[operator_id] = day
 
     async def asyncTearDown(self):
         async with self.session() as db:
@@ -259,6 +362,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             await db.execute(delete(PartnerFeeSettlement).where(PartnerFeeSettlement.debt_id.in_(debt_ids)))
             for model in [PartnerFeeDebt, PaymentTransaction]:
                 await db.execute(delete(model).where(model.tenant_id.in_(self.tenants)))
+            await db.execute(delete(OperatorScheduleHistory).where(OperatorScheduleHistory.parking_id.in_(self.parkings)))
             await db.execute(delete(OperatorWorkShift).where(OperatorWorkShift.parking_id.in_(self.parkings)))
             await db.execute(delete(OperatorParkingAssignment).where(OperatorParkingAssignment.parking_id.in_(self.parkings)))
             await db.execute(delete(Reservation).where(Reservation.parking_id.in_(self.parkings)))
@@ -266,7 +370,7 @@ class PilotHTTPTests(unittest.IsolatedAsyncioTestCase):
             await db.execute(delete(ParkingPlatformFee).where(ParkingPlatformFee.parking_id.in_(self.parkings)))
             await db.execute(delete(Parking).where(Parking.id.in_(self.parkings)))
             await db.execute(delete(Vehicle).where(Vehicle.user_id == self.customer.id))
-            await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id])))
+            await db.execute(delete(User).where(User.id.in_([u.id for u in self.users] + [self.customer.id, self.operator.id, self.second_operator.id] + [u.id for u in self.extra_users])))
             await db.execute(delete(PartnerProfile).where(PartnerProfile.tenant_id.in_(self.tenants)))
             await db.execute(delete(Tenant).where(Tenant.id.in_(self.tenants)))
             await db.commit()

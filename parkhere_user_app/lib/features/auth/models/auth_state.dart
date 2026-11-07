@@ -4,6 +4,7 @@ enum AuthStatus {
   authenticated,
   unauthenticated,
   mfaRequired,
+  partnerPending,
 }
 
 enum AuthAccountType { customer, partner }
@@ -17,6 +18,8 @@ class AuthState {
   final String? role;
   final String? tenantId;
   final String? mfaToken;
+  final String? approvalStatus;
+  final String? approvalMessage;
 
   const AuthState({
     required this.status,
@@ -27,6 +30,8 @@ class AuthState {
     this.role,
     this.tenantId,
     this.mfaToken,
+    this.approvalStatus,
+    this.approvalMessage,
   });
 
   factory AuthState.initial() => const AuthState(status: AuthStatus.initial);
@@ -41,6 +46,8 @@ class AuthState {
     String? tenantId,
     String? mfaToken,
     bool clearMfaToken = false,
+    String? approvalStatus,
+    String? approvalMessage,
   }) {
     return AuthState(
       status: status ?? this.status,
@@ -51,6 +58,8 @@ class AuthState {
       role: role ?? this.role,
       tenantId: tenantId ?? this.tenantId,
       mfaToken: clearMfaToken ? null : mfaToken ?? this.mfaToken,
+      approvalStatus: approvalStatus ?? this.approvalStatus,
+      approvalMessage: approvalMessage ?? this.approvalMessage,
     );
   }
 

@@ -173,7 +173,7 @@ Operador (`OPERATOR`):
 - Pode receber pagamento e fazer check-in/checkout manual quando o fluxo operacional permitir.
 - Funcao caixa operacional permite receber dinheiro/Pix no mapa de vagas ou nos detalhes da reserva.
 - Modalidade por hora deve ficar para pagamento no checkout, pois o valor final depende do tempo real de permanencia.
-- Checkout por hora tem 15 minutos de tolerancia apos o periodo contratado.
+- Checkout por hora tem 10 minutos de tolerância após o período contratado; o checkout é manual pelo operador, com uma foto da vaga quando o cliente sair sem finalizar.
 - Se o cliente ultrapassar a tolerancia, o checkout fica bloqueado ate pagar somente o excedente calculado.
 - O excedente e registrado como pagamento separado com `purpose=checkout_excess`, preparado para integracao Mercado Pago.
 - Diaria/semanal/mensal podem permitir pagar agora ou pagar na volta conforme decisao operacional do estabelecimento.

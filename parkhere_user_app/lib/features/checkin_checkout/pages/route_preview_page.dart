@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
+import '../../payments/pages/payment_page.dart';
+import '../../parking_search/models/payment_plan_enum.dart';
 
 class RoutePreviewPage extends StatefulWidget {
   final PreCheckinModel preCheckin;
   final Future<void> Function()? onRouteSelected;
+  final Future<String?> Function(DateTime arrival)? onGuaranteeReservation;
 
   const RoutePreviewPage({
     super.key,
     required this.preCheckin,
     this.onRouteSelected,
+    this.onGuaranteeReservation,
   });
 
   @override
@@ -25,17 +31,72 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     final parking = widget.preCheckin.parking;
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Rota até o estacionamento")),
-      body: Padding(
+      appBar: AppBar(title: const Text("Resumo de reserva")),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               "Destino: ${parking.name}",
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 220,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: LatLng(
+                      (widget.preCheckin.userLocationLat + parking.lat) / 2,
+                      (widget.preCheckin.userLocationLng + parking.lng) / 2,
+                    ),
+                    initialZoom: 13,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.all,
+                    ),
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      subdomains: const ['a', 'b', 'c'],
+                      userAgentPackageName: 'br.com.rptech.parkhere_user_app',
+                    ),
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: [
+                            LatLng(widget.preCheckin.userLocationLat, widget.preCheckin.userLocationLng),
+                            LatLng(parking.lat, parking.lng),
+                          ],
+                          color: const Color(0xFF169FC4),
+                          strokeWidth: 5,
+                        ),
+                      ],
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(widget.preCheckin.userLocationLat, widget.preCheckin.userLocationLng),
+                          child: const Icon(Icons.my_location, color: Color(0xFF169FC4)),
+                        ),
+                        Marker(
+                          point: LatLng(parking.lat, parking.lng),
+                          child: Image.asset(
+                            'assets/branding/icon_padrao_transparent.png',
+                            width: 36,
+                            height: 36,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
 
             Card(
               child: ListTile(
@@ -52,17 +113,136 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
               textAlign: TextAlign.center,
             ),
 
-            const Spacer(),
+            if (widget.preCheckin.plan != PlanType.hourly)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _loading || widget.onGuaranteeReservation == null
+                      ? null
+                      : _guaranteeReservation,
+                  icon: const Icon(Icons.lock_clock_outlined),
+                label: const Text('Confirmar reserva'),
+                ),
+              ),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed: _loading ? null : _openMapChooser,
                 icon: const Icon(Icons.navigation_outlined),
-                label: const Text('Iniciar rota'),
+                label: const Text('Avançar'),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _guaranteeReservation() async {
+    final arrival = await _pickArrival();
+    if (arrival == null || !mounted) return;
+    setState(() => _loading = true);
+    try {
+      final accepted = await _requestTermsAcceptance();
+      if (!accepted) return;
+      final reservationId = await widget.onGuaranteeReservation!(arrival);
+      if (!mounted || reservationId == null) return;
+      final paid = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaymentPage(
+            amount: widget.preCheckin.total,
+            reservationId: reservationId,
+            payNow: true,
+            onPaymentSuccess: () async {},
+          ),
+        ),
+      );
+      if (paid == true && mounted) Navigator.pop(context, true);
+    } catch (error) {
+      _showError('Não foi possível garantir a reserva: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<DateTime?> _pickArrival() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 365)),
+      initialDate: now,
+      helpText: 'Informe data e hora de chegada',
+    );
+    if (date == null || !mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
+      helpText: 'Informe o horário de chegada',
+    );
+    if (time == null) return null;
+    final arrival = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (!arrival.isAfter(now)) {
+      _showError(
+        'Informe uma data e hora de chegada futuras.',
+      );
+      return null;
+    }
+    if (_isOutsideOperatingHours(arrival)) {
+      await _showOutsideHoursNotice();
+    }
+    return arrival;
+  }
+
+  bool _isOutsideOperatingHours(DateTime arrival) {
+    if (!widget.preCheckin.parking.isOpen) return true;
+    final hours = widget.preCheckin.parking.operatingHours;
+    if (hours.isEmpty) return false;
+    final names = const ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    final raw = hours[names[arrival.weekday - 1]] ?? hours['${arrival.weekday}'];
+    if (raw is! Map) return false;
+    final open = _parseMinutes(raw['open'] ?? raw['opening']);
+    final close = _parseMinutes(raw['close'] ?? raw['closing']);
+    if (open == null || close == null || (open == 0 && close == 0)) return true;
+    final minute = arrival.hour * 60 + arrival.minute;
+    return minute < open || minute > close;
+  }
+
+  int? _parseMinutes(Object? value) {
+    if (value is num) return value.toInt();
+    if (value is! String) return null;
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return hour * 60 + minute;
+  }
+
+  Future<void> _showOutsideHoursNotice() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Chegada fora do expediente'),
+        content: const Text(
+          'O estacionamento receberá uma solicitação. O pagamento ficará agendado e só será processado após a confirmação do estabelecimento.',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendi'),
+          ),
+        ],
       ),
     );
   }

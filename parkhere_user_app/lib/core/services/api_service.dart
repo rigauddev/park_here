@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../constants/api_constants.dart';
@@ -18,6 +19,13 @@ class ApiConnectionException implements Exception {
   String toString() => 'Nao foi possivel conectar com a API.';
 }
 
+class AuthorizedApiResponse {
+  final int statusCode;
+  final Map<String, dynamic> body;
+
+  const AuthorizedApiResponse({required this.statusCode, required this.body});
+}
+
 class ApiService {
   static Future<void> Function()? onUnauthorized;
   static const _timeout = Duration(seconds: 12);
@@ -34,6 +42,16 @@ class ApiService {
     throw Exception(_errorMessage(response));
   }
 
+  Future<Map<String, dynamic>> getMap(String endpoint) async {
+    final response = await http
+        .get(Uri.parse('${ApiConstants.baseUrl}$endpoint'))
+        .timeout(_timeout);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(_errorMessage(response));
+  }
+
   Future<List<dynamic>> getAuthorized(String endpoint, String token) async {
     final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
 
@@ -42,7 +60,15 @@ class ApiService {
         .timeout(_timeout);
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return jsonDecode(response.body) as List<dynamic>;
+      final decoded = jsonDecode(response.body);
+      if (decoded is List<dynamic>) return decoded;
+      // Keep a typed error instead of letting the web runtime throw a raw
+      // `_JsonMap is not a subtype of List` exception when an endpoint returns
+      // a structured API error with HTTP 2xx by mistake.
+      if (decoded is Map<String, dynamic>) {
+        throw Exception(decoded['detail']?.toString() ?? 'Resposta inválida da API.');
+      }
+      throw Exception('Resposta inválida da API.');
     }
 
     await _handleUnauthorized(response);
@@ -115,6 +141,34 @@ class ApiService {
     throw Exception(_errorMessage(response));
   }
 
+  /// Returns structured non-2xx responses for endpoints whose status codes are
+  /// part of the workflow, such as 402 when checkout requires payment.
+  Future<AuthorizedApiResponse> postAuthorizedWithStatus(
+    String endpoint,
+    Map<String, dynamic> body,
+    String token,
+  ) async {
+    final url = Uri.parse("${ApiConstants.baseUrl}$endpoint");
+    final response = await http
+        .post(url, headers: _authorizedHeaders(token), body: jsonEncode(body))
+        .timeout(_timeout);
+    await _handleUnauthorized(response);
+
+    Map<String, dynamic> decoded;
+    try {
+      final value = jsonDecode(response.body);
+      decoded = value is Map<String, dynamic>
+          ? value
+          : <String, dynamic>{'detail': value};
+    } catch (_) {
+      decoded = <String, dynamic>{};
+    }
+    return AuthorizedApiResponse(
+      statusCode: response.statusCode,
+      body: decoded,
+    );
+  }
+
   Future<Map<String, dynamic>> uploadAuthorizedFile(
     String endpoint,
     String token,
@@ -133,9 +187,57 @@ class ApiService {
         contentType: _imageMediaType(fileName),
       ),
     );
-    final response = await http.Response.fromStream(await request.send());
+    final response = await http.Response.fromStream(
+      await request.send().timeout(_timeout),
+    );
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    await _handleUnauthorized(response);
+    throw Exception(_errorMessage(response));
+  }
+
+  Future<Map<String, dynamic>> postAuthorizedMultipart(
+    String endpoint,
+    String token, {
+    required Map<String, String> fields,
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse('${ApiConstants.baseUrl}$endpoint'),
+          )
+          ..headers.addAll(_authorizedHeaders(token))
+          ..fields.addAll(fields)
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'photo',
+              bytes,
+              filename: fileName,
+              contentType: _imageMediaType(fileName),
+            ),
+          );
+    final response = await http.Response.fromStream(
+      await request.send().timeout(_timeout),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    await _handleUnauthorized(response);
+    throw Exception(_errorMessage(response));
+  }
+
+  Future<Uint8List> getAuthorizedBytes(String endpoint, String token) async {
+    final response = await http
+        .get(
+          Uri.parse('${ApiConstants.baseUrl}$endpoint'),
+          headers: _authorizedHeaders(token),
+        )
+        .timeout(_timeout);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
     }
     await _handleUnauthorized(response);
     throw Exception(_errorMessage(response));
@@ -144,6 +246,7 @@ class ApiService {
   http.MediaType _imageMediaType(String fileName) {
     final extension = fileName.toLowerCase().split('.').last;
     return switch (extension) {
+      'pdf' => http.MediaType('application', 'pdf'),
       'png' => http.MediaType('image', 'png'),
       'webp' => http.MediaType('image', 'webp'),
       'heic' => http.MediaType('image', 'heic'),
@@ -199,6 +302,7 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
+    await _handleUnauthorized(response);
     throw Exception(_errorMessage(response));
   }
 

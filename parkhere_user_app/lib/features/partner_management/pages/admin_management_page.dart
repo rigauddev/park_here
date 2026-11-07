@@ -1,9 +1,14 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/widgets/api_feedback.dart';
 
 class AdminManagementPage extends ConsumerStatefulWidget {
   final int initialSection;
@@ -67,19 +72,21 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   List<Map<String, dynamic>> _partners = [];
   List<Map<String, dynamic>> _customers = [];
   List<Map<String, dynamic>> _emailTemplates = [];
+  List<Map<String, dynamic>> _systemPermissionProfiles = [];
   List<Map<String, dynamic>> _featureRows = [];
   String? _featureTenantId;
   bool _featureLoading = false;
   String? _loadError;
   bool _loading = true;
   int _section = 0;
+  int _feeTab = 0;
   final _partnerSearch = TextEditingController();
   final _customerSearch = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _section = widget.initialSection.clamp(0, 6).toInt();
+    _section = widget.initialSection.clamp(0, 7).toInt();
     _load();
   }
 
@@ -142,6 +149,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         'Templates',
         () => _api.getAuthorized('/admin/platform-fees/email-templates', token),
       ),
+      safe(
+        'Perfis e permissões',
+        () => _api.getAuthorized(
+          '/admin/platform-fees/permission-profiles',
+          token,
+        ),
+      ),
     ]);
     if (!mounted) return;
     setState(() {
@@ -163,6 +177,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       }
       if (values[6] != null) {
         _emailTemplates = (values[6] as List).cast<Map<String, dynamic>>();
+      }
+      if (values[7] != null) {
+        _systemPermissionProfiles = (values[7] as List)
+            .cast<Map<String, dynamic>>();
       }
       if (_featureTenantId == null && _partners.isNotEmpty) {
         _featureTenantId = _partners.first['tenant_id'] as String?;
@@ -195,6 +213,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                   ('Parceiros', Icons.business_outlined),
                   ('Clientes', Icons.people_outline),
                   ('Templates', Icons.mark_email_read_outlined),
+                  ('Permissões', Icons.admin_panel_settings_outlined),
                 ])
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -209,6 +228,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                             'Parceiros',
                             'Clientes',
                             'Templates',
+                            'Permissões',
                           ].indexOf(item.$1),
                       avatar: Icon(item.$2, size: 18),
                       label: Text(item.$1),
@@ -221,6 +241,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                           'Parceiros',
                           'Clientes',
                           'Templates',
+                          'Permissões',
                         ].indexOf(item.$1),
                       ),
                     ),
@@ -319,6 +340,13 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           ..._operatorRequestCards(),
           const SizedBox(height: 20),
           const Text(
+            'Aprovação de parceiros',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ..._partnerApprovalCards(),
+          const SizedBox(height: 20),
+          const Text(
             'Solicitações de funcionalidades e capacidade',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
@@ -326,24 +354,128 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           ..._featureRequestCards(),
         ];
       case 2:
+        final currency = context.strings.isEnglish ? 'BRL' : r'R$';
+        final isPlansTab = _feeTab == 0;
+        final planTypes = {
+          'parking_hourly',
+          'hourly',
+          'parking',
+          'reservation',
+          'daily',
+          'parking_daily',
+          'weekly',
+          'parking_weekly',
+          'monthly',
+          'parking_monthly',
+          'establishment',
+        };
+
+        final displayedFees = _fees.where((fee) {
+          final type = (fee['service_type'] as String? ?? '').toLowerCase();
+          final isPlan = planTypes.contains(type) ||
+              type.contains('parking') ||
+              type.contains('diari') ||
+              type.contains('hora');
+          return isPlansTab ? isPlan : !isPlan;
+        }).toList();
+
         return [
-          const Text(
-            'Taxas e planos',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          ..._fees.map(
-            (fee) => Card(
-              child: ListTile(
-                title: Text(fee['service_type'] as String? ?? ''),
-                subtitle: Text(
-                  '${fee['percentage'] ?? 0}% + BRL ${fee['fixed_amount'] ?? 0}',
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Taxas e Planos Globais',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isPlansTab
+                          ? 'Taxas sobre modalidades de vagas (Hora, Diária, Semana e Mês). Aplicadas igualmente às filiais.'
+                          : 'Taxas sobre serviços adicionais, filiais e facilidades do estacionamento.',
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    ),
+                  ],
                 ),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: () => _editFee(fee),
               ),
-            ),
+            ],
           ),
+          const SizedBox(height: 12),
+          SegmentedButton<int>(
+            showSelectedIcon: false,
+            selected: {_feeTab},
+            onSelectionChanged: (val) => setState(() => _feeTab = val.first),
+            segments: const [
+              ButtonSegment(
+                value: 0,
+                label: Text('Taxas dos Planos (Vagas)'),
+                icon: Icon(Icons.local_parking),
+              ),
+              ButtonSegment(
+                value: 1,
+                label: Text('Taxas dos Serviços Extras'),
+                icon: Icon(Icons.miscellaneous_services),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (displayedFees.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Text(
+                    isPlansTab
+                        ? 'Nenhuma taxa de plano de vaga configurada.'
+                        : 'Nenhuma taxa de serviço extra configurada.',
+                  ),
+                ),
+              ),
+            )
+          else
+            ...displayedFees.map(
+              (fee) {
+                final type = fee['service_type'] as String? ?? '';
+                final name = context.strings.isEnglish
+                    ? (fee['service_name_en'] as String? ?? type)
+                    : (fee['service_name'] as String? ?? type);
+                final explanation = _feeExplanation(type);
+                final pct = fee['percentage'] ?? 0;
+                final fixed = fee['fixed_amount'] ?? 0;
+
+                return Card(
+                  elevation: 1,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isPlansTab ? Colors.blue.shade100 : Colors.purple.shade100,
+                      foregroundColor: isPlansTab ? Colors.blue.shade900 : Colors.purple.shade900,
+                      child: Icon(isPlansTab ? Icons.directions_car : Icons.build_circle_outlined),
+                    ),
+                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 2),
+                        Text(explanation, style: const TextStyle(fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Cobrança: $pct% + $currency ${fixed.toString()}',
+                          style: TextStyle(fontWeight: FontWeight.w600, color: Colors.blue.shade900),
+                        ),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Editar taxa',
+                      onPressed: () => _editFee(fee),
+                    ),
+                  ),
+                );
+              },
+            ),
         ];
       case 3:
         return _partnerFeatureManager();
@@ -493,6 +625,8 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         ];
       case 6:
         return _emailTemplateSection();
+      case 7:
+        return _systemPermissionSection();
       default:
         final cities =
             (_overview['cities'] as List?)?.cast<Map<String, dynamic>>() ??
@@ -567,6 +701,147 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     }
   }
 
+  List<Widget> _partnerApprovalCards() {
+    final pending = _partners
+        .where((partner) => partner['approval_status'] != 'approved')
+        .toList();
+    if (pending.isEmpty) {
+      return [
+        const Card(child: ListTile(title: Text('Nenhum parceiro pendente.'))),
+      ];
+    }
+    return [
+      for (final partner in pending)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  partner['company_name'] as String? ?? 'Parceiro',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text('Status: ${partner['approval_status'] ?? 'pendente'}'),
+                const SizedBox(height: 8),
+                ...((partner['documents'] as List?) ?? const []).map(
+                  (item) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.description_outlined),
+                    title: Text(item['file_name'] as String? ?? 'Documento'),
+                    subtitle: Text(item['document_type'] as String? ?? ''),
+                    trailing: const Icon(Icons.visibility_outlined),
+                    onTap: () => _showPartnerDocument(item),
+                  ),
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    if (partner['approval_status'] == 'documents_submitted' ||
+                        partner['approval_status'] == 'waiting_documents')
+                      FilledButton.tonal(
+                        onPressed: () => _reviewPartnerApproval(
+                          partner,
+                          'documents',
+                          'approve',
+                        ),
+                        child: const Text('Aprovar documentação'),
+                      ),
+                    if (partner['approval_status'] == 'waiting_inspection')
+                      FilledButton(
+                        onPressed: () => _reviewPartnerApproval(
+                          partner,
+                          'inspection',
+                          'approve',
+                        ),
+                        child: const Text('Aprovar vistoria'),
+                      ),
+                    OutlinedButton(
+                      onPressed: () => _reviewPartnerApproval(
+                        partner,
+                        partner['approval_status'] == 'waiting_inspection'
+                            ? 'inspection'
+                            : 'documents',
+                        'reject',
+                      ),
+                      child: const Text('Reprovar'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _showPartnerDocument(Map<String, dynamic> document) async {
+    final token = ref.read(authProvider).accessToken;
+    final path = document['download_path'] as String?;
+    if (token == null || path == null) return;
+    try {
+      final bytes = await _api.getAuthorizedBytes(path, token);
+      if (!mounted) return;
+      final fileName = document['file_name'] as String? ?? 'Documento';
+      final extension = fileName.toLowerCase().split('.').last;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(fileName),
+          content: SizedBox(
+            width: 560,
+            height: 480,
+            child:
+                extension == 'png' || extension == 'jpg' || extension == 'jpeg'
+                ? InteractiveViewer(
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  )
+                : _PdfDocumentPreview(bytes: bytes),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fechar'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) await ApiFeedback.show(context, '$error');
+    }
+  }
+
+  Future<void> _reviewPartnerApproval(
+    Map<String, dynamic> partner,
+    String stage,
+    String decision,
+  ) async {
+    final token = ref.read(authProvider).accessToken;
+    final tenantId = partner['tenant_id'] as String?;
+    if (token == null || tenantId == null) return;
+    try {
+      await _api.patchAuthorized(
+        '/admin/platform-fees/partners/$tenantId/approval',
+        {'stage': stage, 'decision': decision},
+        token,
+      );
+      await _load();
+      if (mounted) {
+        await ApiFeedback.show(
+          context,
+          decision == 'approve' ? 'Etapa aprovada.' : 'Parceiro reprovado.',
+        );
+      }
+    } catch (error) {
+      if (mounted) await ApiFeedback.show(context, '$error');
+    }
+  }
+
   Widget _overviewCard(String title, String value, IconData icon) => Card(
     child: ListTile(
       leading: Icon(icon),
@@ -605,29 +880,81 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                 subtitle: Text(
                   '${request['status']} · empresa ${request['tenant_id']}',
                 ),
-                trailing: request['status'] == 'pending_review'
-                    ? Wrap(
-                        children: [
-                          IconButton(
-                            onPressed: () => _reviewOperatorRequest(
-                              request['id'] as String,
-                              'approve',
-                            ),
-                            icon: const Icon(Icons.check, color: Colors.green),
-                          ),
-                          IconButton(
-                            onPressed: () => _reviewOperatorRequest(
-                              request['id'] as String,
-                              'reject',
-                            ),
-                            icon: const Icon(Icons.close, color: Colors.red),
-                          ),
-                        ],
-                      )
-                    : null,
+                trailing: Wrap(
+                  children: [
+                    if (request['has_receipt'] == true)
+                      IconButton(
+                        tooltip: 'Visualizar comprovante',
+                        onPressed: () => _viewOperatorPackageReceipt(
+                          request['id'] as String,
+                        ),
+                        icon: const Icon(Icons.receipt_long_outlined),
+                      ),
+                    if (request['status'] == 'pending_review') ...[
+                      IconButton(
+                        onPressed: () => _reviewOperatorRequest(
+                          request['id'] as String,
+                          'approve',
+                        ),
+                        icon: const Icon(Icons.check, color: Colors.green),
+                      ),
+                      IconButton(
+                        onPressed: () => _reviewOperatorRequest(
+                          request['id'] as String,
+                          'reject',
+                        ),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
         ];
+
+  Future<void> _viewFeatureReceipt(String requestId) async {
+    await _viewReceipt(
+      '/admin/platform-fees/feature-requests/$requestId/receipt',
+    );
+  }
+
+  Future<void> _viewOperatorPackageReceipt(String requestId) async {
+    await _viewReceipt(
+      '/admin/platform-fees/operator-packages/requests/$requestId/receipt',
+    );
+  }
+
+  Future<void> _viewReceipt(String endpoint) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      final bytes = await _api.getAuthorizedBytes(endpoint, token);
+      final isPng =
+          bytes.length > 8 &&
+          bytes[0] == 0x89 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x4e;
+      final isJpeg = bytes.length > 2 && bytes[0] == 0xff && bytes[1] == 0xd8;
+      if (isPng || isJpeg) {
+        final doc = pw.Document();
+        doc.addPage(
+          pw.Page(
+            build: (_) => pw.Center(child: pw.Image(pw.MemoryImage(bytes))),
+          ),
+        );
+        await Printing.layoutPdf(onLayout: (_) => doc.save());
+      } else {
+        await Printing.layoutPdf(onLayout: (_) async => bytes);
+      }
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(
+          context,
+          'Não foi possível abrir o comprovante: $error',
+        );
+      }
+    }
+  }
 
   List<Widget> _featureRequestCards() => _featureRequests.isEmpty
       ? [
@@ -660,30 +987,38 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                       : request['billing_period'] == 'annual'
                       ? '/ ano'
                       : 'uma vez'}\n'
-                  'Status: ${request['status']}',
+                  'Status: ${request['status']}'
+                  '${request['payment_method'] == null ? '' : '\nPagamento: ${request['payment_method']} · comprovante ${request['has_receipt'] == true ? 'anexado' : 'pendente'}'}',
                 ),
-                trailing: request['status'] == 'pending_review'
-                    ? Wrap(
-                        children: [
-                          IconButton(
-                            tooltip: 'Aprovar e liberar',
-                            onPressed: () => _reviewFeatureRequest(
-                              request['id'] as String,
-                              'approve',
-                            ),
-                            icon: const Icon(Icons.check, color: Colors.green),
-                          ),
-                          IconButton(
-                            tooltip: 'Recusar',
-                            onPressed: () => _reviewFeatureRequest(
-                              request['id'] as String,
-                              'reject',
-                            ),
-                            icon: const Icon(Icons.close, color: Colors.red),
-                          ),
-                        ],
-                      )
-                    : null,
+                trailing: Wrap(
+                  children: [
+                    if (request['has_receipt'] == true)
+                      IconButton(
+                        tooltip: 'Visualizar comprovante',
+                        onPressed: () =>
+                            _viewFeatureReceipt(request['id'] as String),
+                        icon: const Icon(Icons.receipt_long_outlined),
+                      ),
+                    if (request['status'] == 'pending_review')
+                      IconButton(
+                        tooltip: 'Aprovar e liberar',
+                        onPressed: () => _reviewFeatureRequest(
+                          request['id'] as String,
+                          'approve',
+                        ),
+                        icon: const Icon(Icons.check, color: Colors.green),
+                      ),
+                    if (request['status'] == 'pending_review')
+                      IconButton(
+                        tooltip: 'Recusar',
+                        onPressed: () => _reviewFeatureRequest(
+                          request['id'] as String,
+                          'reject',
+                        ),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                      ),
+                  ],
+                ),
               ),
             ),
         ];
@@ -893,7 +1228,6 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
 
   String _billingPeriodLabel(String? value) => switch (value) {
     'annual' => _tr('ano', 'year'),
-    'one_time' => _tr('pagamento único', 'one time'),
     _ => _tr('mês', 'month'),
   };
 
@@ -1082,12 +1416,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       final value = int.tryParse(input.text.trim());
       if (value == null || value < 0) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                _tr('Informe um número válido.', 'Enter a valid number.'),
-              ),
-            ),
+          await ApiFeedback.show(
+            context,
+            _tr('Informe um número válido.', 'Enter a valid number.'),
           );
         }
       } else {
@@ -1100,9 +1431,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           await _load();
         } catch (error) {
           if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Limite: $error')));
+            await ApiFeedback.show(context, 'Limite: $error');
           }
         }
       }
@@ -1164,9 +1493,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Parceiro: $error')));
+        await ApiFeedback.show(context, 'Parceiro: $error');
       }
     } finally {
       reasonController.dispose();
@@ -1187,9 +1514,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Unidade: $error')));
+        await ApiFeedback.show(context, 'Unidade: $error');
       }
       return;
     }
@@ -1306,9 +1631,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         await _load();
       } catch (error) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Dados da unidade: $error')));
+          await ApiFeedback.show(context, 'Dados da unidade: $error');
         }
       }
     } else if (result == 'fees') {
@@ -1332,9 +1655,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       )).cast<Map<String, dynamic>>();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Taxas da unidade: $error')));
+        await ApiFeedback.show(context, 'Taxas da unidade: $error');
       }
       return;
     }
@@ -1503,9 +1824,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     } catch (error) {
       if (mounted) {
         setState(() => _featureLoading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Funcionalidades: $error')));
+        await ApiFeedback.show(context, 'Funcionalidades: $error');
       }
     }
   }
@@ -1516,6 +1835,8 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     bool? isPaid,
     double? price,
     String? billingPeriod,
+    Map<String, double>? billingPrices,
+    Map<String, dynamic>? paymentTerms,
   }) async {
     final tenantId = _featureTenantId;
     final token = ref.read(authProvider).accessToken;
@@ -1527,8 +1848,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           'is_enabled': isEnabled ?? feature['is_enabled'] == true,
           'is_paid': isPaid ?? feature['is_paid'] == true,
           'price': price ?? (feature['price'] as num? ?? 0).toDouble(),
+          'billing_prices': billingPrices ?? feature['billing_prices'] ?? {},
           'billing_period':
               billingPeriod ?? feature['billing_period'] ?? 'monthly',
+          'payment_terms': paymentTerms ?? feature['payment_terms'] ?? {},
           'notes': feature['notes'],
         },
         token,
@@ -1536,9 +1859,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _loadPartnerFeatures(tenantId);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Não foi possível salvar: $error')),
-        );
+        await ApiFeedback.show(context, 'Não foi possível salvar: $error');
       }
     }
   }
@@ -1546,9 +1867,54 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   Future<void> _editPartnerFeature(Map<String, dynamic> feature) async {
     var enabled = feature['is_enabled'] == true;
     var paid = feature['is_paid'] == true;
+    var trialEnabled =
+        ((feature['payment_terms'] as Map<String, dynamic>?)?['monthly']
+            as Map<String, dynamic>?)?['trial_enabled'] ==
+        true;
     var period = feature['billing_period'] as String? ?? 'monthly';
-    final price = TextEditingController(
-      text: '${feature['price'] ?? 0}'.replaceAll('.', ','),
+    final prices = (feature['billing_prices'] as Map<String, dynamic>?) ?? {};
+    final monthly = TextEditingController(
+      text:
+          '${prices['monthly'] ?? (period == 'monthly' ? feature['price'] : 0) ?? 0}'
+              .replaceAll('.', ','),
+    );
+    final annual = TextEditingController(
+      text:
+          '${prices['annual'] ?? (period == 'annual' ? feature['price'] : 0) ?? 0}'
+              .replaceAll('.', ','),
+    );
+    final terms = (feature['payment_terms'] as Map<String, dynamic>?) ?? {};
+    final monthlyTerms = (terms['monthly'] as Map<String, dynamic>?) ?? {};
+    final annualTerms = (terms['annual'] as Map<String, dynamic>?) ?? {};
+    final monthlyInstallments = TextEditingController(
+      text: '${monthlyTerms['installments'] ?? 1}',
+    );
+    final annualInstallments = TextEditingController(
+      text: '${annualTerms['installments'] ?? 1}',
+    );
+    final monthlyDiscount = TextEditingController(
+      text:
+          '${((monthlyTerms['discounts'] as Map<String, dynamic>?)?['pix'] ?? 0)}',
+    );
+    final monthlyCreditDiscount = TextEditingController(
+      text:
+          '${((monthlyTerms['discounts'] as Map<String, dynamic>?)?['credit_card'] ?? 0)}',
+    );
+    final monthlyDebitDiscount = TextEditingController(
+      text:
+          '${((monthlyTerms['discounts'] as Map<String, dynamic>?)?['debit_card'] ?? 0)}',
+    );
+    final annualDiscount = TextEditingController(
+      text:
+          '${((annualTerms['discounts'] as Map<String, dynamic>?)?['pix'] ?? 0)}',
+    );
+    final annualCreditDiscount = TextEditingController(
+      text:
+          '${((annualTerms['discounts'] as Map<String, dynamic>?)?['credit_card'] ?? 0)}',
+    );
+    final annualDebitDiscount = TextEditingController(
+      text:
+          '${((annualTerms['discounts'] as Map<String, dynamic>?)?['debit_card'] ?? 0)}',
     );
     final saved = await showDialog<bool>(
       context: context,
@@ -1571,17 +1937,157 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _tr(
+                        'Disponibilizar demonstração gratuita',
+                        'Offer a free trial',
+                      ),
+                    ),
+                    subtitle: Text(
+                      _tr(
+                        'Aplicada por até 30 dias antes da cobrança.',
+                        'Up to 30 days before billing.',
+                      ),
+                    ),
+                    value: trialEnabled,
+                    onChanged: (value) =>
+                        setDialogState(() => trialEnabled = value),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
                     title: Text(_tr('Funcionalidade paga', 'Paid feature')),
                     value: paid,
                     onChanged: (value) => setDialogState(() => paid = value),
                   ),
                   TextField(
-                    controller: price,
+                    controller: monthly,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
                     decoration: InputDecoration(
-                      labelText: _tr('Preço (BRL)', 'Price (BRL)'),
+                      labelText: _tr(
+                        'Preço mensal recorrente (BRL)',
+                        'Monthly recurring price (BRL)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annual,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr('Preço anual (BRL)', 'Annual price (BRL)'),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: monthlyDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto mensal no Pix (%)',
+                        'Monthly Pix discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: monthlyInstallments,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Parcelas mensais permitidas',
+                        'Allowed monthly installments',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto anual no Pix (%)',
+                        'Annual Pix discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualInstallments,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Parcelas anuais permitidas',
+                        'Allowed annual installments',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: monthlyCreditDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto mensal crédito (%)',
+                        'Monthly credit discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: monthlyDebitDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto mensal débito (%)',
+                        'Monthly debit discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualCreditDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto anual crédito (%)',
+                        'Annual credit discount (%)',
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: annualDebitDiscount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _tr(
+                        'Desconto anual débito (%)',
+                        'Annual debit discount (%)',
+                      ),
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -1599,10 +2105,6 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                       DropdownMenuItem(
                         value: 'annual',
                         child: Text(_tr('Anual', 'Annual')),
-                      ),
-                      DropdownMenuItem(
-                        value: 'one_time',
-                        child: Text(_tr('Única', 'One time')),
                       ),
                     ],
                     onChanged: (value) {
@@ -1631,11 +2133,190 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         feature,
         isEnabled: enabled,
         isPaid: paid,
-        price: double.tryParse(price.text.replaceAll(',', '.')) ?? 0,
+        price: switch (period) {
+          'annual' => double.tryParse(annual.text.replaceAll(',', '.')) ?? 0,
+          _ => double.tryParse(monthly.text.replaceAll(',', '.')) ?? 0,
+        },
         billingPeriod: period,
+        billingPrices: {
+          'monthly': double.tryParse(monthly.text.replaceAll(',', '.')) ?? 0,
+          'annual': double.tryParse(annual.text.replaceAll(',', '.')) ?? 0,
+        },
+        paymentTerms: {
+          'monthly': {
+            'minimum_months': 6,
+            'installments': int.tryParse(monthlyInstallments.text) ?? 1,
+            'trial_enabled': trialEnabled,
+            'trial_days': 30,
+            'discounts': {
+              'pix':
+                  double.tryParse(monthlyDiscount.text.replaceAll(',', '.')) ??
+                  0,
+              'credit_card':
+                  double.tryParse(
+                    monthlyCreditDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+              'debit_card':
+                  double.tryParse(
+                    monthlyDebitDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+            },
+          },
+          'annual': {
+            'minimum_months': 12,
+            'installments': int.tryParse(annualInstallments.text) ?? 1,
+            'trial_enabled': trialEnabled,
+            'trial_days': 30,
+            'discounts': {
+              'pix':
+                  double.tryParse(annualDiscount.text.replaceAll(',', '.')) ??
+                  0,
+              'credit_card':
+                  double.tryParse(
+                    annualCreditDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+              'debit_card':
+                  double.tryParse(
+                    annualDebitDiscount.text.replaceAll(',', '.'),
+                  ) ??
+                  0,
+            },
+          },
+        },
       );
     }
-    price.dispose();
+    monthly.dispose();
+    annual.dispose();
+    monthlyDiscount.dispose();
+    monthlyInstallments.dispose();
+    monthlyCreditDiscount.dispose();
+    monthlyDebitDiscount.dispose();
+    annualDiscount.dispose();
+    annualInstallments.dispose();
+    annualCreditDiscount.dispose();
+    annualDebitDiscount.dispose();
+  }
+
+  List<Widget> _systemPermissionSection() => [
+    const Text(
+      'Perfis e permissões da equipe',
+      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+    ),
+    const SizedBox(height: 8),
+    const Text(
+      'Defina o que cada usuário da gestão do sistema pode visualizar, editar ou administrar. O perfil master continua protegido no servidor.',
+    ),
+    const SizedBox(height: 12),
+    FilledButton.icon(
+      onPressed: _createSystemPermissionProfile,
+      icon: const Icon(Icons.add),
+      label: const Text('Criar perfil'),
+    ),
+    const SizedBox(height: 12),
+    if (_systemPermissionProfiles.isEmpty)
+      const Card(
+        child: ListTile(title: Text('Nenhum perfil personalizado cadastrado.')),
+      )
+    else
+      ..._systemPermissionProfiles.map(
+        (profile) => Card(
+          child: ListTile(
+            leading: const Icon(Icons.admin_panel_settings_outlined),
+            title: Text(profile['name'] as String? ?? 'Sem nome'),
+            subtitle: Text(
+              ((profile['permissions'] as List?)?.cast<String>() ?? const [])
+                  .join(' · '),
+            ),
+          ),
+        ),
+      ),
+  ];
+
+  Future<void> _createSystemPermissionProfile() async {
+    final nameController = TextEditingController();
+    final selected = <String>{};
+    const permissions = <String, String>{
+      'partners.view': 'Visualizar parceiros',
+      'partners.edit': 'Editar parceiros',
+      'partners.delete': 'Desativar parceiros',
+      'customers.view': 'Visualizar clientes',
+      'customers.edit': 'Editar clientes',
+      'reports.view': 'Visualizar relatórios',
+      'support.manage': 'Atender suporte',
+      'fees.manage': 'Gerenciar taxas e planos',
+      'features.manage': 'Gerenciar funcionalidades',
+    };
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Novo perfil administrativo'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nome do perfil',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ...permissions.entries.map(
+                    (entry) => CheckboxListTile(
+                      dense: true,
+                      value: selected.contains(entry.key),
+                      title: Text(entry.value),
+                      onChanged: (value) => setDialogState(() {
+                        if (value == true) {
+                          selected.add(entry.key);
+                        } else {
+                          selected.remove(entry.key);
+                        }
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || nameController.text.trim().isEmpty || !mounted) {
+      nameController.dispose();
+      return;
+    }
+    try {
+      final token = ref.read(authProvider).accessToken;
+      await _api.postAuthorized('/admin/platform-fees/permission-profiles', {
+        'name': nameController.text.trim(),
+        'permissions': selected.toList(),
+      }, token!);
+      nameController.dispose();
+      await _load();
+      if (mounted) {
+        ApiFeedback.show(context, 'Perfil criado com sucesso.', isError: false);
+      }
+    } catch (error) {
+      nameController.dispose();
+      if (mounted) ApiFeedback.show(context, error.toString());
+    }
   }
 
   List<Widget> _emailTemplateSection() => [
@@ -1796,9 +2477,7 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
           await _load();
         } catch (error) {
           if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Template: $error')));
+            await ApiFeedback.show(context, 'Template: $error');
           }
         }
       }
@@ -1904,19 +2583,18 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       );
       if (dialogContext.mounted) Navigator.pop(dialogContext);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(active ? 'Serviço ativado.' : 'Serviço desativado.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          active ? 'Serviço ativado.' : 'Serviço desativado.',
+          isError: false,
         );
       }
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível atualizar o serviço: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível atualizar o serviço: $error',
         );
       }
     }
@@ -1947,7 +2625,15 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
                 for (final fee in rows)
                   ListTile(
                     title: Text(
-                      _categoryLabel(fee['service_type'] as String? ?? ''),
+                      context.strings.isEnglish
+                          ? (fee['service_name_en'] as String? ??
+                                _categoryLabel(
+                                  fee['service_type'] as String? ?? '',
+                                ))
+                          : (fee['service_name'] as String? ??
+                                _categoryLabel(
+                                  fee['service_type'] as String? ?? '',
+                                )),
                     ),
                     subtitle: Text(
                       '${fee['source'] == 'partner' ? 'Personalizada' : 'Padrão'} · ${fee['percentage']}% + R\$ ${fee['fixed_amount']}',
@@ -1970,12 +2656,9 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Não foi possível carregar as taxas do parceiro: $error',
-            ),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível carregar as taxas do parceiro: $error',
         );
       }
     }
@@ -2038,12 +2721,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       token,
     );
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Taxa individual salva; ela substitui a taxa padrão para este parceiro.',
-          ),
-        ),
+      await ApiFeedback.show(
+        context,
+        'Taxa individual salva; ela substitui a taxa padrão para este parceiro.',
+        isError: false,
       );
     }
   }
@@ -2092,19 +2773,18 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
         token,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(active ? 'Acesso reativado.' : 'Acesso desativado.'),
-          ),
+        await ApiFeedback.show(
+          context,
+          active ? 'Acesso reativado.' : 'Acesso desativado.',
+          isError: false,
         );
       }
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível atualizar o usuário: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível atualizar o usuário: $error',
         );
       }
     }
@@ -2113,12 +2793,21 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
   Future<void> _reviewOperatorRequest(String id, String decision) async {
     final token = ref.read(authProvider).accessToken;
     if (token == null) return;
-    await _api.postAuthorized(
-      '/admin/platform-fees/operator-packages/requests/$id/$decision',
-      {},
-      token,
-    );
-    await _load();
+    try {
+      await _api.postAuthorized(
+        '/admin/platform-fees/operator-packages/requests/$id/$decision',
+        {},
+        token,
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(
+          context,
+          'Não foi possível analisar o pedido: $error',
+        );
+      }
+    }
   }
 
   Future<void> _reviewFeatureRequest(String id, String decision) async {
@@ -2133,13 +2822,38 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Não foi possível analisar a solicitação: $error'),
-          ),
+        await ApiFeedback.show(
+          context,
+          'Não foi possível analisar a solicitação: $error',
         );
       }
     }
+  }
+
+  String _feeExplanation(String serviceType) {
+    return switch (serviceType) {
+      'parking_hourly' || 'hourly' || 'parking' =>
+        'Cobrada sobre estadias avulsas por hora. Taxa base aplicada ao estabelecimento e replicada a todas as filiais.',
+      'parking_daily' || 'daily' =>
+        'Cobrada sobre estadias prolongadas por diária selecionadas pelo operador no calendário.',
+      'parking_weekly' || 'weekly' =>
+        'Cobrada sobre estadias contratadas por período semanal.',
+      'parking_monthly' || 'monthly' =>
+        'Cobrada sobre assinaturas mensais de vagas para mensalistas.',
+      'establishment' =>
+        'Taxa global retida da operação do estabelecimento parceiro.',
+      'car_wash' =>
+        'Cobrada sobre serviços de lava-jato e higienização realizados no estacionamento.',
+      'additional_services' =>
+        'Cobrada sobre facilidades e serviços adicionais contratados pelo motorista.',
+      'additional_units' =>
+        'Taxa de replicação para operação de filiais adicionais da mesma empresa.',
+      'convenience_management' =>
+        'Cobrada sobre vendas de conveniência e produtos no balcão do estacionamento.',
+      'insurance' =>
+        'Taxa de proteção veicular e seguro adicional de estadia.',
+      _ => 'Taxa administrativa cobrada sobre as transações deste serviço.',
+    };
   }
 
   Future<void> _editFee(Map<String, dynamic> fee) async {
@@ -2148,7 +2862,10 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Taxa: ${fee['service_type']}'),
+        title: Text(
+          '${context.strings.isEnglish ? 'Fee' : 'Taxa'}: '
+          '${context.strings.isEnglish ? fee['service_name_en'] ?? _categoryLabel(fee['service_type'] as String? ?? '') : fee['service_name'] ?? _categoryLabel(fee['service_type'] as String? ?? '')}',
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2190,4 +2907,19 @@ class _AdminManagementPageState extends ConsumerState<AdminManagementPage> {
     }, token);
     await _load();
   }
+}
+
+class _PdfDocumentPreview extends StatelessWidget {
+  final Uint8List bytes;
+  const _PdfDocumentPreview({required this.bytes});
+
+  @override
+  Widget build(BuildContext context) => PdfPreview(
+    build: (_) async => bytes,
+    canChangeOrientation: false,
+    canChangePageFormat: false,
+    canDebug: false,
+    allowPrinting: false,
+    allowSharing: false,
+  );
 }

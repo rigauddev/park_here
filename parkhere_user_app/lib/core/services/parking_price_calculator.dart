@@ -18,6 +18,9 @@ class ParkingPriceCalculator {
       case PlanType.daily:
         return parking.pricing.dailyPrice;
 
+      case PlanType.weekly:
+        return parking.pricing.weeklyPrice;
+
       case PlanType.monthly:
         return parking.pricing.monthlyPrice;
     }

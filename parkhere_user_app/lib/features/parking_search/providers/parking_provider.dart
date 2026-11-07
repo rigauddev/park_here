@@ -1,11 +1,41 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../core/services/api_service.dart';
 import '../models/parking_model.dart';
+import '../models/map_service_model.dart';
+import 'search_provider.dart';
 
 /// Provider global
 final selectedParkingProvider = StateProvider<ParkingModel?>((ref) => null);
+final selectedServiceTypeProvider = StateProvider<String?>((ref) => null);
+
+final mapServicesProvider = FutureProvider<List<MapServiceModel>>((ref) async {
+  final city = ref.watch(selectedCityProvider);
+  final type = ref.watch(selectedServiceTypeProvider);
+  final query = <String, String>{
+    if (city.trim().isNotEmpty) 'city': city.trim(),
+    if (type != null && type.isNotEmpty) 'service_type': type,
+  };
+  final suffix = query.isEmpty
+      ? ''
+      : '?${query.entries.map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&')}';
+  try {
+    final payload = await ref
+        .read(apiServiceProvider)
+        .getMap('/parkings/services/map$suffix');
+    final rows = payload['services'] as List<dynamic>? ?? const [];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(MapServiceModel.fromJson)
+        .toList();
+  } catch (_) {
+    return const <MapServiceModel>[];
+  }
+});
 
 /// Provider do serviço central
 final apiServiceProvider = Provider<ApiService>((ref) {
@@ -111,3 +141,52 @@ class ParkingNotifier extends AsyncNotifier<List<ParkingModel>> {
     state = await AsyncValue.guard(() => fetchParkings(city: query));
   }
 }
+
+final citySuggestionsProvider = FutureProvider.family<List<String>, String>((
+  ref,
+  query,
+) async {
+  final value = query.trim();
+  final endpoint = value.isEmpty
+      ? '/parkings/cities'
+      : '/parkings/cities?q=${Uri.encodeQueryComponent(value)}';
+  final data = await ref.read(apiServiceProvider).getMap(endpoint);
+  final cities = data['cities'] as List<dynamic>? ?? const <dynamic>[];
+  final local = cities
+      .map((item) => item.toString())
+      .where((item) => item.isNotEmpty)
+      .toList();
+  if (local.isNotEmpty || value.length < 2) return local;
+
+  try {
+    final response = await http
+        .get(
+          Uri.parse(
+            'https://servicodados.ibge.gov.br/api/v1/localidades/municipios',
+          ),
+        )
+        .timeout(const Duration(seconds: 8));
+    if (response.statusCode == 200) {
+      final normalized = _normalizeCity(value);
+      final payload = jsonDecode(response.body) as List<dynamic>;
+      return payload
+          .whereType<Map<String, dynamic>>()
+          .map((item) => item['nome']?.toString() ?? '')
+          .where((name) => _normalizeCity(name).contains(normalized))
+          .take(100)
+          .toList();
+    }
+  } catch (_) {
+    // Mantém a lista local quando o catálogo público estiver indisponível.
+  }
+  return local;
+});
+
+String _normalizeCity(String value) => value
+    .toLowerCase()
+    .replaceAll(RegExp('[áàâãä]'), 'a')
+    .replaceAll(RegExp('[éêë]'), 'e')
+    .replaceAll(RegExp('[íìîï]'), 'i')
+    .replaceAll(RegExp('[óòôõö]'), 'o')
+    .replaceAll(RegExp('[úùûü]'), 'u')
+    .replaceAll('ç', 'c');

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,16 +6,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'core/i18n/app_language.dart';
 import 'core/i18n/app_localizations.dart';
+import 'core/widgets/api_feedback.dart';
 import 'features/auth/pages/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!kIsWeb) {
-    try {
-      await dotenv.load(fileName: ".env");
-    } catch (_) {
-      // The app also accepts API_URL through --dart-define.
-    }
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (_) {
+    // The app also accepts API_URL and MAPS_API_KEY through --dart-define.
   }
 
   runApp(const ProviderScope(child: ParkFinderApp()));
@@ -29,6 +27,7 @@ class ParkFinderApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = ref.watch(appLanguageProvider);
     return MaterialApp(
+      navigatorKey: ApiFeedback.navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       locale: locale,

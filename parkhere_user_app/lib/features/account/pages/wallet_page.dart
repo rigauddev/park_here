@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_localizations.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../models/account_models.dart';
 import '../providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -19,7 +21,18 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   final numberController = TextEditingController();
   final expiryController = TextEditingController();
   final pixController = TextEditingController();
+  final payoutDocumentController = TextEditingController();
   WalletMethodType type = WalletMethodType.creditCard;
+  String selectedBrand = 'Visa';
+  bool _makeDefault = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(accountProvider.notifier).syncWalletMethods();
+    });
+  }
 
   @override
   void dispose() {
@@ -27,6 +40,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     numberController.dispose();
     expiryController.dispose();
     pixController.dispose();
+    payoutDocumentController.dispose();
     super.dispose();
   }
 
@@ -52,18 +66,36 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                 : 'Cadastre cartões. O Pix é gerado pelo Mercado Pago no momento do pagamento.',
             style: TextStyle(color: AppTheme.textMuted),
           ),
+          if (!isPartner) ...[
+            const SizedBox(height: 8),
+            Text(
+              context.strings.isEnglish
+                  ? 'Only masked display data is saved here. Real card payments require provider tokenization; never save a full card number or CVV.'
+                  : 'Aqui são salvos apenas dados mascarados para exibição. Pagamentos reais exigem tokenização pelo provedor; nunca salvamos o número completo nem o CVV.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           const SizedBox(height: 18),
           if (account.walletMethods.isEmpty)
             const _EmptyWallet()
           else
-            for (final method in account.walletMethods)
+            for (var index = 0; index < account.walletMethods.length; index++)
               _PaymentMethodCard(
-                method: method,
-                isActive: account.activePaymentMethod?.id == method.id,
-                onActivate: () {
-                  ref
-                      .read(accountProvider.notifier)
-                      .setActiveWalletMethod(method.id);
+                method: account.walletMethods[index],
+                isActive:
+                    account.activePaymentMethod?.id ==
+                    account.walletMethods[index].id,
+                colorIndex: index,
+                onActivate: () async {
+                  try {
+                    await ref
+                        .read(accountProvider.notifier)
+                        .setActiveWalletMethod(account.walletMethods[index].id);
+                  } catch (error) {
+                    if (context.mounted) {
+                      await ApiFeedback.show(context, error.toString());
+                    }
+                  }
                 },
               ),
           const SizedBox(height: 24),
@@ -85,16 +117,36 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                   label: Text('Debito'),
                   icon: Icon(Icons.payment),
                 ),
-                ButtonSegment(
-                  value: WalletMethodType.pix,
-                  label: Text('Pix'),
-                  icon: Icon(Icons.qr_code_2),
-                ),
               ],
               selected: {type},
               onSelectionChanged: (value) => setState(() => type = value.first),
             ),
           const SizedBox(height: 14),
+          if (isPartner) ...[
+            TextField(
+              controller: holderController,
+              decoration: const InputDecoration(
+                labelText: 'Nome do titular da conta Pix',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: payoutDocumentController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'CPF/CNPJ validado do parceiro',
+                prefixIcon: Icon(Icons.badge_outlined),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'A conta ficará pendente até a validação do provedor de pagamento. O CPF/CNPJ precisa ser o mesmo validado no cadastro do parceiro.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+          ],
           if (isPix)
             TextField(
               controller: pixController,
@@ -104,6 +156,29 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ),
             )
           else ...[
+            DropdownButtonFormField<String>(
+              initialValue: selectedBrand,
+              decoration: const InputDecoration(
+                labelText: 'Bandeira do cartão',
+                prefixIcon: Icon(Icons.credit_card),
+              ),
+              items:
+                  const [
+                        'Visa',
+                        'Mastercard',
+                        'Elo',
+                        'American Express',
+                        'Hipercard',
+                      ]
+                      .map(
+                        (brand) =>
+                            DropdownMenuItem(value: brand, child: Text(brand)),
+                      )
+                      .toList(),
+              onChanged: (value) =>
+                  setState(() => selectedBrand = value ?? 'Visa'),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: holderController,
               textCapitalization: TextCapitalization.characters,
@@ -137,6 +212,22 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               ),
             ),
           ],
+          if (!isPartner && account.walletMethods.isNotEmpty)
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _makeDefault,
+              onChanged: (value) => setState(() => _makeDefault = value),
+              title: Text(
+                context.strings.isEnglish
+                    ? 'Set this card as default'
+                    : 'Definir este cartão como padrão',
+              ),
+              subtitle: Text(
+                context.strings.isEnglish
+                    ? 'You can change the default card at any time.'
+                    : 'Você pode trocar o cartão padrão a qualquer momento.',
+              ),
+            ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _addMethod,
@@ -156,11 +247,18 @@ class _WalletPageState extends ConsumerState<WalletPage> {
       _showError('Informe a chave Pix.');
       return;
     }
+    if (isPix &&
+        (holderController.text.trim().isEmpty ||
+            payoutDocumentController.text.replaceAll(RegExp(r'\D'), '').length <
+                11)) {
+      _showError('Informe o titular e o CPF/CNPJ validado do parceiro.');
+      return;
+    }
 
     if (!isPix &&
         (holderController.text.trim().isEmpty ||
-            numberController.text.trim().length < 4 ||
-            expiryController.text.trim().isEmpty)) {
+            numberController.text.replaceAll(RegExp(r'\D'), '').length < 12 ||
+            !_isValidExpiry(expiryController.text.trim()))) {
       _showError('Informe nome, numero e validade do cartao.');
       return;
     }
@@ -169,50 +267,71 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     final lastFour = cardDigits.length >= 4
         ? cardDigits.substring(cardDigits.length - 4)
         : null;
-    final brand = isPix ? null : _detectBrand(cardDigits);
+    final brand = isPix ? null : selectedBrand;
     final label = isPix
         ? 'Pix ${pixController.text.trim()}'
         : '$brand final $lastFour';
 
-    await ref
-        .read(accountProvider.notifier)
-        .addWalletMethod(
-          WalletMethodModel(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            type: isPix ? WalletMethodType.pix : type,
-            label: label,
-            holderName: isPix ? null : holderController.text.trim(),
-            brand: brand,
-            lastFour: lastFour,
-            expiry: isPix ? null : expiryController.text.trim(),
-            pixKey: isPix ? pixController.text.trim() : null,
-            isActive: true,
-          ),
-        );
+    final willBeDefault =
+        ref.read(accountProvider).activePaymentMethod == null || _makeDefault;
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .addWalletMethod(
+            WalletMethodModel(
+              id: DateTime.now().microsecondsSinceEpoch.toString(),
+              type: isPix ? WalletMethodType.pix : type,
+              label: label,
+              holderName: isPix ? null : holderController.text.trim(),
+              brand: brand,
+              lastFour: lastFour,
+              expiry: isPix ? null : expiryController.text.trim(),
+              pixKey: isPix ? pixController.text.trim() : null,
+              isActive: willBeDefault,
+            ),
+            accountHolderDocument: isPix
+                ? payoutDocumentController.text.replaceAll(RegExp(r'\D'), '')
+                : null,
+          );
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(context, error.toString());
+      }
+      return;
+    }
 
     holderController.clear();
     numberController.clear();
     expiryController.clear();
     pixController.clear();
+    payoutDocumentController.clear();
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Metodo salvo como principal.')),
+    setState(() => _makeDefault = false);
+    await ApiFeedback.show(
+      context,
+      willBeDefault
+          ? (context.strings.isEnglish
+                ? 'Payment method saved as default.'
+                : 'Método salvo como padrão.')
+          : (context.strings.isEnglish
+                ? 'Payment method saved in your wallet.'
+                : 'Método salvo na carteira.'),
+      isError: false,
     );
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ApiFeedback.show(context, message);
   }
 
-  String _detectBrand(String digits) {
-    if (digits.startsWith('4')) return 'Visa';
-    if (digits.startsWith('5')) return 'Mastercard';
-    if (digits.startsWith('3')) return 'Amex';
-    if (digits.startsWith('6')) return 'Elo';
-    return 'Cartao';
+  bool _isValidExpiry(String value) {
+    final match = RegExp(r'^(0[1-9]|1[0-2])/(\d{2})$').firstMatch(value);
+    if (match == null) return false;
+    final month = int.parse(match.group(1)!);
+    final year = 2000 + int.parse(match.group(2)!);
+    final now = DateTime.now();
+    return DateTime(year, month + 1).isAfter(DateTime(now.year, now.month));
   }
 }
 
@@ -270,55 +389,107 @@ class _EmptyWallet extends StatelessWidget {
 class _PaymentMethodCard extends StatelessWidget {
   final WalletMethodModel method;
   final bool isActive;
+  final int colorIndex;
   final VoidCallback onActivate;
 
   const _PaymentMethodCard({
     required this.method,
     required this.isActive,
+    required this.colorIndex,
     required this.onActivate,
   });
 
   @override
   Widget build(BuildContext context) {
     final isPix = method.type == WalletMethodType.pix;
+    const gradients = [
+      [Color(0xFF102657), Color(0xFF087EE1)],
+      [Color(0xFF14532D), Color(0xFF16A085)],
+      [Color(0xFF5B216B), Color(0xFF9C4DCC)],
+      [Color(0xFF8A3D00), Color(0xFFEF6C00)],
+      [Color(0xFF263238), Color(0xFF546E7A)],
+    ];
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppTheme.softCyan,
-              foregroundColor: AppTheme.primary,
-              child: Icon(isPix ? Icons.qr_code_2 : Icons.credit_card),
+    return AnimatedScale(
+      scale: isActive ? 1 : .985,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradients[colorIndex % gradients.length],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .12),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    method.label,
-                    style: const TextStyle(
-                      color: AppTheme.primary,
-                      fontWeight: FontWeight.w800,
-                    ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.credit_card, color: Colors.white70),
+                const Spacer(),
+                Text(
+                  method.brand ?? (isPix ? 'PIX' : 'CARTÃO'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    isPix
-                        ? method.pixKey ?? 'Pix cadastrado'
-                        : '${method.holderName ?? 'Titular'} | Val. ${method.expiry ?? '--/--'}',
-                    style: const TextStyle(color: AppTheme.textMuted),
-                  ),
+                ),
+                if (isActive) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.check_circle, color: Colors.white),
                 ],
+              ],
+            ),
+            const SizedBox(height: 22),
+            Text(
+              isPix
+                  ? (method.pixKey ?? 'Pix cadastrado')
+                  : '••••  ••••  ••••  ${method.lastFour ?? '••••'}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 19,
+                letterSpacing: 1.1,
               ),
             ),
-            if (isActive)
-              const Icon(Icons.check_circle, color: AppTheme.success)
-            else
-              TextButton(onPressed: onActivate, child: const Text('Usar')),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    (method.holderName ?? 'TITULAR').toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Text(
+                  method.expiry ?? '',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                if (!isActive)
+                  TextButton(
+                    onPressed: onActivate,
+                    child: const Text(
+                      'Usar',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

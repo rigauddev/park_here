@@ -1,8 +1,9 @@
 import asyncio
 import json
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.core.database import AsyncSessionLocal, engine
 from app.core.security import hash_password
@@ -13,12 +14,16 @@ from app.modules.customer_assets.models import (
     WalletPaymentMethod,
 )
 from app.modules.parkings.models import Parking, ParkingService
-from app.modules.platform_fees.models import PlatformFee
+from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.operator_assignment_models import OperatorParkingAssignment, OperatorWorkShift
+from app.modules.partners.work_schedule_models import OperatorWorkProfile
 from app.modules.partners.guide_models import GuideParkingLink
 from app.modules.partners.guide_service_models import GuideService
+from app.modules.partners.permission_profile_models import PartnerPermissionProfile
 from app.modules.payments.models import PartnerPaymentAccount
 from app.modules.reservations.models import Reservation
+from app.modules.rentals.models import RentalCompany, RentalVehicle, RentalPlan, RentalVehicleGroup
 from app.modules.reservations.terms_catalog import TERMS_VERSION, build_terms_snapshot
 from app.modules.tenants.models.tenant_model_plan_enum import PlanEnum
 from app.modules.tenants.models.tenant_model_status_enum import TenantStatusEnum
@@ -42,6 +47,403 @@ async def seed():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # The homologation dataset is intentionally small and deterministic.  Keep
+    # the legacy seed helpers below for reference, but use this path by default
+    # so local resets never recreate unrelated cities or reservations.
+    await seed_homologation_valenca()
+    return
+
+
+async def seed_homologation_valenca():
+    """Reset and create the single-park homologation scenario used by QA."""
+    from app.modules.platform_fees.models import PartnerFeatureEntitlement
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+        # Keep alembic's migration history intact; only application data is reset.
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name != "alembic_version":
+                await conn.execute(delete(table))
+        await conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+
+    async with AsyncSessionLocal() as db:
+        tenant = Tenant(
+            name="ParkHere Valença",
+            cnpj="11222333000144",
+            email="gestor@parkhere.test",
+            plan=PlanEnum.PRO,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(tenant)
+        await db.flush()
+
+        rental_tenant = Tenant(
+            name="ServiceHub Locadora Valença",
+            cnpj="22333444000155",
+            email="gestor.locadora@servicehub.test",
+            plan=PlanEnum.PRO,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(rental_tenant)
+        await db.flush()
+
+        hybrid_tenant = Tenant(
+            name="ServiceHub Mobilidade Valença",
+            cnpj="55666777000188",
+            email="gestor.mobilidade@servicehub.test",
+            plan=PlanEnum.PRO,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(hybrid_tenant)
+        await db.flush()
+
+        admin = User(
+            name="Administrador ParkHere", firt_name="Administrador",
+            email="admin@parkhere.test", password_hash=hash_password("123456"),
+            phone="75999990000", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.SUPER_ADMIN,
+        )
+        manager = User(
+            tenant_id=tenant.id, name="Gestor ParkHere Valença", firt_name="Gestor",
+            email="gestor@parkhere.test", password_hash=hash_password("123456"),
+            phone="75999990001", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.PARTNER_MANAGER,
+        )
+        operators = [
+            User(
+                tenant_id=tenant.id, name=f"Operador {i}", firt_name="Operador",
+                email=f"operador{i}@parkhere.test", password_hash=hash_password("123456"),
+                phone=f"7599999000{i+1}", phone_verified=True, email_verified=True,
+                role=UserRoleEnum.OPERATOR,
+                permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
+            ) for i in range(1, 4)
+        ]
+        customer = User(
+            name="Cliente de Homologação", firt_name="Cliente",
+            email="cliente@parkhere.test", password_hash=hash_password("123456"),
+            phone="75988887777", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.CUSTOMER,
+        )
+        rental_manager = User(
+            tenant_id=rental_tenant.id, name="Gestor ServiceHub Locadora", firt_name="Gestor",
+            email="gestor.locadora@servicehub.test", password_hash=hash_password("123456"),
+            phone="75999990100", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.PARTNER_MANAGER,
+        )
+        hybrid_manager = User(
+            tenant_id=hybrid_tenant.id, name="Gestor ServiceHub Mobilidade", firt_name="Gestor",
+            email="gestor.mobilidade@servicehub.test", password_hash=hash_password("123456"),
+            phone="75999990101", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.PARTNER_MANAGER,
+        )
+        db.add_all([admin, manager, *operators, customer, rental_manager, hybrid_manager])
+        await db.flush()
+
+        parking = Parking(
+            tenant_id=tenant.id, name="ParkHere Valença 24h",
+            address="Rua Desembargador Amâncio de Souza, 709, Valença - BA",
+            street="Rua Desembargador Amâncio de Souza", number="709",
+            neighborhood="Centro", postal_code="45400-000", city="Valença",
+            lat=-13.3703, lng=-39.0731, rating=5.0,
+            total_spots=50, available_spots=50, covered_spots=20,
+            uncovered_spots=30, vip_spots=0, large_spots=0, bus_spots=0,
+            pickup_spots=0, moto_home_spots=0, has_covered_area=True,
+            has_24h_gate=True, has_security_system=True, is_active=True,
+            accepts_guide_affiliates=False, work_regime="three_shifts",
+            operating_hours=json.dumps({day: {"open": "00:00", "close": "23:59"}
+                                        for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}),
+            category_pricing=json.dumps({
+                "covered": {"first_hour_price": 14, "additional_hour_price": 7,
+                             "daily_price": 52, "weekly_price": 230, "monthly_price": 380},
+                "uncovered": {"first_hour_price": 10, "additional_hour_price": 5,
+                               "daily_price": 40, "weekly_price": 180, "monthly_price": 300},
+            }),
+            covered_first_hour_price=14, covered_additional_hour_price=7,
+            covered_daily_price=52, covered_weekly_price=230, covered_monthly_price=380,
+            uncovered_first_hour_price=10, uncovered_additional_hour_price=5,
+            uncovered_daily_price=40, uncovered_weekly_price=180, uncovered_monthly_price=300,
+            first_hour_price=10, additional_hour_price=5, daily_price=40,
+            weekly_price=180, monthly_price=300,
+        )
+        db.add(parking)
+        await db.flush()
+        db.add(ParkingService(
+            parking_id=parking.id, code="car_wash", name="Lava-jato",
+            description="Lavagem externa opcional", price=30, is_active=True,
+        ))
+
+        hybrid_parking = Parking(
+            tenant_id=hybrid_tenant.id, name="ServiceHub Mobilidade Estacionamento",
+            address="Rua das Palmeiras, 120, Valença - BA",
+            street="Rua das Palmeiras", number="120", neighborhood="Centro",
+            postal_code="45400-000", city="Valença", lat=-13.3712, lng=-39.0719,
+            rating=4.8, total_spots=24, available_spots=24, covered_spots=10,
+            uncovered_spots=14, vip_spots=0, large_spots=0, bus_spots=0,
+            pickup_spots=0, moto_home_spots=0, has_covered_area=True,
+            has_24h_gate=True, has_security_system=True, is_active=True,
+            accepts_guide_affiliates=True, work_regime="three_shifts",
+            operating_hours=json.dumps({day: {"open": "00:00", "close": "23:59"}
+                                        for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}),
+            category_pricing=json.dumps({
+                "covered": {"first_hour_price": 14, "additional_hour_price": 7,
+                             "daily_price": 52, "weekly_price": 230, "monthly_price": 380},
+                "uncovered": {"first_hour_price": 10, "additional_hour_price": 5,
+                               "daily_price": 40, "weekly_price": 180, "monthly_price": 300},
+            }),
+            covered_first_hour_price=14, covered_additional_hour_price=7,
+            covered_daily_price=52, covered_weekly_price=230, covered_monthly_price=380,
+            uncovered_first_hour_price=10, uncovered_additional_hour_price=5,
+            uncovered_daily_price=40, uncovered_weekly_price=180, uncovered_monthly_price=300,
+            first_hour_price=10, additional_hour_price=5, daily_price=40,
+            weekly_price=180, monthly_price=300,
+        )
+        db.add(hybrid_parking)
+        await db.flush()
+        db.add(ParkingService(
+            parking_id=hybrid_parking.id, code="vehicle_rental_pickup",
+            name="Retirada de veículos alugados",
+            description="Retire ou devolva o veículo alugado nesta unidade.",
+            price=0, is_active=True,
+        ))
+
+        db.add(PartnerProfile(
+            tenant_id=tenant.id, service_type="parking", company_name="ParkHere Valença",
+            cnpj=tenant.cnpj, document_type="cnpj", document_number=tenant.cnpj,
+            registration_status="active", responsible_name=manager.name,
+            approval_status="approved",
+        ))
+        db.add(PartnerProfile(
+            tenant_id=rental_tenant.id, service_type="vehicle_rental",
+            company_name="ServiceHub Locadora Valença", cnpj=rental_tenant.cnpj,
+            document_type="cnpj", document_number=rental_tenant.cnpj,
+            registration_status="active", responsible_name=rental_manager.name,
+            approval_status="approved",
+        ))
+        db.add(PartnerProfile(
+            tenant_id=hybrid_tenant.id, service_type="parking",
+            company_name="ServiceHub Mobilidade Valença", cnpj=hybrid_tenant.cnpj,
+            document_type="cnpj", document_number=hybrid_tenant.cnpj,
+            registration_status="active", responsible_name=hybrid_manager.name,
+            approval_status="approved",
+        ))
+
+        # A locadora is a separate partner account. Its fleet remains isolated
+        # from parking inventory while the platform can consolidate reports.
+        rental_company = RentalCompany(
+            tenant_id=rental_tenant.id,
+            name="ServiceHub Locadora Valença",
+            service_type="vehicle_rental",
+            unit_kind="branch",
+            address="Rua Desembargador Amâncio de Souza, 709, Valença - BA",
+            city="Valença",
+            latitude=-13.3703,
+            longitude=-39.0731,
+            cnpj=rental_tenant.cnpj,
+            is_active=True,
+        )
+        db.add(rental_company)
+        await db.flush()
+        rental_groups = [
+            RentalVehicleGroup(company_id=rental_company.id, name='Econômico', code='ECON', vehicle_type='car', description='Compactos para deslocamentos urbanos.', suggested_price_per_day=159, is_default=True),
+            RentalVehicleGroup(company_id=rental_company.id, name='SUV conforto', code='SUV', vehicle_type='suv', description='Mais espaço para viagens e bagagem.', suggested_price_per_day=249, is_default=True),
+            RentalVehicleGroup(company_id=rental_company.id, name='Duas rodas', code='MOTO', vehicle_type='motorcycle', description='Motocicletas para mobilidade ágil.', suggested_price_per_day=89, is_default=True),
+        ]
+        db.add_all(rental_groups)
+        await db.flush()
+        rental_vehicles = [
+            RentalVehicle(company_id=rental_company.id, group_id=rental_groups[0].id, vehicle_type="car", brand="Toyota", model="Yaris", year=2025, plate="RNT1A25", price_per_day=159, status="available"),
+            RentalVehicle(company_id=rental_company.id, group_id=rental_groups[1].id, vehicle_type="suv", brand="Chevrolet", model="Tracker", year=2025, plate="RNT2B25", price_per_day=249, status="available"),
+            RentalVehicle(company_id=rental_company.id, group_id=rental_groups[2].id, vehicle_type="motorcycle", brand="Honda", model="CG 160", year=2024, plate="RNT3C24", price_per_day=89, status="available"),
+        ]
+        db.add_all(rental_vehicles)
+        db.add_all([
+            RentalPlan(company_id=rental_company.id, group_id=rental_groups[0].id, name="Diária econômica", description="Plano diário com quilometragem controlada.", vehicle_type="car", price_per_day=159, price_per_week=990, price_per_month=3200, deposit_amount=500, mileage_limit_per_day=200, included_items=["Proteção básica"]),
+            RentalPlan(company_id=rental_company.id, group_id=rental_groups[1].id, name="SUV conforto", description="SUV para viagens e deslocamentos longos.", vehicle_type="suv", price_per_day=249, price_per_week=1540, price_per_month=4990, deposit_amount=800, mileage_limit_per_day=250, included_items=["Proteção básica", "Assistência 24h"]),
+        ])
+
+        # A mesma conta também possui um serviço de locação, demonstrando a
+        # relação matriz/filial sem misturar o inventário do estacionamento.
+        hybrid_rental = RentalCompany(
+            tenant_id=hybrid_tenant.id,
+            parent_unit_id=hybrid_parking.id,
+            parent_service_type="parking",
+            parent_parking_id=hybrid_parking.id,
+            name="ServiceHub Mobilidade Locadora",
+            service_type="vehicle_rental",
+            unit_kind="branch",
+            address="Rua das Palmeiras, 120, Valença - BA",
+            city="Valença",
+            latitude=-13.3712,
+            longitude=-39.0719,
+            cnpj=hybrid_tenant.cnpj,
+            is_active=True,
+        )
+        db.add(hybrid_rental)
+        await db.flush()
+        hybrid_groups = [
+            RentalVehicleGroup(company_id=hybrid_rental.id, name="Compacto", code="COMPACT", vehicle_type="car", description="Carros econômicos para deslocamentos urbanos.", suggested_price_per_day=149, is_default=True),
+            RentalVehicleGroup(company_id=hybrid_rental.id, name="Duas rodas", code="MOTO", vehicle_type="motorcycle", description="Motocicletas para mobilidade ágil.", suggested_price_per_day=79, is_default=True),
+        ]
+        db.add_all(hybrid_groups)
+        await db.flush()
+        db.add_all([
+            RentalVehicle(company_id=hybrid_rental.id, group_id=hybrid_groups[0].id, vehicle_type="car", brand="Renault", model="Kwid", year=2025, plate="HBR1A25", price_per_day=149, status="available"),
+            RentalVehicle(company_id=hybrid_rental.id, group_id=hybrid_groups[1].id, vehicle_type="motorcycle", brand="Honda", model="CG 160", year=2025, plate="HBR2B25", price_per_day=79, status="available"),
+        ])
+        db.add_all([
+            RentalPlan(company_id=hybrid_rental.id, group_id=hybrid_groups[0].id, name="Diária compacto", description="Plano diário para carro compacto.", vehicle_type="car", price_per_day=149, price_per_week=920, price_per_month=2900, deposit_amount=450, mileage_limit_per_day=200, included_items=["Proteção básica"]),
+            RentalPlan(company_id=hybrid_rental.id, group_id=hybrid_groups[1].id, name="Diária motocicleta", description="Plano diário para motocicleta.", vehicle_type="motorcycle", price_per_day=79, price_per_week=490, price_per_month=1600, deposit_amount=250, mileage_limit_per_day=180, included_items=["Capacete"]),
+        ])
+
+        guide_tenants = [
+            Tenant(name="Guia Valença Histórico", cnpj="33333444000155", email="guia1@servicehub.test", plan=PlanEnum.FREE, status=TenantStatusEnum.ACTIVE),
+            Tenant(name="Guia Valença Natureza", cnpj="44444555000166", email="guia2@servicehub.test", plan=PlanEnum.FREE, status=TenantStatusEnum.ACTIVE),
+        ]
+        db.add_all(guide_tenants)
+        await db.flush()
+        guide_users = []
+        for index, guide_tenant in enumerate(guide_tenants, start=1):
+            db.add(PartnerProfile(
+                tenant_id=guide_tenant.id,
+                service_type="tour_guide",
+                company_name=guide_tenant.name,
+                cnpj=guide_tenant.cnpj,
+                document_type="cnpj",
+                document_number=guide_tenant.cnpj,
+                registration_status="active",
+                responsible_name=f"Guia Turístico {index}",
+                city="Valença",
+                latitude=-13.3703 + (index * 0.001),
+                longitude=-39.0731 + (index * 0.001),
+                approval_status="approved",
+            ))
+            guide_users.append(User(
+                tenant_id=guide_tenant.id,
+                name=f"Guia Turístico {index}",
+                firt_name="Guia",
+                email=f"guia{index}@servicehub.test",
+                password_hash=hash_password("123456"),
+                phone=f"7597777000{index}",
+                cpf=f"9000000000{index:02d}",
+                phone_verified=True,
+                email_verified=True,
+                role=UserRoleEnum.TOUR_GUIDE,
+            ))
+        db.add_all(guide_users)
+        await db.flush()
+        parking.accepts_guide_affiliates = True
+        parking.guide_commission_terms = json.dumps({
+            "daily": {"type": "percentage", "value": 8},
+            "weekly": {"type": "percentage", "value": 10},
+            "monthly": {"type": "fixed", "value": 80},
+        })
+        for guide in guide_users:
+            db.add(GuideParkingLink(
+                guide_user_id=guide.id,
+                parking_id=parking.id,
+                status="approved",
+                commission_type="percentage",
+                commission_value="8",
+                commission_terms=parking.guide_commission_terms,
+            ))
+            db.add(GuideService(
+                guide_user_id=guide.id,
+                name="Passeio histórico por Valença",
+                description="Roteiro guiado pelo centro histórico e pontos culturais.",
+                price=120,
+                duration_minutes="120",
+                schedule="08:00-18:00",
+                is_active=True,
+            ))
+        for operator in operators:
+            db.add(OperatorParkingAssignment(operator_id=operator.id, parking_id=parking.id))
+            db.add(OperatorWorkProfile(operator_id=operator.id, parking_id=parking.id,
+                                       daily_hours=8, lunch_minutes=60,
+                                       work_modality="24h", days_off="[]", bank_hours=0))
+        # Shift times are stored as Brazil wall-clock values.  Start the
+        # homologation schedule on today's local date so an operator can open
+        # a turn immediately after a seed reset (UTC can already be tomorrow
+        # or still be yesterday for Valença/Bahia).
+        now = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+        )
+        for offset in range(7):
+            day = now + timedelta(days=offset)
+            for index, operator in enumerate(operators):
+                start = day + timedelta(hours=index * 8)
+                end = start + timedelta(hours=8)
+                db.add(OperatorWorkShift(operator_id=operator.id, parking_id=parking.id,
+                                         starts_at=start, ends_at=end))
+
+        db.add(Vehicle(id=SEED_VEHICLE_ID, user_id=customer.id, nickname="Meu carro",
+                       plate="PKH1A23", brand="Toyota", model="Corolla", color="Prata",
+                       vehicle_document="CRLV-2026-TESTE", ownership_type="owner",
+                       is_active=True, vehicle_type="car"))
+        db.add(WalletPaymentMethod(user_id=customer.id, method_type="card",
+                                  label="Cartão de teste", last_four="4242",
+                                  card_brand="Visa", cardholder_name="Cliente de Homologação",
+                                  expiration_month=12, expiration_year=2030, is_active=True))
+        db.add(PartnerPaymentAccount(
+            tenant_id=tenant.id, provider="mercado_pago",
+            provider_account_id="mp_test_seller_valenca", account_label="Conta de teste",
+            pix_key="teste@parkhere.test", account_holder_name=tenant.name,
+            account_holder_document=tenant.cnpj, verification_status="test",
+            status="active", is_default=True, is_active=True,
+        ))
+        for service_type, mode, fixed, percentage in [
+            ("parking", "percentage", 0, 5),
+            ("additional_services", "percentage", 0, 5),
+            ("guide_commission", "percentage", 0, 10),
+            # Locação: a taxa do cliente entra no total pago; a taxa do
+            # parceiro é retida do repasse, ambas congeladas na reserva.
+            ("vehicle_rental_customer", "percentage", 0, 8),
+            ("vehicle_rental_partner", "percentage", 0, 5),
+            ("cancellation", "fixed", 5, 0),
+            ("module", "percentage", 0, 3),
+        ]:
+            db.add(PlatformFee(service_type=service_type, fee_mode=mode,
+                               fixed_amount=fixed, percentage=percentage,
+                               min_fee=0, is_active=True))
+        db.add_all([
+            PartnerPlatformFee(tenant_id=rental_tenant.id, service_type="vehicle_rental_customer", fee_mode="percentage", percentage=8, fixed_amount=0, min_fee=0, is_active=True),
+            PartnerPlatformFee(tenant_id=rental_tenant.id, service_type="vehicle_rental_partner", fee_mode="percentage", percentage=5, fixed_amount=0, min_fee=0, is_active=True),
+            PartnerPlatformFee(tenant_id=hybrid_tenant.id, service_type="vehicle_rental_customer", fee_mode="percentage", percentage=7, fixed_amount=0, min_fee=0, is_active=True),
+            PartnerPlatformFee(tenant_id=hybrid_tenant.id, service_type="vehicle_rental_partner", fee_mode="percentage", percentage=4, fixed_amount=0, min_fee=0, is_active=True),
+        ])
+        for feature in ("financial_management", "dashboard", "convenience"):
+            db.add(PartnerFeatureEntitlement(tenant_id=tenant.id, feature_key=feature,
+                                              is_enabled=(feature == "financial_management"),
+                                              is_paid=(feature != "financial_management"),
+                                              price=49.90 if feature != "dashboard" else 39.90,
+                                              billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
+                                              notes="Homologação"))
+        for feature in ("financial_management", "dashboard"):
+            db.add(PartnerFeatureEntitlement(tenant_id=hybrid_tenant.id, feature_key=feature,
+                                              is_enabled=(feature == "financial_management"),
+                                              is_paid=(feature != "financial_management"),
+                                              price=49.90 if feature != "dashboard" else 39.90,
+                                              billing_period="monthly", billing_prices=json.dumps({"monthly": 49.90}),
+                                              notes="Homologação multi-serviço"))
+        for feature, price in (("rental_management", 49.90), ("rental_operations", 69.90)):
+            db.add(PartnerFeatureEntitlement(tenant_id=rental_tenant.id, feature_key=feature,
+                                              is_enabled=True, is_paid=True, price=price,
+                                              billing_period="monthly",
+                                              billing_prices=json.dumps({"monthly": price, "annual": price * 10}),
+                                              notes="Homologação locação"))
+            db.add(PartnerFeatureEntitlement(tenant_id=hybrid_tenant.id, feature_key=feature,
+                                              is_enabled=True, is_paid=True, price=price,
+                                              billing_period="monthly",
+                                              billing_prices=json.dumps({"monthly": price, "annual": price * 10}),
+                                              notes="Homologação locação multi-serviço"))
+        await db.commit()
+        print("Seed de homologação criado: estacionamento, locadora, dois guias e empresa híbrida estacionamento + locação, sem reservas.")
+        print("admin@parkhere.test / gestor@parkhere.test / operador1..3@parkhere.test / cliente@parkhere.test - senha 123456")
+        print("Locadora: gestor.locadora@servicehub.test / senha 123456")
+        print("Empresa híbrida: gestor.mobilidade@servicehub.test / senha 123456")
+        print("Guias: guia1@servicehub.test e guia2@servicehub.test - senha 123456")
+        return
+
     async with AsyncSessionLocal() as db:
         existing = await db.execute(select(User).where(User.email == "cliente@parkhere.test"))
         if existing.scalar_one_or_none():
@@ -54,10 +456,10 @@ async def seed():
             await ensure_descriptive_seed_users(db)
             await ensure_partner_profile(db)
             await ensure_demo_partner_tenants(db)
+            await ensure_seed_schedule(db)
             await ensure_platform_fees(db)
             await ensure_partner_payment_accounts(db)
             await ensure_customer_seed_assets(db)
-            await ensure_seed_reservations(db)
             print("Seed already applied.")
             print("Seed partner, parking management fields, platform fees and payment account refreshed.")
             return
@@ -189,11 +591,13 @@ async def seed():
                 has_covered_area=True,
                 has_vip_spots=True,
                 has_24h_gate=True,
+                work_regime="three_shifts",
                 has_security_system=True,
                 wants_automatic_access=True,
                 has_automatic_access=False,
             ),
             Parking(
+                id="f2870de7-2129-49d4-8d3a-9fc990010e21",
                 tenant_id=demo_tenants["pelourinho"].id,
                 name="ParkHere Valenca VIP",
                 address="Av. ACM, Centro, Valenca - BA",
@@ -227,6 +631,7 @@ async def seed():
                 has_covered_area=True,
                 has_vip_spots=True,
                 has_24h_gate=True,
+                work_regime="three_shifts",
                 has_security_system=True,
                 wants_automatic_access=True,
                 has_automatic_access=False,
@@ -303,6 +708,7 @@ async def seed():
                 has_covered_area=True,
                 has_vip_spots=True,
                 has_24h_gate=True,
+                work_regime="three_shifts",
                 has_security_system=True,
                 wants_automatic_access=False,
                 has_automatic_access=False,
@@ -341,6 +747,7 @@ async def seed():
                 has_covered_area=True,
                 has_vip_spots=True,
                 has_24h_gate=True,
+                work_regime="three_shifts",
                 has_security_system=True,
                 wants_automatic_access=True,
                 has_automatic_access=False,
@@ -379,9 +786,61 @@ async def seed():
                 has_covered_area=True,
                 has_vip_spots=False,
                 has_24h_gate=True,
+                work_regime="three_shifts",
                 has_security_system=True,
                 wants_automatic_access=False,
                 has_automatic_access=False,
+            ),
+            Parking(
+                id="786b3012-1773-445b-807b-5d1b18d2efef",
+                tenant_id=demo_tenants["pelourinho"].id,
+                name="ESTACIONAMENTO TESTE",
+                address="Rua Conselheiro Ferraz, Centro, Valença - BA",
+                city="Valenca",
+                lat=-13.3597,
+                lng=-39.0669,
+                rating=4.5,
+                total_spots=24,
+                available_spots=18,
+                covered_spots=10,
+                uncovered_spots=14,
+                vip_spots=2,
+                large_spots=2,
+                bus_spots=0,
+                pickup_spots=2,
+                first_hour_price=10,
+                additional_hour_price=5,
+                daily_price=40,
+                weekly_price=180,
+                monthly_price=300,
+                covered_first_hour_price=14,
+                covered_additional_hour_price=7,
+                covered_daily_price=52,
+                covered_weekly_price=230,
+                covered_monthly_price=380,
+                uncovered_first_hour_price=10,
+                uncovered_additional_hour_price=5,
+                uncovered_daily_price=40,
+                uncovered_weekly_price=180,
+                uncovered_monthly_price=300,
+                has_covered_area=True,
+                has_vip_spots=True,
+                has_24h_gate=False,
+                has_security_system=True,
+                operating_hours=json.dumps({
+                    "mon": {"open": "07:00", "close": "18:00"},
+                    "tue": {"open": "07:00", "close": "18:00"},
+                    "wed": {"open": "07:00", "close": "18:00"},
+                    "thu": {"open": "07:00", "close": "18:00"},
+                    "fri": {"open": "07:00", "close": "18:00"},
+                    "sat": {"open": "08:00", "close": "13:00"},
+                }),
+                category_pricing=json.dumps({
+                    "uncovered": {"first_hour_price": 10, "additional_hour_price": 5, "daily_price": 40, "weekly_price": 180, "monthly_price": 300},
+                    "covered": {"first_hour_price": 14, "additional_hour_price": 7, "daily_price": 52, "weekly_price": 230, "monthly_price": 380},
+                    "vip": {"first_hour_price": 22, "additional_hour_price": 11, "daily_price": 90, "weekly_price": 390, "monthly_price": 680},
+                    "large": {"first_hour_price": 18, "additional_hour_price": 9, "daily_price": 75, "weekly_price": 330, "monthly_price": 560},
+                }),
             ),
         ]
         db.add_all(parkings)
@@ -434,6 +893,8 @@ async def seed():
                 ParkingService(parking_id=parkings[4].id, code="transport", name="Transfer urbano", price=45),
                 ParkingService(parking_id=parkings[5].id, code="car_wash", name="Lavagem ecológica", price=48),
                 ParkingService(parking_id=parkings[5].id, code="transport", name="Transporte executivo", price=55),
+                ParkingService(parking_id=parkings[6].id, code="car_wash", name="Lavagem teste", price=30),
+                ParkingService(parking_id=parkings[6].id, code="tour_guide", name="Passeio guiado de teste", price=50),
             ]
         )
 
@@ -465,44 +926,38 @@ async def seed():
                     method_type="credit_card",
                     label="Visa final 4242",
                     last_four="4242",
+                    card_brand="Visa",
+                    cardholder_name="Cliente Teste",
+                    expiration_month=12,
+                    expiration_year=2030,
                     is_active=True,
-                ),
-                WalletPaymentMethod(
-                    user_id=customer.id,
-                    method_type="pix",
-                    label="Pix cliente@parkhere.test",
-                    pix_key="cliente@parkhere.test",
-                    is_active=False,
-                ),
-                Reservation(
-                    parking_id=parkings[0].id,
-                    user_id=customer.id,
-                    vehicle_id=vehicle.id,
-                    route_minutes=15,
-                    hold_expires_at=datetime.utcnow() + timedelta(minutes=15),
-                    estimated_total=40,
-                    spot_type="uncovered",
-                    pricing_plan="daily",
-                    duration_hours=1,
-                    base_amount=40,
-                    services_amount=0,
-                    platform_fee_amount=0,
-                    final_total=40,
-                    selected_services_snapshot="[]",
-                    terms_accepted_at=datetime.utcnow(),
-                    terms_version=TERMS_VERSION,
-                    terms_locale="pt_BR",
-                    accepted_terms_snapshot=json.dumps(
-                        build_terms_snapshot([], "pt_BR"), ensure_ascii=False
-                    ),
                 ),
             ]
         )
 
         await ensure_platform_fees(db, commit=False)
         await ensure_partner_payment_accounts(db, tenant_id=tenant.id, commit=False)
+        await ensure_seed_schedule(db, commit=False)
 
         await db.commit()
+
+        # Refresh the same complete non-transactional scenario on a clean DB.
+        await refresh_existing_seed(db)
+        await ensure_system_admin_seed_user(db)
+        await ensure_partner_seed_user(db)
+        await ensure_guide_partner_seed_user(db)
+        await ensure_partner_operator_seed_user(db)
+        await cleanup_example_seed_users(db)
+        await ensure_descriptive_seed_users(db)
+        await ensure_partner_profile(db)
+        await ensure_demo_partner_tenants(db)
+        await ensure_seed_schedule(db)
+        await ensure_platform_fees(db)
+        await ensure_partner_payment_accounts(db)
+        await ensure_customer_seed_assets(db)
+        # Reservas são criadas pelos fluxos manuais de homologação. O seed
+        # prepara apenas contas, unidades, veículos, carteira e escalas, para
+        # não poluir a fila de reservas a cada recriação do ambiente.
 
     print("Seed applied.")
     print("Customer login seed: cliente@parkhere.test / 123456")
@@ -546,11 +1001,13 @@ async def refresh_existing_seed(db):
             "uncovered_weekly_price": 180,
             "uncovered_monthly_price": 300,
             "has_24h_gate": True,
+            "work_regime": "three_shifts",
             "has_security_system": True,
             "wants_automatic_access": True,
             "has_automatic_access": False,
         },
         "ParkHere Pelourinho VIP": {
+            "id": "f2870de7-2129-49d4-8d3a-9fc990010e21",
             "name": "ParkHere Valenca VIP",
             "tenant_id": demo_tenants["pelourinho"].id,
             "address": "Av. ACM, Centro, Valenca - BA",
@@ -575,6 +1032,7 @@ async def refresh_existing_seed(db):
             "uncovered_weekly_price": 330,
             "uncovered_monthly_price": 560,
             "has_24h_gate": True,
+            "work_regime": "three_shifts",
             "has_security_system": True,
             "wants_automatic_access": True,
             "has_automatic_access": False,
@@ -640,6 +1098,7 @@ async def refresh_existing_seed(db):
             "uncovered_monthly_price": 440,
             "has_vip_spots": True,
             "has_24h_gate": True,
+            "work_regime": "three_shifts",
             "has_security_system": True,
             "wants_automatic_access": False,
             "has_automatic_access": False,
@@ -676,6 +1135,7 @@ async def refresh_existing_seed(db):
             "uncovered_monthly_price": 760,
             "has_vip_spots": True,
             "has_24h_gate": True,
+            "work_regime": "three_shifts",
             "has_security_system": True,
             "wants_automatic_access": True,
             "has_automatic_access": False,
@@ -712,9 +1172,60 @@ async def refresh_existing_seed(db):
             "uncovered_monthly_price": 510,
             "has_vip_spots": False,
             "has_24h_gate": True,
+            "work_regime": "three_shifts",
             "has_security_system": True,
             "wants_automatic_access": False,
             "has_automatic_access": False,
+        },
+        "ESTACIONAMENTO TESTE": {
+            "id": "786b3012-1773-445b-807b-5d1b18d2efef",
+            "tenant_id": demo_tenants["pelourinho"].id,
+            "address": "Rua Conselheiro Ferraz, Centro, Valença - BA",
+            "city": "Valenca",
+            "lat": -13.3597,
+            "lng": -39.0669,
+            "rating": 4.5,
+            "total_spots": 24,
+            "available_spots": 18,
+            "covered_spots": 10,
+            "uncovered_spots": 14,
+            "vip_spots": 2,
+            "large_spots": 2,
+            "bus_spots": 0,
+            "pickup_spots": 2,
+            "first_hour_price": 10,
+            "additional_hour_price": 5,
+            "daily_price": 40,
+            "weekly_price": 180,
+            "monthly_price": 300,
+            "covered_first_hour_price": 14,
+            "covered_additional_hour_price": 7,
+            "covered_daily_price": 52,
+            "covered_weekly_price": 230,
+            "covered_monthly_price": 380,
+            "uncovered_first_hour_price": 10,
+            "uncovered_additional_hour_price": 5,
+            "uncovered_daily_price": 40,
+            "uncovered_weekly_price": 180,
+            "uncovered_monthly_price": 300,
+            "has_covered_area": True,
+            "has_vip_spots": True,
+            "has_24h_gate": False,
+            "has_security_system": True,
+            "operating_hours": json.dumps({
+                "mon": {"open": "07:00", "close": "18:00"},
+                "tue": {"open": "07:00", "close": "18:00"},
+                "wed": {"open": "07:00", "close": "18:00"},
+                "thu": {"open": "07:00", "close": "18:00"},
+                "fri": {"open": "07:00", "close": "18:00"},
+                "sat": {"open": "08:00", "close": "13:00"},
+            }),
+            "category_pricing": json.dumps({
+                "uncovered": {"first_hour_price": 10, "additional_hour_price": 5, "daily_price": 40, "weekly_price": 180, "monthly_price": 300},
+                "covered": {"first_hour_price": 14, "additional_hour_price": 7, "daily_price": 52, "weekly_price": 230, "monthly_price": 380},
+                "vip": {"first_hour_price": 22, "additional_hour_price": 11, "daily_price": 90, "weekly_price": 390, "monthly_price": 680},
+                "large": {"first_hour_price": 18, "additional_hour_price": 9, "daily_price": 75, "weekly_price": 330, "monthly_price": 560},
+            }),
         },
     }
     parking_specs["ParkHere Valenca VIP"] = parking_specs["ParkHere Pelourinho VIP"]
@@ -731,11 +1242,11 @@ async def refresh_existing_seed(db):
 
         parking = existing.get(parking_name)
         if parking is None:
-            parking = Parking(name=parking_name, tenant_id=spec["tenant_id"])
+            parking = Parking(id=spec.get("id"), name=parking_name, tenant_id=spec["tenant_id"])
             db.add(parking)
 
         for field, value in spec.items():
-            if value is not None:
+            if field != "id" and value is not None:
                 setattr(parking, field, value)
         parking.has_covered_area = parking.covered_spots > 0
         parking.has_vip_spots = parking.vip_spots > 0
@@ -807,6 +1318,10 @@ async def ensure_seed_parking_services(db, commit=True):
             {"code": "car_wash", "name": "Lavagem ecologica", "price": 48},
             {"code": "transport", "name": "Transporte executivo", "price": 55},
         ],
+        "ESTACIONAMENTO TESTE": [
+            {"code": "car_wash", "name": "Lavagem teste", "price": 30},
+            {"code": "tour_guide", "name": "Passeio guiado de teste", "price": 50},
+        ],
     }
 
     result = await db.execute(
@@ -841,6 +1356,7 @@ async def ensure_seed_parking_services(db, commit=True):
 async def ensure_demo_partner_tenants(db, commit=True):
     specs = {
         "pelourinho": {
+            "id": "01881d44-6445-4868-b7af-d653e677c24f",
             "name": "Valenca Centro Parking Partners",
             "cnpj": "22333444000155",
             "email": "operacao.centro.valenca@parkhere.test",
@@ -888,6 +1404,7 @@ async def ensure_demo_partner_tenants(db, commit=True):
         tenant = result.scalar_one_or_none()
         if tenant is None:
             tenant = Tenant(
+                id=spec.get("id"),
                 name=spec["name"],
                 cnpj=spec["cnpj"],
                 email=spec["email"],
@@ -965,6 +1482,78 @@ async def ensure_demo_partner_tenants(db, commit=True):
         await db.commit()
 
     return tenants
+
+
+async def ensure_seed_schedule(db, commit=True):
+    """Prepare a two-unit fixture: one staffed shift and one open overlapping slot.
+
+    The overlap is intentional in the test data: the manager can verify that
+    assigning the same operator to both units is rejected by the API.
+    """
+    tenant = await db.scalar(select(Tenant).where(Tenant.cnpj == "22333444000155"))
+    if tenant is None:
+        return
+    matrix = await db.scalar(select(Parking).where(
+        Parking.tenant_id == tenant.id,
+        Parking.name == "ParkHere Valenca VIP",
+    ))
+    branch = await db.scalar(select(Parking).where(
+        Parking.tenant_id == tenant.id,
+        Parking.name == "ESTACIONAMENTO TESTE",
+    ))
+    if matrix is None or branch is None:
+        return
+
+    operator = await db.scalar(select(User).where(User.email == "operador.valenca.vip@parkhere.test"))
+    if operator is None:
+        return
+    second_operator = await _ensure_seed_user(
+        db,
+        tenant_id=tenant.id,
+        email="operador.valenca.filial@parkhere.test",
+        name="Operador de apoio Valença",
+        first_name="Operador",
+        phone="71999996667",
+        role=UserRoleEnum.OPERATOR,
+        permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
+    )
+    for operator_id, parking in (
+        (operator.id, matrix),
+        (operator.id, branch),
+        (second_operator.id, branch),
+    ):
+        assignment = await db.scalar(select(OperatorParkingAssignment).where(
+            OperatorParkingAssignment.operator_id == operator_id,
+            OperatorParkingAssignment.parking_id == parking.id,
+        ))
+        if assignment is None:
+            db.add(OperatorParkingAssignment(operator_id=operator_id, parking_id=parking.id))
+
+    fixture_day = (datetime.now() + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    next_day = fixture_day + timedelta(days=1)
+    fixtures = (
+        (matrix.id, operator.id, fixture_day.replace(hour=8), fixture_day.replace(hour=16)),
+        (branch.id, None, fixture_day.replace(hour=8), fixture_day.replace(hour=16)),
+        (branch.id, second_operator.id, next_day.replace(hour=9), next_day.replace(hour=17)),
+    )
+    for parking_id, operator_id, starts_at, ends_at in fixtures:
+        shift = await db.scalar(select(OperatorWorkShift).where(
+            OperatorWorkShift.parking_id == parking_id,
+            OperatorWorkShift.starts_at == starts_at,
+            OperatorWorkShift.ends_at == ends_at,
+        ))
+        if shift is None:
+            db.add(OperatorWorkShift(
+                parking_id=parking_id,
+                operator_id=operator_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            ))
+        else:
+            shift.operator_id = operator_id
+
+    if commit:
+        await db.commit()
 
 
 async def ensure_partner_seed_user(db, commit=True):
@@ -1166,7 +1755,8 @@ async def _ensure_seed_user(
                 permissions=permissions,
             )
         )
-        return
+        await db.flush()
+        return await db.scalar(select(User).where(User.email == email))
 
     user.tenant_id = tenant_id
     user.name = name
@@ -1178,6 +1768,7 @@ async def _ensure_seed_user(
     user.role = role
     user.permissions = permissions
     user.is_active = True
+    return user
 
 
 async def ensure_partner_operator_seed_user(db, commit=True):
@@ -1307,33 +1898,34 @@ async def ensure_customer_seed_assets(db, commit=True):
             WalletPaymentMethod.method_type == "credit_card",
         )
     )
-    if card_result.scalar_one_or_none() is None:
+    existing_card = card_result.scalar_one_or_none()
+    if existing_card is None:
         db.add(
             WalletPaymentMethod(
                 user_id=customer.id,
                 method_type="credit_card",
                 label="Visa final 4242",
                 last_four="4242",
+                card_brand="Visa",
+                cardholder_name="Cliente Teste",
+                expiration_month=12,
+                expiration_year=2030,
                 is_active=True,
             )
         )
+    else:
+        existing_card.card_brand = existing_card.card_brand or "Visa"
+        existing_card.cardholder_name = existing_card.cardholder_name or "Cliente Teste"
+        existing_card.expiration_month = existing_card.expiration_month or 12
+        existing_card.expiration_year = existing_card.expiration_year or 2030
 
-    pix_result = await db.execute(
-        select(WalletPaymentMethod).where(
+    # Customer Pix keys are not payout accounts; Pix is generated at checkout.
+    await db.execute(
+        delete(WalletPaymentMethod).where(
             WalletPaymentMethod.user_id == customer.id,
             WalletPaymentMethod.method_type == "pix",
         )
     )
-    if pix_result.scalar_one_or_none() is None:
-        db.add(
-            WalletPaymentMethod(
-                user_id=customer.id,
-                method_type="pix",
-                label="Pix cliente@parkhere.test",
-                pix_key="cliente@parkhere.test",
-                is_active=False,
-            )
-        )
 
     if commit:
         await db.commit()
@@ -1445,6 +2037,25 @@ async def ensure_seed_reservations(db, commit=True):
             "route_minutes": 1,
             "is_manual_arrival": True,
         },
+        {
+            "marker": "seed_expired_pre_reservation",
+            "status": "cancelled",
+            "payment_status": "expired",
+            "pricing_plan": "daily",
+            "duration_hours": 24,
+            "base_amount": 40,
+            "services_amount": 0,
+            "platform_fee_amount": 4,
+            "final_total": 44,
+            "checked_in_at": None,
+            "checked_out_at": None,
+            "services": "[]",
+            "spot_code": None,
+            "spot_type": "uncovered",
+            "route_minutes": 10,
+            "is_manual_arrival": False,
+            "expired_fixture": True,
+        },
     ]
 
     for scenario in scenarios:
@@ -1465,8 +2076,10 @@ async def ensure_seed_reservations(db, commit=True):
             db.add(reservation)
 
         reservation.route_minutes = scenario["route_minutes"]
-        reservation.arrival_estimate_at = datetime.utcnow() + timedelta(
-            minutes=scenario["route_minutes"]
+        reservation.arrival_estimate_at = (
+            datetime.utcnow() - timedelta(minutes=10)
+            if scenario.get("expired_fixture")
+            else datetime.utcnow() + timedelta(minutes=scenario["route_minutes"])
         )
         reservation.hold_expires_at = reservation.arrival_estimate_at
         reservation.estimated_total = scenario["final_total"]
@@ -1495,12 +2108,16 @@ async def ensure_seed_reservations(db, commit=True):
         reservation.payment_status = scenario["payment_status"]
         reservation.checked_in_at = scenario["checked_in_at"]
         reservation.checked_out_at = scenario["checked_out_at"]
-        reservation.cancelled_at = None
+        reservation.cancelled_at = datetime.utcnow() - timedelta(hours=1) if scenario.get("expired_fixture") else None
         reservation.cancelled_by_user_id = None
-        reservation.cancellation_reason = None
+        reservation.cancellation_reason = (
+            "Pré-reserva expirada automaticamente."
+            if scenario.get("expired_fixture")
+            else None
+        )
         reservation.cancellation_fee_amount = 0
         reservation.cancellation_credit_amount = 0
-        reservation.checkout_grace_minutes = 15
+        reservation.checkout_grace_minutes = 10
         reservation.checkout_excess_minutes = 0
         reservation.checkout_excess_amount = 0
         reservation.checkout_excess_paid_at = None
@@ -1546,6 +2163,20 @@ async def ensure_platform_fees(db, commit=True):
             "min_fee": 0,
             "max_fee": None,
         },
+        "vehicle_rental_customer": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 8,
+            "min_fee": 0,
+            "max_fee": None,
+        },
+        "vehicle_rental_partner": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 5,
+            "min_fee": 0,
+            "max_fee": None,
+        },
         "guide_commission": {
             "fee_mode": "percentage",
             "fixed_amount": 0,
@@ -1561,6 +2192,15 @@ async def ensure_platform_fees(db, commit=True):
             "max_fee": 10,
         },
         "establishment": {
+            "fee_mode": "percentage",
+            "fixed_amount": 0,
+            "percentage": 0,
+            "min_fee": 0,
+            "max_fee": None,
+        },
+        # Serviço extra dentro da unidade: a gestão pode ajustar a taxa global
+        # e o override por parceiro/unidade no painel administrativo.
+        "additional_services": {
             "fee_mode": "percentage",
             "fixed_amount": 0,
             "percentage": 0,

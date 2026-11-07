@@ -10,12 +10,15 @@ import '../../../core/services/routes/route_service.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/constants/terms_constants.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../../account/pages/vehicles_page.dart';
 import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/route_preview_page.dart';
+import '../../rental/pages/rental_company_page.dart';
 import '../../reservation/providers/pre_reservation_provider.dart';
+import '../models/map_service_model.dart';
 import '../models/parking_model.dart';
 import '../models/payment_plan_enum.dart';
 import '../providers/filter_provider.dart';
@@ -28,7 +31,9 @@ import '../widgets/filter_sheet.dart';
 final selectedReservationGuideProvider = StateProvider<String?>((ref) => null);
 
 class HomeMapPage extends ConsumerStatefulWidget {
-  const HomeMapPage({super.key});
+  final String? initialParkingId;
+
+  const HomeMapPage({super.key, this.initialParkingId});
 
   @override
   ConsumerState<HomeMapPage> createState() => _HomeMapPageState();
@@ -36,6 +41,7 @@ class HomeMapPage extends ConsumerStatefulWidget {
 
 class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   static const _valencaCenter = LatLng(-13.3703, -39.0731);
+  static const _brazilCenter = LatLng(-15.7942, -47.8828);
   static const _cityCenters = {
     'valença': LatLng(-13.3703, -39.0731),
     'salvador': LatLng(-12.9777, -38.5016),
@@ -68,6 +74,33 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   void initState() {
     super.initState();
     _loadUserLocation();
+    if (widget.initialParkingId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openInitialParking(widget.initialParkingId!);
+      });
+    }
+  }
+
+  Future<void> _openInitialParking(String parkingId) async {
+    try {
+      final parkings = await ref.read(parkingProvider.future);
+      if (!mounted) return;
+      ParkingModel? parking;
+      for (final item in parkings) {
+        if (item.id == parkingId) {
+          parking = item;
+          break;
+        }
+      }
+      if (parking == null) return;
+      await openParkingDetails(
+        context,
+        parking,
+        LatLng(parking.lat, parking.lng),
+      );
+    } catch (_) {
+      // A falha ao abrir o detalhe não deve impedir o uso do mapa.
+    }
   }
 
   Future<void> _loadUserLocation() async {
@@ -91,8 +124,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       ref.read(selectedCityProvider.notifier).state = nearest.city;
       await ref.read(parkingProvider.notifier).searchByCity(nearest.city);
     } catch (_) {
+      // Sem localização, não invente a cidade de Valença: o usuário pode
+      // pesquisar qualquer cidade manualmente.
       if (!mounted) return;
-      setState(() => userLocation = _valencaCenter);
+      setState(() => userLocation = null);
     }
   }
 
@@ -160,14 +195,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   List<String> _normalizedCityList(List<ParkingModel> currentParkings) {
     final citiesByKey = <String, String>{};
 
-    for (final city in [
-      ...currentParkings.map((parking) => parking.city),
-      ..._cityCenters.keys,
-      'Valença',
-      'Salvador',
-      'São Paulo',
-      'Curitiba',
-    ]) {
+    // Exiba somente cidades que possuem serviços cadastrados. Os centros
+    // conhecidos continuam sendo usados apenas para busca manual.
+    for (final city in currentParkings.map((parking) => parking.city)) {
       if (city.trim().isEmpty) continue;
       final key = _normalizeSearch(city);
       citiesByKey.putIfAbsent(key, () => city.trim());
@@ -181,64 +211,102 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   Future<void> _openCitySelector(List<ParkingModel> currentParkings) async {
     final currentCity = ref.read(selectedCityProvider);
     final controller = TextEditingController(text: currentCity);
+    List<String> availableCities = _normalizedCityList(currentParkings);
+    try {
+      availableCities = await ref.read(citySuggestionsProvider('').future);
+    } catch (_) {
+      // Keep the cities already loaded with the parking list when the lookup
+      // service is temporarily unavailable.
+    }
+    if (!mounted) return;
 
     final selected = await showDialog<String>(
       context: context,
       builder: (context) {
-        final cities = _normalizedCityList(currentParkings);
-
         return Dialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 20),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    'Selecionar cidade',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    textInputAction: TextInputAction.search,
-                    decoration: const InputDecoration(
-                      labelText: 'Cidade',
-                      prefixIcon: Icon(Icons.location_city_outlined),
+          child: StatefulBuilder(
+            builder: (context, setDialogState) => Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Selecionar cidade',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    onSubmitted: (value) =>
-                        Navigator.pop(context, value.trim()),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (final city in cities)
-                        ActionChip(
-                          avatar: const Icon(Icons.place_outlined, size: 18),
-                          label: Text(city),
-                          onPressed: () => Navigator.pop(context, city),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      textInputAction: TextInputAction.search,
+                      decoration: const InputDecoration(
+                        labelText: 'Cidade',
+                        prefixIcon: Icon(Icons.location_city_outlined),
+                      ),
+                      onChanged: (value) async {
+                        final query = value.trim();
+                        if (query.isEmpty) {
+                          setDialogState(
+                            () => availableCities = _normalizedCityList(
+                              currentParkings,
+                            ),
+                          );
+                          return;
+                        }
+                        try {
+                          final result = await ref.read(
+                            citySuggestionsProvider(query).future,
+                          );
+                          if (context.mounted) {
+                            setDialogState(() => availableCities = result);
+                          }
+                        } catch (_) {
+                          if (context.mounted) {
+                            setDialogState(() => availableCities = const []);
+                          }
+                        }
+                      },
+                      onSubmitted: (value) =>
+                          Navigator.pop(context, value.trim()),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final city in availableCities)
+                          ActionChip(
+                            avatar: const Icon(Icons.place_outlined, size: 18),
+                            label: Text(city),
+                            onPressed: () => Navigator.pop(context, city),
+                          ),
+                      ],
+                    ),
+                    if (availableCities.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: Text(
+                          'Nenhuma cidade com estacionamento ativo. Você pode buscar outra cidade.',
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () =>
-                          Navigator.pop(context, controller.text.trim()),
-                      icon: const Icon(Icons.search),
-                      label: const Text('Buscar'),
+                      ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            Navigator.pop(context, controller.text.trim()),
+                        icon: const Icon(Icons.search),
+                        label: const Text('Buscar'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -269,24 +337,74 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       return;
     }
 
+    // A cidade pode ter apenas locadora/guia. Consulte o índice de serviços
+    // antes de exibir estado de erro baseado apenas em estacionamentos.
+    try {
+      final payload = await ref
+          .read(apiServiceProvider)
+          .getMap(
+            '/parkings/services/map?city=${Uri.encodeQueryComponent(normalizedCity)}',
+          );
+      final services = payload['services'] as List<dynamic>? ?? const [];
+      if (services.isNotEmpty) {
+        final canonical = payload['city']?.toString();
+        if (canonical != null && canonical.isNotEmpty) {
+          ref.read(selectedCityProvider.notifier).state = canonical;
+        }
+        return;
+      }
+    } catch (_) {
+      // A mensagem abaixo é exibida apenas quando nenhum serviço foi obtido.
+    }
+
     final cityCenter = _cityCenterFor(normalizedCity);
     if (cityCenter != null) {
       mapController.move(cityCenter, 12);
       return;
     }
-
-    mapController.move(userLocation ?? _valencaCenter, 12);
+    await ApiFeedback.show(
+      context,
+      'Nenhum estacionamento ativo foi encontrado em "$normalizedCity". Tente outra cidade.',
+    );
   }
 
-  void openParkingDetails(
+  void _openMapService(MapServiceModel service) {
+    if (service.serviceType == 'vehicle_rental') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RentalCompanyPage(
+            company: {
+              'id': service.id,
+              'name': service.name,
+              'address': service.city,
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    final label = service.serviceType == 'tour_guide'
+        ? 'Guia turístico'
+        : 'Serviço';
+    ApiFeedback.show(context, '$label: ${service.name}');
+  }
+
+  Future<void> openParkingDetails(
     BuildContext context,
     ParkingModel parking,
     LatLng position,
-  ) {
+  ) async {
+    DateTime? scheduledArrival;
+    if (!parking.isOpen) {
+      scheduledArrival = await _pickScheduledArrival(context, parking);
+      if (!context.mounted || scheduledArrival == null) return;
+    }
     // Reset plano e serviços ao abrir
     ref.read(selectedPlanProvider.notifier).state = null;
+    ref.read(selectedDailyPeriodProvider.notifier).state = null;
     ref.read(selectedServicesProvider.notifier).state = SelectedServices();
     ref.read(selectedReservationGuideProvider.notifier).state = null;
+    ref.read(selectedArrivalEstimateProvider.notifier).state = scheduledArrival;
     final affiliatedGuidesFuture = ref
         .read(apiServiceProvider)
         .get('/parkings/${parking.id}/guides');
@@ -312,153 +430,194 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             // ✅ ETAPA 1 — Escolher Plano
             // ===============================
             if (plan == null) {
-              return Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 50,
-                        height: 5,
-                        margin: const EdgeInsets.only(bottom: 15),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade400,
-                          borderRadius: BorderRadius.circular(10),
+              return SafeArea(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    top: 20,
+                    bottom: 20 + MediaQuery.viewInsetsOf(context).bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 50,
+                          height: 5,
+                          margin: const EdgeInsets.only(bottom: 15),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade400,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
-                    ),
 
-                    Text(
-                      parking.name,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF102657),
+                      Text(
+                        parking.name,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF102657),
+                        ),
                       ),
-                    ),
 
-                    const SizedBox(height: 20),
+                      const SizedBox(height: 20),
 
-                    const Text(
-                      "Escolha a área da vaga:",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                      const Text(
+                        "Escolha a área da vaga:",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<AreaPreference>(
-                      initialValue: selectedArea,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo de vaga',
-                        prefixIcon: Icon(Icons.local_parking_outlined),
-                      ),
-                      items: [
-                        if (parking.coveredSpots > 0)
-                          DropdownMenuItem(
-                            value: AreaPreference.covered,
-                            child: Text('Coberta (${parking.coveredSpots})'),
-                          ),
-                        if (parking.uncoveredSpots > 0)
-                          DropdownMenuItem(
-                            value: AreaPreference.uncovered,
-                            child: Text(
-                              'Descoberta (${parking.uncoveredSpots})',
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<AreaPreference>(
+                        initialValue: selectedArea,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Tipo de vaga',
+                          prefixIcon: Icon(Icons.local_parking_outlined),
+                        ),
+                        items: [
+                          if (parking.coveredSpots > 0)
+                            DropdownMenuItem(
+                              value: AreaPreference.covered,
+                              child: Text('Coberta (${parking.coveredSpots})'),
                             ),
-                          ),
-                        if (parking.hasVipSpots && parking.vipSpots > 0)
-                          DropdownMenuItem(
-                            value: AreaPreference.vip,
-                            child: Text('VIP (${parking.vipSpots})'),
-                          ),
-                        if (parking.largeSpots > 0)
-                          DropdownMenuItem(
-                            value: AreaPreference.large,
-                            child: Text(
-                              'Espaço grande (${parking.largeSpots})',
+                          if (parking.uncoveredSpots > 0)
+                            DropdownMenuItem(
+                              value: AreaPreference.uncovered,
+                              child: Text(
+                                'Descoberta (${parking.uncoveredSpots})',
+                              ),
                             ),
-                          ),
-                        if (parking.motoHomeSpots > 0)
-                          DropdownMenuItem(
-                            value: AreaPreference.motorhome,
-                            child: Text('Motorhome (${parking.motoHomeSpots})'),
-                          ),
-                        if (parking.busSpots > 0)
-                          DropdownMenuItem(
-                            value: AreaPreference.bus,
-                            child: Text('Ônibus (${parking.busSpots})'),
-                          ),
-                        if (parking.pickupSpots > 0)
-                          DropdownMenuItem(
-                            value: AreaPreference.pickup,
-                            child: Text('Pickup (${parking.pickupSpots})'),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
+                          if (parking.hasVipSpots && parking.vipSpots > 0)
+                            DropdownMenuItem(
+                              value: AreaPreference.vip,
+                              child: Text('VIP (${parking.vipSpots})'),
+                            ),
+                          if (parking.largeSpots > 0)
+                            DropdownMenuItem(
+                              value: AreaPreference.large,
+                              child: Text(
+                                'Espaço grande (${parking.largeSpots})',
+                              ),
+                            ),
+                          if (parking.motoHomeSpots > 0)
+                            DropdownMenuItem(
+                              value: AreaPreference.motorhome,
+                              child: Text(
+                                'Motorhome (${parking.motoHomeSpots})',
+                              ),
+                            ),
+                          if (parking.busSpots > 0)
+                            DropdownMenuItem(
+                              value: AreaPreference.bus,
+                              child: Text('Ônibus (${parking.busSpots})'),
+                            ),
+                          if (parking.pickupSpots > 0)
+                            DropdownMenuItem(
+                              value: AreaPreference.pickup,
+                              child: Text('Pickup (${parking.pickupSpots})'),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            ref
+                                    .read(
+                                      selectedAreaPreferenceProvider.notifier,
+                                    )
+                                    .state =
+                                value;
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      const Text(
+                        "Escolha seu plano:",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+
+                      const SizedBox(height: 15),
+
+                      _PlanChoiceCard(
+                        icon: Icons.access_time,
+                        title: 'Avulso por hora',
+                        subtitle: 'Ideal para paradas rápidas',
+                        price:
+                            'R\$ ${_priceForArea(parking, selectedArea, hourly: true).toStringAsFixed(2)}',
+                        badge: 'Mais flexível',
+                        highlighted: true,
+                        onTap: () =>
+                            ref.read(selectedPlanProvider.notifier).state =
+                                PlanType.hourly,
+                      ),
+                      const SizedBox(height: 10),
+                      _PlanChoiceCard(
+                        icon: Icons.calendar_today,
+                        title: 'Diária',
+                        subtitle: 'Para permanecer o dia todo',
+                        price:
+                            'R\$ ${_priceForArea(parking, selectedArea).toStringAsFixed(2)}',
+                        badge: 'Dia completo',
+                        onTap: () {
+                          ref.read(selectedDailyDaysProvider.notifier).state =
+                              1;
                           ref
-                                  .read(selectedAreaPreferenceProvider.notifier)
-                                  .state =
-                              value;
-                        }
-                      },
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    const Text(
-                      "Escolha seu plano:",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                              .read(selectedDailyPeriodProvider.notifier)
+                              .state = DateTimeRange(
+                            start: DateTime.now(),
+                            end: DateTime.now(),
+                          );
+                          ref.read(selectedPlanProvider.notifier).state =
+                              PlanType.daily;
+                        },
                       ),
-                    ),
-
-                    const SizedBox(height: 15),
-
-                    _PlanChoiceCard(
-                      icon: Icons.access_time,
-                      title: 'Avulso por hora',
-                      subtitle: 'Ideal para paradas rápidas',
-                      price:
-                          'R\$ ${parking.pricing.firstHourPrice.toStringAsFixed(2)}',
-                      badge: 'Mais flexível',
-                      highlighted: true,
-                      onTap: () =>
+                      const SizedBox(height: 10),
+                      _PlanChoiceCard(
+                        icon: Icons.calendar_month,
+                        title: 'Mensal',
+                        subtitle: 'Melhor para rotina frequente',
+                        price:
+                            'R\$ ${_monthlyPriceForArea(parking, selectedArea).toStringAsFixed(2)}',
+                        badge: 'Recorrência',
+                        onTap: () =>
+                            ref.read(selectedPlanProvider.notifier).state =
+                                PlanType.monthly,
+                      ),
+                      const SizedBox(height: 10),
+                      _PlanChoiceCard(
+                        icon: Icons.date_range_rounded,
+                        title: context.strings.isEnglish ? 'Weekly' : 'Semanal',
+                        subtitle: context.strings.isEnglish
+                            ? 'For stays of several days'
+                            : 'Para permanências de vários dias',
+                        price:
+                            'R\$ ${_weeklyPriceForArea(parking, selectedArea).toStringAsFixed(2)}',
+                        badge: context.strings.isEnglish ? '7 days' : '7 dias',
+                        onTap: () {
+                          ref.read(selectedDailyDaysProvider.notifier).state =
+                              7;
+                          ref
+                              .read(selectedDailyPeriodProvider.notifier)
+                              .state = DateTimeRange(
+                            start: DateTime.now(),
+                            end: DateTime.now().add(const Duration(days: 6)),
+                          );
                           ref.read(selectedPlanProvider.notifier).state =
-                              PlanType.hourly,
-                    ),
-                    const SizedBox(height: 10),
-                    _PlanChoiceCard(
-                      icon: Icons.calendar_today,
-                      title: 'Diária',
-                      subtitle: 'Para permanecer o dia todo',
-                      price:
-                          'R\$ ${parking.pricing.dailyPrice.toStringAsFixed(2)}',
-                      badge: 'Dia completo',
-                      onTap: () {
-                        ref.read(selectedDailyDaysProvider.notifier).state = 1;
-                        ref.read(selectedPlanProvider.notifier).state =
-                            PlanType.daily;
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _PlanChoiceCard(
-                      icon: Icons.calendar_month,
-                      title: 'Mensal',
-                      subtitle: 'Melhor para rotina frequente',
-                      price:
-                          'R\$ ${parking.pricing.monthlyPrice.toStringAsFixed(2)}',
-                      badge: 'Recorrência',
-                      onTap: () =>
-                          ref.read(selectedPlanProvider.notifier).state =
-                              PlanType.monthly,
-                    ),
+                              PlanType.weekly;
+                        },
+                      ),
 
-                    const SizedBox(height: 20),
-                  ],
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               );
             }
@@ -468,6 +627,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
             // ===============================
 
             final dailyDays = ref.watch(selectedDailyDaysProvider);
+            final dailyPeriod = ref.watch(selectedDailyPeriodProvider);
             double total = 0;
 
             switch (plan) {
@@ -477,8 +637,13 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               case PlanType.daily:
                 total = _priceForArea(parking, selectedArea) * dailyDays;
                 break;
+              case PlanType.weekly:
+                total =
+                    _weeklyPriceForArea(parking, selectedArea) *
+                    (dailyDays / 7).ceil();
+                break;
               case PlanType.monthly:
-                total = parking.pricing.monthlyPrice;
+                total = _monthlyPriceForArea(parking, selectedArea);
                 break;
             }
 
@@ -536,7 +701,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                   const SizedBox(height: 8),
 
                   Text(
-                    "Plano selecionado: ${plan.name.toUpperCase()}",
+                    "${context.strings.isEnglish ? 'Selected plan' : 'Plano selecionado'}: ${_planLabel(plan, context.strings.isEnglish)}",
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF169FC4),
@@ -552,37 +717,59 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       "➕ Hora adicional: R\$ ${parking.pricing.additionalHourPrice}",
                     ),
 
-                  if (plan == PlanType.daily)
+                  if (plan == PlanType.daily || plan == PlanType.weekly)
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "📅 Diária: R\$ ${parking.pricing.dailyPrice} por dia",
+                          plan == PlanType.weekly
+                              ? "📆 ${context.strings.isEnglish ? 'Weekly' : 'Semanal'}: R\$ ${_weeklyPriceForArea(parking, selectedArea).toStringAsFixed(2)}"
+                              : "📅 ${context.strings.isEnglish ? 'Daily' : 'Diária'}: R\$ ${_priceForArea(parking, selectedArea).toStringAsFixed(2)} ${context.strings.isEnglish ? 'per day' : 'por dia'}",
                         ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<int>(
-                          initialValue: dailyDays,
-                          decoration: const InputDecoration(
-                            labelText: 'Quantidade de diárias / Number of days',
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.date_range_rounded),
+                          label: Text(
+                            dailyPeriod == null
+                                ? 'Selecionar período'
+                                : '${dailyPeriod.start.day.toString().padLeft(2, '0')}/${dailyPeriod.start.month.toString().padLeft(2, '0')} – ${dailyPeriod.end.day.toString().padLeft(2, '0')}/${dailyPeriod.end.month.toString().padLeft(2, '0')} ($dailyDays ${dailyDays == 1 ? 'dia' : 'dias'})',
                           ),
-                          items: [
-                            for (var day = 1; day <= 30; day++)
-                              DropdownMenuItem(value: day, child: Text('$day')),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              ref
-                                      .read(selectedDailyDaysProvider.notifier)
-                                      .state =
-                                  value;
-                            }
+                          onPressed: () async {
+                            final now = DateTime.now();
+                            final selected = await showDateRangePicker(
+                              context: context,
+                              firstDate: DateTime(now.year, now.month, now.day),
+                              lastDate: DateTime(now.year + 2, 12, 31),
+                              initialDateRange:
+                                  dailyPeriod ??
+                                  DateTimeRange(
+                                    start: DateTime(
+                                      now.year,
+                                      now.month,
+                                      now.day,
+                                    ),
+                                    end: DateTime(now.year, now.month, now.day),
+                                  ),
+                            );
+                            if (selected == null || !context.mounted) return;
+                            final days =
+                                selected.end.difference(selected.start).inDays +
+                                1;
+                            ref
+                                    .read(selectedDailyPeriodProvider.notifier)
+                                    .state =
+                                selected;
+                            ref.read(selectedDailyDaysProvider.notifier).state =
+                                days;
                           },
                         ),
                       ],
                     ),
 
                   if (plan == PlanType.monthly)
-                    Text("📆 Mensal: R\$ ${parking.pricing.monthlyPrice}"),
+                    Text(
+                      "📆 ${context.strings.isEnglish ? 'Monthly' : 'Mensal'}: R\$ ${_monthlyPriceForArea(parking, selectedArea).toStringAsFixed(2)}",
+                    ),
 
                   const SizedBox(height: 16),
                   Text(
@@ -769,6 +956,9 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           userLocationLat: position.latitude,
                           userLocationLng: position.longitude,
                           guideUserId: selectedGuideId,
+                          scheduledArrival: ref.read(
+                            selectedArrivalEstimateProvider,
+                          ),
                         );
                       },
                       child: const Text(
@@ -792,6 +982,43 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     );
   }
 
+  Future<DateTime?> _pickScheduledArrival(
+    BuildContext context,
+    ParkingModel parking,
+  ) async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 365)),
+      initialDate: now.add(const Duration(days: 1)),
+      helpText: 'Escolha o dia da reserva',
+    );
+    if (date == null || !context.mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 8, minute: 0),
+      helpText: 'Escolha o horário de chegada',
+    );
+    if (time == null || !context.mounted) return null;
+    final arrival = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (!arrival.isAfter(now)) {
+      ApiFeedback.show(context, 'Escolha uma data e horário futuros.');
+      return null;
+    }
+    return arrival;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Lista de parques carregada do provider
@@ -800,6 +1027,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     // Texto digitado no campo de busca
     final searchQuery = ref.watch(searchQueryProvider);
     final selectedCity = ref.watch(selectedCityProvider);
+    final mapServicesState = ref.watch(mapServicesProvider);
+    final selectedServiceType = ref.watch(selectedServiceTypeProvider);
 
     return Scaffold(
       body: parkingState.when(
@@ -819,6 +1048,18 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
           final query = _normalizeSearch(searchQuery);
           final filteredParkings = parkings.where((p) {
+            if (selectedCity.trim().isEmpty && userLocation != null) {
+              final distance = const Distance().as(
+                LengthUnit.Meter,
+                userLocation!,
+                LatLng(p.lat, p.lng),
+              );
+              if (distance > 10000) return false;
+            }
+            if (selectedServiceType != null &&
+                selectedServiceType != 'parking') {
+              return false;
+            }
             if (filter.covered && !p.hasCoveredArea) return false;
             if (filter.vip && !p.hasVipSpots) return false;
             if (query.isEmpty) return true;
@@ -852,7 +1093,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               FlutterMap(
                 mapController: mapController,
                 options: MapOptions(
-                  initialCenter: userLocation ?? _valencaCenter,
+                  initialCenter: userLocation ?? _brazilCenter,
                   initialZoom: 14,
                   interactionOptions: const InteractionOptions(
                     flags: InteractiveFlag.all,
@@ -861,7 +1102,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                 children: [
                   TileLayer(
                     urlTemplate:
-                        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                     subdomains: const ['a', 'b', 'c', 'd'],
                     userAgentPackageName: 'br.com.rptech.parkhere_user_app',
                   ),
@@ -880,6 +1121,36 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           height: 54,
                           child: const _CitySearchMarker(),
                         ),
+                      ...(mapServicesState.asData?.value ??
+                              const <MapServiceModel>[])
+                          .where(
+                            (service) =>
+                                (selectedCity.trim().isNotEmpty ||
+                                    userLocation == null ||
+                                    const Distance().as(
+                                          LengthUnit.Meter,
+                                          userLocation!,
+                                          LatLng(service.lat!, service.lng!),
+                                        ) <=
+                                        10000) &&
+                                service.serviceType != 'parking' &&
+                                (selectedServiceType == null ||
+                                    service.serviceType ==
+                                        selectedServiceType) &&
+                                service.lat != null &&
+                                service.lng != null,
+                          )
+                          .map(
+                            (service) => Marker(
+                              point: LatLng(service.lat!, service.lng!),
+                              width: 58,
+                              height: 68,
+                              child: GestureDetector(
+                                onTap: () => _openMapService(service),
+                                child: _ServiceMarker(service: service),
+                              ),
+                            ),
+                          ),
                       ...filteredParkings.map((parking) {
                         return Marker(
                           point: LatLng(parking.lat, parking.lng),
@@ -988,6 +1259,47 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           _focusSearchResults(match, value);
                         },
                       ),
+                      if (mapServicesState.hasValue) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 38,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            children: [
+                              _ServiceFilterChip(
+                                label: 'Todos',
+                                selected: selectedServiceType == null,
+                                onTap: () =>
+                                    ref
+                                            .read(
+                                              selectedServiceTypeProvider
+                                                  .notifier,
+                                            )
+                                            .state =
+                                        null,
+                              ),
+                              for (final type in {
+                                for (final item
+                                    in mapServicesState.asData?.value ??
+                                        const <MapServiceModel>[])
+                                  item.serviceType,
+                              })
+                                _ServiceFilterChip(
+                                  label: _serviceTypeLabel(type),
+                                  selected: selectedServiceType == type,
+                                  onTap: () =>
+                                      ref
+                                              .read(
+                                                selectedServiceTypeProvider
+                                                    .notifier,
+                                              )
+                                              .state =
+                                          type,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (selectedCity.trim().isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Align(
@@ -1155,6 +1467,29 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                                               ],
                                             ),
 
+                                            if (!parking.isOpen) ...[
+                                              const SizedBox(height: 6),
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.schedule,
+                                                    size: 16,
+                                                    color: Colors.orange,
+                                                  ),
+                                                  const SizedBox(width: 5),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'Fechado agora · ${_operatingHoursText(parking)}',
+                                                      style: const TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors.orange,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+
                                             const SizedBox(height: 10),
 
                                             _ArrivalPreview(
@@ -1204,8 +1539,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                                                       userLocation ??
                                                           _valencaCenter,
                                                     ),
-                                                child: const Text(
-                                                  "Ver detalhes",
+                                                child: Text(
+                                                  parking.isOpen
+                                                      ? "Ver detalhes"
+                                                      : "Agendar reserva",
                                                   style: TextStyle(
                                                     color: Color(0xFF169FC4),
                                                     fontWeight: FontWeight.bold,
@@ -1232,6 +1569,19 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     );
   }
 
+  String _operatingHoursText(ParkingModel parking) {
+    if (parking.operatingHours.isEmpty) {
+      return 'consulte o horário de funcionamento';
+    }
+    const keys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    final rule = parking.operatingHours[keys[DateTime.now().weekday - 1]];
+    if (rule is Map && rule['closed'] == true) return 'fechado hoje';
+    if (rule is Map && rule['open'] != null && rule['close'] != null) {
+      return 'hoje ${rule['open']}–${rule['close']}';
+    }
+    return 'consulte o horário de funcionamento';
+  }
+
   Future<void> _startRoute({
     required ParkingModel parking,
     required PlanType plan,
@@ -1241,6 +1591,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     required double userLocationLat,
     required double userLocationLng,
     required String? guideUserId,
+    DateTime? scheduledArrival,
   }) async {
     final configuredArea = ref.read(selectedAreaPreferenceProvider);
     final areaPreference = configuredArea == AreaPreference.any
@@ -1303,61 +1654,76 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       userLocationLat: userLocationLat,
       userLocationLng: userLocationLng,
     );
+    Future<String?> createPreReservation(DateTime? arrival) async {
+      final token = ref.read(authProvider).accessToken;
+      if (token == null) throw Exception('Sessao expirada. Entre novamente.');
+      final response = await ref.read(apiServiceProvider).postAuthorized(
+        '/reservations/pre-checkin',
+        {
+          'parking_id': parking.id,
+          'terms_accepted': true,
+          'terms_version': reservationTermsVersion,
+          'terms_locale': termsLocale,
+          'route_minutes': minutes,
+          if (arrival != null)
+            'arrival_estimate_at': arrival.toUtc().toIso8601String(),
+          'estimated_total': total,
+          'vehicle_id': activeVehicle.id,
+          'spot_type': switch (areaPreference) {
+            AreaPreference.covered => 'covered',
+            AreaPreference.uncovered => 'uncovered',
+            AreaPreference.vip => 'vip',
+            AreaPreference.large => 'large',
+            AreaPreference.motorhome => 'motorhome',
+            AreaPreference.bus => 'bus',
+            AreaPreference.pickup => 'pickup',
+            AreaPreference.any => 'any',
+          },
+          'area_preference': areaPreference.name,
+          'pricing_plan': plan.name,
+          'duration_hours': (plan == PlanType.daily || plan == PlanType.weekly)
+              ? dailyDays * 24
+              : 1,
+          if (guideUserId != null) 'guide_user_id': guideUserId,
+          'service_codes': [
+            if (selected.carWash) 'car_wash',
+            if (selected.tourGuide) 'tour_guide',
+            if (selected.transport) 'transport',
+          ],
+        },
+        token,
+      );
+      if (response['notification_status'] ==
+          'awaiting_operating_hours_approval') {
+        if (!mounted) return null;
+        ApiFeedback.show(
+          context,
+          'O horário está fora do expediente. O pagamento ficará retido até o estacionamento aceitar a entrada.',
+        );
+      }
+      final reservationId = response['id'] as String?;
+      preCheckin.reservationId = reservationId;
+      await ref
+          .read(preReservationProvider.notifier)
+          .createPreReservation(
+            parkingId: parking.id,
+            parkingName: parking.name,
+            routeMinutes: minutes,
+            reservationId: reservationId,
+            plan: plan.name,
+            spotType: areaPreference.name,
+            total: total,
+            availableSpots: parking.availableSpots,
+          );
+      return reservationId;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RoutePreviewPage(
           preCheckin: preCheckin,
-          onRouteSelected: () async {
-            final token = ref.read(authProvider).accessToken;
-            if (token == null) {
-              throw Exception('Sessao expirada. Entre novamente.');
-            }
-            final response = await ref.read(apiServiceProvider).postAuthorized(
-              '/reservations/pre-checkin',
-              {
-                'parking_id': parking.id,
-                'terms_accepted': true,
-                'terms_version': reservationTermsVersion,
-                'terms_locale': termsLocale,
-                'route_minutes': minutes,
-                'estimated_total': total,
-                'vehicle_id': activeVehicle.id,
-                'spot_type': switch (areaPreference) {
-                  AreaPreference.covered => 'covered',
-                  AreaPreference.uncovered => 'uncovered',
-                  AreaPreference.vip => 'vip',
-                  AreaPreference.large => 'large',
-                  AreaPreference.motorhome => 'motorhome',
-                  AreaPreference.bus => 'bus',
-                  AreaPreference.pickup => 'pickup',
-                  AreaPreference.any => 'any',
-                },
-                'area_preference': areaPreference.name,
-                'pricing_plan': plan.name,
-                'duration_hours': plan == PlanType.daily ? dailyDays * 24 : 1,
-                if (guideUserId != null) 'guide_user_id': guideUserId,
-                'service_codes': [
-                  if (selected.carWash) 'car_wash',
-                  if (selected.tourGuide) 'tour_guide',
-                  if (selected.transport) 'transport',
-                ],
-              },
-              token,
-            );
-            preCheckin.reservationId = response['id'] as String?;
-            await ref
-                .read(preReservationProvider.notifier)
-                .createPreReservation(
-                  parkingId: parking.id,
-                  parkingName: parking.name,
-                  routeMinutes: minutes,
-                  reservationId: response['id'] as String?,
-                  plan: plan.name,
-                  spotType: areaPreference.name,
-                  total: total,
-                  availableSpots: parking.availableSpots,
-                );
-          },
+          onRouteSelected: () => createPreReservation(scheduledArrival),
+          onGuaranteeReservation: createPreReservation,
         ),
       ),
     );
@@ -1368,18 +1734,46 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     AreaPreference area, {
     bool hourly = false,
   }) {
+    final category = parking.categoryPricing[area.name];
+    final configured = category == null
+        ? 0.0
+        : hourly
+        ? category.firstHourPrice
+        : category.dailyPrice;
+    if (configured > 0) return configured;
+    final covered =
+        area == AreaPreference.covered || area == AreaPreference.vip;
     if (hourly) {
-      return area == AreaPreference.covered
+      return covered
           ? parking.pricing.coveredFirstHourPrice
           : area == AreaPreference.uncovered
           ? parking.pricing.uncoveredFirstHourPrice
           : parking.pricing.firstHourPrice;
     }
-    return area == AreaPreference.covered
+    return covered
         ? parking.pricing.coveredDailyPrice
         : area == AreaPreference.uncovered
         ? parking.pricing.uncoveredDailyPrice
         : parking.pricing.dailyPrice;
+  }
+
+  String _planLabel(PlanType plan, bool english) => switch (plan) {
+    PlanType.hourly => english ? 'HOURLY' : 'POR HORA',
+    PlanType.daily => english ? 'DAILY' : 'DIÁRIA',
+    PlanType.weekly => english ? 'WEEKLY' : 'SEMANAL',
+    PlanType.monthly => english ? 'MONTHLY' : 'MENSAL',
+  };
+
+  double _monthlyPriceForArea(ParkingModel parking, AreaPreference area) {
+    final configured = parking.categoryPricing[area.name]?.monthlyPrice ?? 0;
+    if (configured > 0) return configured;
+    return parking.pricing.monthlyPrice;
+  }
+
+  double _weeklyPriceForArea(ParkingModel parking, AreaPreference area) {
+    final configured = parking.categoryPricing[area.name]?.weeklyPrice ?? 0;
+    if (configured > 0) return configured;
+    return parking.pricing.weeklyPrice;
   }
 
   AreaPreference _firstAvailableArea(ParkingModel parking) {
@@ -1454,6 +1848,7 @@ class _ParkingMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isEnglish = context.strings.isEnglish;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1472,18 +1867,92 @@ class _ParkingMarker extends StatelessWidget {
               ),
             ],
           ),
-          child: const Center(
+          child: Center(
             child: Text(
-              'P',
-              style: TextStyle(
+              isEnglish ? 'P' : 'E',
+              style: const TextStyle(
                 color: Colors.white,
-                fontSize: 22,
+                fontSize: 24,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
         ),
         Container(width: 3, height: 8, color: const Color(0xFF169FC4)),
+      ],
+    );
+  }
+}
+
+String _serviceTypeLabel(String type) => switch (type) {
+  'parking' => 'Estacionamentos',
+  'vehicle_rental' => 'Locadoras',
+  'tour_guide' => 'Guias turísticos',
+  _ => type,
+};
+
+class _ServiceFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ServiceFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        selectedColor: const Color(0xFFDDF7FB),
+        checkmarkColor: const Color(0xFF169FC4),
+        labelStyle: TextStyle(
+          color: selected ? const Color(0xFF102657) : const Color(0xFF55708F),
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _ServiceMarker extends StatelessWidget {
+  final MapServiceModel service;
+
+  const _ServiceMarker({required this.service});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon) = switch (service.serviceType) {
+      'vehicle_rental' => (
+        const Color(0xFF6B5CE7),
+        Icons.directions_car_filled,
+      ),
+      'tour_guide' => (const Color(0xFFE58A22), Icons.tour),
+      _ => (const Color(0xFF169FC4), Icons.local_parking),
+    };
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33102657), blurRadius: 10),
+            ],
+          ),
+          child: Icon(icon, color: Colors.white, size: 23),
+        ),
+        Container(width: 3, height: 8, color: color),
       ],
     );
   }
@@ -1503,7 +1972,11 @@ class _UserLocationMarker extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 3),
         boxShadow: const [BoxShadow(color: Color(0x33102657), blurRadius: 10)],
       ),
-      child: const Icon(Icons.navigation, color: Colors.white, size: 14),
+      child: const Icon(
+        Icons.directions_car_filled,
+        color: Colors.white,
+        size: 16,
+      ),
     );
   }
 }
