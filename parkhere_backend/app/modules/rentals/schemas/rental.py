@@ -38,6 +38,16 @@ class VehicleOut(VehicleCreate):
     status: str
     is_active: bool
 
+    @field_validator("photo_urls", mode="before")
+    @classmethod
+    def normalize_photo_urls(cls, value):
+        return value or []
+
+    @field_validator("specifications", mode="before")
+    @classmethod
+    def normalize_specifications(cls, value):
+        return value or {}
+
 
 class VehicleGroupCreate(BaseModel):
     company_id: str

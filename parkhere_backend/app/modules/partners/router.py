@@ -2116,8 +2116,7 @@ async def list_partner_operators(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _ensure_parking_staff(db, current_user)
-    await _ensure_partner_feature(db, current_user, 'team_management')
+    await _ensure_any_partner_staff(db, current_user)
     result = await db.execute(
         select(User)
         .where(User.tenant_id == current_user.tenant_id)
@@ -3137,6 +3136,30 @@ async def _ensure_parking_staff(db: AsyncSession, user: User):
         ).limit(1))
         if open_cash is None:
             raise HTTPException(status_code=403, detail="Abra o caixa do turno para acessar a operação")
+
+
+async def _ensure_any_partner_staff(db: AsyncSession, user: User):
+    """Allow partner users to load shared team screens for any service type."""
+    if user.role not in {
+        UserRoleEnum.PARTNER_MANAGER,
+        UserRoleEnum.PARKING_ADMIN,
+        UserRoleEnum.OPERATOR,
+    }:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if not user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant required")
+    profile = await db.scalar(select(PartnerProfile).where(
+        PartnerProfile.tenant_id == user.tenant_id,
+        PartnerProfile.approval_status == "approved",
+    ))
+    rental_company = await db.scalar(select(RentalCompany.id).where(
+        RentalCompany.tenant_id == user.tenant_id,
+        RentalCompany.is_active.is_(True),
+    ))
+    if profile is None and rental_company is None:
+        raise HTTPException(status_code=403, detail="Partner service required")
+    if user.role != UserRoleEnum.OPERATOR:
+        await _ensure_partner_feature(db, user, "team_management")
 
 
 async def _ensure_parking_profile(db: AsyncSession, user: User):

@@ -907,6 +907,7 @@ class _WebMenu extends ConsumerWidget {
             if (!isAdmin &&
                 isPartner &&
                 !isGuide &&
+                serviceUnits.any((unit) => unit.serviceType == 'parking') &&
                 (isPartnerOwner || (isOperator && operatorHasShiftToday)))
               _MenuCategory(
                 expanded: expanded,
@@ -1057,14 +1058,14 @@ class _WebMenu extends ConsumerWidget {
       items.add(
         _MenuItem(
           Icons.local_parking_outlined,
-          '${unit.name} · Serviços',
+          '${unit.name} / Mapa de vagas',
           _MainArea.map,
         ),
       );
       items.add(
         _MenuItem(
           Icons.confirmation_number_outlined,
-          '${unit.name} · Reservas',
+          '${unit.name} / Reservas',
           _MainArea.reservations,
         ),
       );
@@ -1075,14 +1076,21 @@ class _WebMenu extends ConsumerWidget {
       items.add(
         _MenuItem(
           Icons.directions_car_filled_outlined,
-          '${unit.name} · Veículos',
+          '${unit.name} / Operação da frota',
+          _MainArea.rentalManagement,
+        ),
+      );
+      items.add(
+        _MenuItem(
+          Icons.car_rental_outlined,
+          '${unit.name} / Veículos',
           _MainArea.rentalManagement,
         ),
       );
       items.add(
         _MenuItem(
           Icons.assignment_outlined,
-          '${unit.name} · Reservas',
+          '${unit.name} / Reservas',
           _MainArea.rentalReservations,
         ),
       );
@@ -1226,7 +1234,8 @@ class _MobileDrawer extends StatelessWidget {
                       ..._mobileOperationalItems(serviceUnits, onSelected),
                   ],
                 ),
-                if (isPartnerOwner || (isOperator && operatorHasShiftToday))
+                if (serviceUnits.any((unit) => unit.serviceType == 'parking') &&
+                    (isPartnerOwner || (isOperator && operatorHasShiftToday)))
                   _MobileMenuGroup(
                     title: 'Conveniência',
                     icon: Icons.storefront_outlined,
@@ -1333,14 +1342,14 @@ class _MobileDrawer extends StatelessWidget {
       items.add(
         _MobileMenuItem(
           icon: Icons.local_parking_outlined,
-          title: '${unit.name} · Serviços',
+          title: '${unit.name} / Mapa de vagas',
           onTap: () => onSelected(_MainArea.map),
         ),
       );
       items.add(
         _MobileMenuItem(
           icon: Icons.confirmation_number_outlined,
-          title: '${unit.name} · Reservas',
+          title: '${unit.name} / Reservas',
           onTap: () => onSelected(_MainArea.reservations),
         ),
       );
@@ -1351,14 +1360,21 @@ class _MobileDrawer extends StatelessWidget {
       items.add(
         _MobileMenuItem(
           icon: Icons.directions_car_filled_outlined,
-          title: '${unit.name} · Veículos',
+          title: '${unit.name} / Operação da frota',
+          onTap: () => onSelected(_MainArea.rentalManagement),
+        ),
+      );
+      items.add(
+        _MobileMenuItem(
+          icon: Icons.car_rental_outlined,
+          title: '${unit.name} / Veículos',
           onTap: () => onSelected(_MainArea.rentalManagement),
         ),
       );
       items.add(
         _MobileMenuItem(
           icon: Icons.assignment_outlined,
-          title: '${unit.name} · Reservas',
+          title: '${unit.name} / Reservas',
           onTap: () => onSelected(_MainArea.rentalReservations),
         ),
       );
