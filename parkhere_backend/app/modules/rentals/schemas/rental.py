@@ -24,7 +24,7 @@ class RentalCompanyOut(RentalCompanyCreate):
 class VehicleCreate(BaseModel):
     company_id: str
     group_id: str | None = None
-    vehicle_type: str = Field(default="car", pattern=r"^(car|suv|pickup|van|motorcycle|scooter|bicycle|bus|truck|motorhome|electric_car)$")
+    vehicle_type: str = Field(default="car", pattern=r"^(car|motorcycle|bicycle|quadricycle|suv|pickup|van|scooter|bus|truck|motorhome|electric_car)$")
     model: str = Field(min_length=1, max_length=120)
     brand: str = Field(min_length=1, max_length=80)
     price_per_day: float = Field(gt=0)
@@ -56,7 +56,7 @@ class VehicleOut(VehicleCreate):
 
 class VehicleUpdate(BaseModel):
     group_id: str | None = None
-    vehicle_type: str | None = Field(default=None, pattern=r"^(car|suv|pickup|van|motorcycle|scooter|bicycle|bus|truck|motorhome|electric_car)$")
+    vehicle_type: str | None = Field(default=None, pattern=r"^(car|motorcycle|bicycle|quadricycle|suv|pickup|van|scooter|bus|truck|motorhome|electric_car)$")
     model: str | None = Field(default=None, min_length=1, max_length=120)
     brand: str | None = Field(default=None, min_length=1, max_length=80)
     price_per_day: float | None = Field(default=None, gt=0)
@@ -73,7 +73,7 @@ class VehicleGroupCreate(BaseModel):
     company_id: str
     name: str = Field(min_length=2, max_length=120)
     code: str | None = Field(default=None, max_length=20)
-    vehicle_type: str = Field(default='car', pattern=r'^(car|suv|pickup|van|motorcycle|scooter|bicycle|bus|truck|motorhome|electric_car)$')
+    vehicle_type: str = Field(default='car', pattern=r'^(car|motorcycle|bicycle|quadricycle|suv|pickup|van|scooter|bus|truck|motorhome|electric_car)$')
     description: str | None = Field(default=None, max_length=2000)
     suggested_price_per_day: float | None = Field(default=None, gt=0)
 

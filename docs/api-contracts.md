@@ -1263,10 +1263,13 @@ tenant de serviços. Pode receber `parent_unit_id` e `parent_service_type` para
 ser organizada como filial de qualquer outro módulo; `parent_parking_id` existe
 apenas para compatibilidade com a matriz de estacionamento. A API valida a
 matriz de estacionamento quando esse campo legado é usado. `VehicleCreate` exige
-`vehicle_type` (`car`, `suv`, `pickup`, `van`, `motorcycle`, `scooter`,
-`bicycle`, `bus`, `truck`, `motorhome` ou `electric_car`).
+`vehicle_type` (`car`, `motorcycle`, `bicycle` ou `quadricycle`; os valores
+legados `suv`, `pickup`, `van`, `scooter`, `bus`, `truck`, `motorhome` e
+`electric_car` continuam aceitos para compatibilidade).
 Também aceita `photo_urls` (até oito referências de imagens próprias ou de um
-catálogo licenciado) e `specifications` (metadados do modelo/ano). A busca de
+catálogo licenciado) e `specifications` (metadados do modelo/ano, incluindo
+`group_code` (`A`, `B` ou `C`) e `category` (`hatch`, `sedan`, `suv`, `pickup`,
+`truck` ou `van`)). A busca de
 catálogo é feita sob demanda e retorna sugestões de fontes públicas; fotos
 reais devem ser revisadas pelo parceiro ou substituídas por uploads próprios.
 

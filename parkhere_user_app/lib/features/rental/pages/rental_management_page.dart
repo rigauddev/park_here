@@ -745,6 +745,12 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     String? groupId =
         vehicle?['group_id']?.toString() ??
         groups.firstOrNull?['id'] as String?;
+    var groupCode =
+        vehicle?['specifications']?['group_code']?.toString() ??
+        groups.firstOrNull?['code']?.toString() ??
+        'A';
+    var category =
+        vehicle?['specifications']?['category']?.toString() ?? 'hatch';
     List<Map<String, dynamic>> suggestions = const [];
     List<String> photoUrls = const [];
     Map<String, dynamic> specifications = const {};
@@ -794,7 +800,11 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 int.tryParse(year.text),
                 groupId,
                 photoUrls.where((item) => item.isNotEmpty).toList(),
-                specifications,
+                {
+                  ...specifications,
+                  'group_code': groupCode,
+                  'category': category,
+                },
                 int.tryParse(year.text),
                 crlvCode.text,
                 renavam.text,
@@ -839,6 +849,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                         );
                         setDialogState(() {
                           groupId = value;
+                          groupCode = selected['code']?.toString() ?? groupCode;
                           type = selected['vehicle_type'] as String? ?? 'car';
                           if (price.text.isEmpty &&
                               selected['suggested_price_per_day'] != null) {
@@ -848,25 +859,56 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                         });
                       },
                     ),
+                  if (groups.isEmpty)
+                    DropdownButtonFormField<String>(
+                      initialValue: groupCode,
+                      decoration: const InputDecoration(
+                        labelText: 'Grupo do veículo',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'A', child: Text('Grupo A')),
+                        DropdownMenuItem(value: 'B', child: Text('Grupo B')),
+                        DropdownMenuItem(value: 'C', child: Text('Grupo C')),
+                      ],
+                      onChanged: (value) =>
+                          setDialogState(() => groupCode = value ?? groupCode),
+                    ),
                   DropdownButtonFormField<String>(
                     initialValue: type,
-                    decoration: const InputDecoration(labelText: 'Tipo'),
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de veículo',
+                    ),
                     items: const [
                       DropdownMenuItem(value: 'car', child: Text('Carro')),
-                      DropdownMenuItem(value: 'suv', child: Text('SUV')),
-                      DropdownMenuItem(value: 'pickup', child: Text('Picape')),
-                      DropdownMenuItem(value: 'van', child: Text('Van')),
                       DropdownMenuItem(
                         value: 'motorcycle',
                         child: Text('Motocicleta'),
                       ),
                       DropdownMenuItem(
-                        value: 'electric_car',
-                        child: Text('Carro elétrico'),
+                        value: 'bicycle',
+                        child: Text('Bicicleta'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'quadricycle',
+                        child: Text('Quadriciclo'),
                       ),
                     ],
                     onChanged: (value) =>
                         setDialogState(() => type = value ?? 'car'),
+                  ),
+                  DropdownButtonFormField<String>(
+                    initialValue: category,
+                    decoration: const InputDecoration(labelText: 'Categoria'),
+                    items: const [
+                      DropdownMenuItem(value: 'hatch', child: Text('Hatch')),
+                      DropdownMenuItem(value: 'sedan', child: Text('Sedan')),
+                      DropdownMenuItem(value: 'suv', child: Text('SUV')),
+                      DropdownMenuItem(value: 'pickup', child: Text('Picape')),
+                      DropdownMenuItem(value: 'truck', child: Text('Caminhão')),
+                      DropdownMenuItem(value: 'van', child: Text('Van')),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => category = value ?? 'hatch'),
                   ),
                 ],
               ),

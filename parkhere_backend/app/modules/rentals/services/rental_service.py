@@ -66,7 +66,7 @@ class RentalService:
     async def catalog_models(make: str, year: int, vehicle_type: str = 'car', model: str | None = None):
         """Consulta o catálogo público vPIC sem persistir dados externos automaticamente."""
         params = urlencode({'format': 'json'})
-        path_type = 'car' if vehicle_type in {'car', 'suv', 'pickup', 'van', 'electric_car'} else 'motorcycle'
+        path_type = 'car' if vehicle_type in {'car', 'suv', 'pickup', 'van', 'quadricycle', 'electric_car'} else 'motorcycle'
         url = f'https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/{quote(make)}/modelyear/{year}/vehicletype/{path_type}?{params}'
 
         def fetch():
