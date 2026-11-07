@@ -29,10 +29,12 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
     final results = await Future.wait([
       _service.vehicles(companyId, token),
       _service.plans(companyId, token),
+      _service.groups(companyId, token),
     ]);
     return _RentalPageData(
       vehicles: results[0] as List<Map<String, dynamic>>,
       plans: results[1] as List<Map<String, dynamic>>,
+      groups: results[2] as List<Map<String, dynamic>>,
     );
   }
 
@@ -80,8 +82,11 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
                   const Text(
                     'Nenhum veículo disponível para o período informado.',
                   ),
-                for (final vehicle in data.vehicles)
-                  _vehicleCard(context, vehicle),
+                for (final group in data.groups)
+                  _groupCard(context, group, data),
+                if (data.groups.isEmpty)
+                  for (final vehicle in data.vehicles)
+                    _vehicleCard(context, vehicle),
               ],
             );
           },
@@ -140,8 +145,11 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
     );
   }
 
-  Future<void> _showReservationDialog(_RentalPageData data) async {
-    Map<String, dynamic>? vehicle = data.vehicles.first;
+  Future<void> _showReservationDialog(
+    _RentalPageData data, {
+    Map<String, dynamic>? initialVehicle,
+  }) async {
+    Map<String, dynamic>? vehicle = initialVehicle ?? data.vehicles.first;
     Map<String, dynamic>? plan = data.plans.isEmpty ? null : data.plans.first;
     DateTimeRange? range;
     TimeOfDay? pickupTime;
@@ -342,11 +350,133 @@ class _RentalCompanyPageState extends State<RentalCompanyPage> {
       ),
     );
   }
+
+  Widget _groupCard(
+    BuildContext context,
+    Map<String, dynamic> group,
+    _RentalPageData data,
+  ) {
+    final groupId = group['id']?.toString();
+    final vehicles = data.vehicles
+        .where((item) => item['group_id']?.toString() == groupId)
+        .toList();
+    if (vehicles.isEmpty) return const SizedBox.shrink();
+    final first = vehicles.first;
+    final photos = (first['photo_urls'] as List<dynamic>?) ?? const [];
+    final price =
+        (group['suggested_price_per_day'] ?? first['price_per_day']) as num?;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 150,
+              width: double.infinity,
+              child: photos.isEmpty
+                  ? const Icon(Icons.directions_car_filled, size: 72)
+                  : Image.network(
+                      photos.first.toString(),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.directions_car_filled, size: 72),
+                    ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              group['name']?.toString() ?? 'Grupo de veículos',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            Text(
+              vehicles
+                  .map((v) => '${v['brand'] ?? ''} ${v['model'] ?? ''}'.trim())
+                  .join(', '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if ((group['description']?.toString() ?? '').isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                group['description'].toString(),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              'A partir de R\$ ${price?.toStringAsFixed(2) ?? '0,00'} / dia',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () =>
+                        _showReservationDialog(data, initialVehicle: first),
+                    child: const Text('Reservar agora'),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _showGroupDetails(context, group, first),
+                  child: const Text('Mostrar detalhes'),
+                ),
+              ],
+            ),
+            const Text(
+              '* Modelo sujeito à disponibilidade da agência.',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showGroupDetails(
+    BuildContext context,
+    Map<String, dynamic> group,
+    Map<String, dynamic> vehicle,
+  ) {
+    final specs =
+        vehicle['specifications'] as Map<String, dynamic>? ?? const {};
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(group['name']?.toString() ?? 'Detalhes do grupo'),
+        content: SingleChildScrollView(
+          child: Text(
+            [
+              group['description']?.toString() ?? '',
+              if (specs.isNotEmpty)
+                specs.entries
+                    .map((entry) => '${entry.key}: ${entry.value}')
+                    .join('\n'),
+            ].where((item) => item.trim().isNotEmpty).join('\n\n'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _RentalPageData {
   final List<Map<String, dynamic>> vehicles;
   final List<Map<String, dynamic>> plans;
+  final List<Map<String, dynamic>> groups;
 
-  const _RentalPageData({required this.vehicles, required this.plans});
+  const _RentalPageData({
+    required this.vehicles,
+    required this.plans,
+    this.groups = const [],
+  });
 }
