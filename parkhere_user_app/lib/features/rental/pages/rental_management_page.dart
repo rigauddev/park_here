@@ -756,6 +756,21 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     Map<String, dynamic> specifications = const {};
     var searching = false;
     var step = 0;
+    final currentYear = DateTime.now().year;
+    final brandOptions = <String>{
+      'Fiat',
+      'Volkswagen',
+      'Chevrolet',
+      'Toyota',
+      'Hyundai',
+      'Honda',
+      'Renault',
+      'Nissan',
+      'Yamaha',
+      'BMW',
+      'Outra',
+      if (brand.text.trim().isNotEmpty) brand.text.trim(),
+    }.toList();
     return showDialog<_VehicleForm>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -918,22 +933,85 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
               isActive: step >= 1,
               content: Column(
                 children: [
-                  TextField(
-                    controller: brand,
+                  DropdownButtonFormField<String>(
+                    initialValue: brandOptions.contains(brand.text)
+                        ? brand.text
+                        : 'Outra',
                     decoration: const InputDecoration(labelText: 'Marca'),
+                    items: [
+                      for (final option in brandOptions)
+                        DropdownMenuItem(value: option, child: Text(option)),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() {
+                        brand.text = value == 'Outra' ? '' : value;
+                        suggestions = const [];
+                        model.clear();
+                      });
+                    },
                   ),
-                  TextField(
-                    controller: model,
-                    decoration: const InputDecoration(labelText: 'Modelo'),
-                  ),
+                  if (suggestions.isEmpty)
+                    TextField(
+                      controller: model,
+                      decoration: const InputDecoration(
+                        labelText: 'Modelo (busque para selecionar)',
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      initialValue:
+                          suggestions.any((item) => item['model'] == model.text)
+                          ? model.text
+                          : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Modelo encontrado',
+                      ),
+                      items: [
+                        for (final item in suggestions)
+                          DropdownMenuItem(
+                            value: item['model']?.toString(),
+                            child: Text(
+                              item['model']?.toString() ?? 'Modelo',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        final selected = suggestions.firstWhere(
+                          (item) => item['model']?.toString() == value,
+                        );
+                        setDialogState(() {
+                          model.text = value ?? '';
+                          photoUrls = [
+                            for (final url
+                                in (selected['photo_urls'] as List<dynamic>? ??
+                                    const []))
+                              url.toString(),
+                          ];
+                          specifications =
+                              (selected['specifications']
+                                  as Map<String, dynamic>?) ??
+                              const {};
+                        });
+                      },
+                    ),
                   TextField(
                     controller: plate,
                     decoration: const InputDecoration(labelText: 'Placa'),
                   ),
-                  TextField(
-                    controller: year,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Ano'),
+                  DropdownButtonFormField<int>(
+                    initialValue: int.tryParse(year.text),
+                    decoration: const InputDecoration(
+                      labelText: 'Ano do modelo',
+                    ),
+                    items: [
+                      for (var value = currentYear + 1; value >= 1980; value--)
+                        DropdownMenuItem(value: value, child: Text('$value')),
+                    ],
+                    onChanged: (value) => setDialogState(
+                      () => year.text = value?.toString() ?? '',
+                    ),
                   ),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -977,36 +1055,6 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text('Nenhum modelo encontrado ainda.'),
-                    ),
-                  if (suggestions.isNotEmpty)
-                    DropdownButtonFormField<Map<String, dynamic>>(
-                      initialValue: suggestions.first,
-                      decoration: const InputDecoration(
-                        labelText: 'Modelo encontrado',
-                      ),
-                      items: [
-                        for (final item in suggestions)
-                          DropdownMenuItem(
-                            value: item,
-                            child: Text(item['model'] as String? ?? 'Modelo'),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setDialogState(() {
-                          model.text = value['model'] as String? ?? model.text;
-                          photoUrls = [
-                            for (final url
-                                in (value['photo_urls'] as List<dynamic>? ??
-                                    const []))
-                              url.toString(),
-                          ];
-                          specifications =
-                              (value['specifications']
-                                  as Map<String, dynamic>?) ??
-                              const {};
-                        });
-                      },
                     ),
                   if (photoUrls.isNotEmpty)
                     SizedBox(
