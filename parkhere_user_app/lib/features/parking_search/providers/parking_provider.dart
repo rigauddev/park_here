@@ -3,9 +3,36 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/services/api_service.dart';
 import '../models/parking_model.dart';
+import '../models/map_service_model.dart';
+import 'search_provider.dart';
 
 /// Provider global
 final selectedParkingProvider = StateProvider<ParkingModel?>((ref) => null);
+final selectedServiceTypeProvider = StateProvider<String?>((ref) => null);
+
+final mapServicesProvider = FutureProvider<List<MapServiceModel>>((ref) async {
+  final city = ref.watch(selectedCityProvider);
+  final type = ref.watch(selectedServiceTypeProvider);
+  final query = <String, String>{
+    if (city.trim().isNotEmpty) 'city': city.trim(),
+    if (type != null && type.isNotEmpty) 'service_type': type,
+  };
+  final suffix = query.isEmpty
+      ? ''
+      : '?${query.entries.map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&')}';
+  try {
+    final payload = await ref
+        .read(apiServiceProvider)
+        .getMap('/parkings/services/map$suffix');
+    final rows = payload['services'] as List<dynamic>? ?? const [];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(MapServiceModel.fromJson)
+        .toList();
+  } catch (_) {
+    return const <MapServiceModel>[];
+  }
+});
 
 /// Provider do serviço central
 final apiServiceProvider = Provider<ApiService>((ref) {

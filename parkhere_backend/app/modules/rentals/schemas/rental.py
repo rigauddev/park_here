@@ -8,6 +8,7 @@ class RentalCompanyCreate(BaseModel):
     parent_service_type: str | None = Field(default=None, max_length=40)
     name: str = Field(min_length=2, max_length=120)
     address: str | None = Field(default=None, max_length=200)
+    city: str | None = Field(default=None, max_length=120)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     cnpj: str | None = Field(default=None, max_length=20)

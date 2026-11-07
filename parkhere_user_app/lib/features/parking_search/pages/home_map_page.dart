@@ -16,7 +16,9 @@ import '../../account/providers/account_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/route_preview_page.dart';
+import '../../rental/pages/rental_company_page.dart';
 import '../../reservation/providers/pre_reservation_provider.dart';
+import '../models/map_service_model.dart';
 import '../models/parking_model.dart';
 import '../models/payment_plan_enum.dart';
 import '../providers/filter_provider.dart';
@@ -341,6 +343,27 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       context,
       'Nenhum estacionamento ativo foi encontrado em "$normalizedCity". Tente outra cidade.',
     );
+  }
+
+  void _openMapService(MapServiceModel service) {
+    if (service.serviceType == 'vehicle_rental') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RentalCompanyPage(
+            company: {
+              'id': service.id,
+              'name': service.name,
+              'address': service.city,
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    final label = service.serviceType == 'tour_guide'
+        ? 'Guia turístico'
+        : 'Serviço';
+    ApiFeedback.show(context, '$label: ${service.name}');
   }
 
   Future<void> openParkingDetails(
@@ -981,6 +1004,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     // Texto digitado no campo de busca
     final searchQuery = ref.watch(searchQueryProvider);
     final selectedCity = ref.watch(selectedCityProvider);
+    final mapServicesState = ref.watch(mapServicesProvider);
+    final selectedServiceType = ref.watch(selectedServiceTypeProvider);
 
     return Scaffold(
       body: parkingState.when(
@@ -1000,6 +1025,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
           final query = _normalizeSearch(searchQuery);
           final filteredParkings = parkings.where((p) {
+            if (selectedServiceType != null &&
+                selectedServiceType != 'parking') {
+              return false;
+            }
             if (filter.covered && !p.hasCoveredArea) return false;
             if (filter.vip && !p.hasVipSpots) return false;
             if (query.isEmpty) return true;
@@ -1061,6 +1090,28 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           height: 54,
                           child: const _CitySearchMarker(),
                         ),
+                      ...(mapServicesState.asData?.value ??
+                              const <MapServiceModel>[])
+                          .where(
+                            (service) =>
+                                service.serviceType != 'parking' &&
+                                (selectedServiceType == null ||
+                                    service.serviceType ==
+                                        selectedServiceType) &&
+                                service.lat != null &&
+                                service.lng != null,
+                          )
+                          .map(
+                            (service) => Marker(
+                              point: LatLng(service.lat!, service.lng!),
+                              width: 58,
+                              height: 68,
+                              child: GestureDetector(
+                                onTap: () => _openMapService(service),
+                                child: _ServiceMarker(service: service),
+                              ),
+                            ),
+                          ),
                       ...filteredParkings.map((parking) {
                         return Marker(
                           point: LatLng(parking.lat, parking.lng),
@@ -1169,6 +1220,47 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                           _focusSearchResults(match, value);
                         },
                       ),
+                      if (mapServicesState.hasValue) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 38,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            children: [
+                              _ServiceFilterChip(
+                                label: 'Todos',
+                                selected: selectedServiceType == null,
+                                onTap: () =>
+                                    ref
+                                            .read(
+                                              selectedServiceTypeProvider
+                                                  .notifier,
+                                            )
+                                            .state =
+                                        null,
+                              ),
+                              for (final type in {
+                                for (final item
+                                    in mapServicesState.asData?.value ??
+                                        const <MapServiceModel>[])
+                                  item.serviceType,
+                              })
+                                _ServiceFilterChip(
+                                  label: _serviceTypeLabel(type),
+                                  selected: selectedServiceType == type,
+                                  onTap: () =>
+                                      ref
+                                              .read(
+                                                selectedServiceTypeProvider
+                                                    .notifier,
+                                              )
+                                              .state =
+                                          type,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (selectedCity.trim().isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Align(
@@ -1748,6 +1840,80 @@ class _ParkingMarker extends StatelessWidget {
           ),
         ),
         Container(width: 3, height: 8, color: const Color(0xFF169FC4)),
+      ],
+    );
+  }
+}
+
+String _serviceTypeLabel(String type) => switch (type) {
+  'parking' => 'Estacionamentos',
+  'vehicle_rental' => 'Locadoras',
+  'tour_guide' => 'Guias turísticos',
+  _ => type,
+};
+
+class _ServiceFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ServiceFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        selectedColor: const Color(0xFFDDF7FB),
+        checkmarkColor: const Color(0xFF169FC4),
+        labelStyle: TextStyle(
+          color: selected ? const Color(0xFF102657) : const Color(0xFF55708F),
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _ServiceMarker extends StatelessWidget {
+  final MapServiceModel service;
+
+  const _ServiceMarker({required this.service});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon) = switch (service.serviceType) {
+      'vehicle_rental' => (
+        const Color(0xFF6B5CE7),
+        Icons.directions_car_filled,
+      ),
+      'tour_guide' => (const Color(0xFFE58A22), Icons.tour),
+      _ => (const Color(0xFF169FC4), Icons.local_parking),
+    };
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33102657), blurRadius: 10),
+            ],
+          ),
+          child: Icon(icon, color: Colors.white, size: 23),
+        ),
+        Container(width: 3, height: 8, color: color),
       ],
     );
   }

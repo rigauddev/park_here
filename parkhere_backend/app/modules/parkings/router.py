@@ -3,7 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 import unicodedata
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,8 @@ from app.core.database import get_db
 from app.modules.parkings.models import Parking
 from app.modules.parkings.schemas import ParkingPricingResponse, ParkingResponse
 from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.partners.models import PartnerProfile
+from app.modules.rentals.models import RentalCompany, RentalVehicle
 from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/parkings", tags=["Parkings"])
@@ -51,16 +53,23 @@ async def list_service_cities(
     list and never becomes a client-side parsing error. The app can still
     accept arbitrary text and then display the no-results state.
     """
-    rows = await db.scalars(
-        select(Parking.city)
-        .where(Parking.is_active.is_(True))
+    parking_rows = await db.scalars(
+        select(Parking.city).where(Parking.is_active.is_(True)).distinct()
+    )
+    rental_rows = await db.scalars(
+        select(RentalCompany.city).where(RentalCompany.is_active.is_(True)).distinct()
+    )
+    partner_rows = await db.scalars(
+        select(PartnerProfile.city)
+        .where(PartnerProfile.approval_status == 'approved', PartnerProfile.city.is_not(None))
         .distinct()
-        .order_by(Parking.city.asc())
     )
     normalized_query = _normalize_city(q) if q else ""
     values = []
     seen = set()
-    for value in rows.all():
+    values_to_scan = list(parking_rows.all()) + list(partner_rows.all())
+    values_to_scan.extend(rental_rows.all())
+    for value in values_to_scan:
         if not value:
             continue
         if normalized_query and normalized_query not in _normalize_city(value):
@@ -71,6 +80,79 @@ async def list_service_cities(
             seen.add(key)
             values.append(canonical)
     return {"cities": values}
+
+
+@router.get('/services/map')
+async def list_map_services(
+    city: str | None = Query(default=None, min_length=2),
+    service_type: str | None = Query(default=None, max_length=40),
+    db: AsyncSession = Depends(get_db),
+):
+    """Public discovery index used by the map.
+
+    Each item is a service unit, not a second reservation contract. Parking
+    keeps its existing detail flow; other service types are exposed so the map
+    can filter and route to their own module pages.
+    """
+    normalized_city = _normalize_city(city) if city else ''
+    allowed = {'parking', 'vehicle_rental', 'tour_guide'}
+    requested = service_type if service_type in allowed else None
+    items = []
+
+    if requested in (None, 'parking'):
+        parkings = (await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all()
+        for parking in parkings:
+            if normalized_city and normalized_city not in _normalize_city(parking.city):
+                continue
+            items.append({
+                'id': parking.id, 'name': parking.name, 'city': _canonical_city(parking.city),
+                'lat': parking.lat, 'lng': parking.lng, 'service_type': 'parking',
+                'available_count': parking.available_spots, 'is_open': _is_open_now(parking),
+            })
+
+    if requested in (None, 'vehicle_rental'):
+        companies = (await db.scalars(select(RentalCompany).where(RentalCompany.is_active.is_(True)))).all()
+        for company in companies:
+            company_city = company.city or ''
+            if normalized_city and normalized_city not in _normalize_city(company_city):
+                continue
+            available = await db.scalar(
+                select(func.count(RentalVehicle.id)).where(
+                    RentalVehicle.company_id == company.id,
+                    RentalVehicle.is_active.is_(True),
+                    RentalVehicle.status == 'available',
+                )
+            )
+            items.append({
+                'id': company.id, 'name': company.name, 'city': company_city,
+                'lat': company.latitude, 'lng': company.longitude,
+                'service_type': 'vehicle_rental', 'available_count': int(available or 0),
+                'is_open': True,
+            })
+
+    if requested in (None, 'tour_guide'):
+        profiles = (await db.scalars(select(PartnerProfile).where(
+            PartnerProfile.service_type == 'tour_guide',
+            PartnerProfile.approval_status == 'approved',
+        ))).all()
+        for profile in profiles:
+            profile_city = profile.city or ''
+            if normalized_city and normalized_city not in _normalize_city(profile_city):
+                continue
+            if profile.latitude is None or profile.longitude is None:
+                continue
+            items.append({
+                'id': profile.tenant_id, 'name': profile.company_name,
+                'city': _canonical_city(profile_city), 'lat': profile.latitude,
+                'lng': profile.longitude, 'service_type': 'tour_guide',
+                'available_count': 1, 'is_open': True,
+            })
+
+    return {
+        'city': _canonical_city(city) if city else None,
+        'service_types': sorted({item['service_type'] for item in items}),
+        'services': items,
+    }
 
 
 @router.get('/{parking_id}/guides')

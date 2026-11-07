@@ -338,3 +338,18 @@ e horário.
   Uma venda Pix em homologação exibe um QR Code fictício identificado como
   simulado; ele não movimenta dinheiro real.
 
+# Descoberta por cidade e serviço
+
+- Depois de recriar o seed, entre como cliente e selecione **Valença**. O mapa
+  deve mostrar os dois estacionamentos, as duas locadoras (incluindo a filial
+  da empresa híbrida) e os dois guias aprovados.
+- Use os chips de serviço **Estacionamentos**, **Locadoras** e **Guias
+  turísticos**. Cada chip deve ocultar os demais marcadores sem alterar o
+  fluxo de reserva do estacionamento.
+- Pesquise `Valenca` sem acento e confirme que a cidade exibida volta como
+  **Valença**. Pesquise uma cidade inexistente e confirme estado vazio, sem
+  erro ou dados fictícios.
+- Toque no marcador de locadora e confirme a abertura da página de planos e
+  frota. O marcador de guia apresenta a identificação do serviço; o fluxo de
+  contratação de guia permanece no módulo próprio.
+

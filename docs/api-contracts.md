@@ -1316,3 +1316,17 @@ Blocos operacionais adicionais:
 - `GET /rentals/fines` lista multas por escopo de usuário/tenant e
   `POST /rentals/fines` registra uma ocorrência vinculada à reserva e ao
   veículo, para cobrança posterior pelo módulo central.
+
+## Descoberta de serviços no mapa
+
+`GET /parkings/cities?q=` retorna cidades que possuem pelo menos um serviço
+ativo (estacionamento, locadora ou guia aprovado). A busca ignora acentos e
+retorna a grafia canônica para apresentação.
+
+`GET /parkings/services/map?city=&service_type=` retorna o índice público de
+unidades disponíveis para o mapa. `service_type` aceita `parking`,
+`vehicle_rental` e `tour_guide`; omitido, retorna todos os tipos cadastrados
+na cidade. Cada item contém `id`, `name`, `city`, `lat`, `lng`,
+`service_type`, `available_count` e `is_open`. O mapa mantém os detalhes e a
+reserva de estacionamento no endpoint existente; locadoras e guias são
+encaminhados aos módulos próprios.

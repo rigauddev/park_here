@@ -15,6 +15,7 @@ class RentalCompany(BaseModel):
     unit_kind = Column(String(20), nullable=False, default="branch")
     name = Column(String(120), nullable=False)
     address = Column(String(200), nullable=True)
+    city = Column(String(120), nullable=True, index=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     cnpj = Column(String(20), nullable=True)

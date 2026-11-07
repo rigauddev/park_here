@@ -236,6 +236,7 @@ async def seed_homologation_valenca():
             service_type="vehicle_rental",
             unit_kind="branch",
             address="Rua Desembargador Amâncio de Souza, 709, Valença - BA",
+            city="Valença",
             latitude=-13.3703,
             longitude=-39.0731,
             cnpj=rental_tenant.cnpj,
@@ -272,6 +273,7 @@ async def seed_homologation_valenca():
             service_type="vehicle_rental",
             unit_kind="branch",
             address="Rua das Palmeiras, 120, Valença - BA",
+            city="Valença",
             latitude=-13.3712,
             longitude=-39.0719,
             cnpj=hybrid_tenant.cnpj,
@@ -311,6 +313,9 @@ async def seed_homologation_valenca():
                 document_number=guide_tenant.cnpj,
                 registration_status="active",
                 responsible_name=f"Guia Turístico {index}",
+                city="Valença",
+                latitude=-13.3703 + (index * 0.001),
+                longitude=-39.0731 + (index * 0.001),
                 approval_status="approved",
             ))
             guide_users.append(User(
