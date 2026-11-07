@@ -1236,7 +1236,9 @@ e credenciais apenas no backend.
 `GET /rentals/companies` lista empresas ativas. Clientes veem as empresas
 publicadas; parceiros veem apenas as unidades do próprio tenant.
 
-`GET /rentals/companies/{company_id}/vehicles` lista veículos disponíveis.
+`GET /rentals/companies/{company_id}/vehicles` lista veículos disponíveis para
+clientes e toda a frota ativa (incluindo reservados e em manutenção) para o
+gestor/operador do tenant.
 `POST /rentals/companies` e `POST /rentals/vehicles` são restritos ao gestor do
 tenant e exigem que o parceiro de locação esteja aprovado pela plataforma. O
 preço diário é cadastrado pelo gestor e nunca é confiado ao app.
@@ -1272,6 +1274,9 @@ reais devem ser revisadas pelo parceiro ou substituídas por uploads próprios.
 locadora. `POST /rentals/groups` cria um grupo editável e reutilizável; planos
 e veículos podem referenciar `group_id`. O seed fornece Econômico, SUV conforto
 e Duas rodas, mas o gestor pode duplicar/editar grupos após a aprovação.
+Cada grupo retorna `is_blocked`; `PATCH /rentals/groups/{group_id}/block?blocked=true|false`
+bloqueia/desbloqueia a categoria para novas reservas quando a frota estiver
+sem disponibilidade. O bloqueio não apaga veículos nem reservas existentes.
 
 `GET /rentals/catalog/models?make=&year=&vehicle_type=&model=` consulta o vPIC
 da NHTSA para sugerir marca/modelo/ano e consulta imagens públicas do Wikimedia
@@ -1288,6 +1293,8 @@ Planos e frota:
   opcional, caução, itens incluídos e limite de quilometragem.
 - `POST /rentals/reservations` aceita `plan_id`; o preço é calculado no
   backend usando o plano da mesma locadora.
+- A resposta da reserva inclui `payment_status` (`pending` ou `paid`), além do
+  status operacional (`pending`, `checked_in`, `completed`).
 - `GET /rentals/vehicles/{vehicle_id}/maintenance` lista o histórico de
   manutenção em ordem decrescente.
 - `POST /rentals/maintenance` registra manutenção, próxima revisão,

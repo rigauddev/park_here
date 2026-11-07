@@ -14,9 +14,13 @@ class RentalManagementPage extends StatefulWidget {
 
 class _RentalManagementPageState extends State<RentalManagementPage> {
   final _service = RentalService();
-  late Future<List<Map<String, dynamic>>> _future;
+  late Future<_RentalDashboardData> _future;
   String? _token;
   Map<String, dynamic>? _selected;
+  String _statusFilter = 'all';
+  String _categoryFilter = 'all';
+  String _search = '';
+  bool _gridView = true;
 
   @override
   void initState() {
@@ -24,7 +28,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     _future = _load();
   }
 
-  Future<List<Map<String, dynamic>>> _load() async {
+  Future<_RentalDashboardData> _load() async {
     _token = (await LocalStorageService().getTokens())['access'];
     if (_token == null) throw Exception('Sessão expirada.');
     final companies = await _service.companies(_token!);
@@ -33,7 +37,21 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
       _selected = companies.where((item) => item['id'] == id).firstOrNull;
     }
     _selected ??= companies.firstOrNull;
-    return companies;
+    if (_selected == null) return _RentalDashboardData(companies: companies);
+    final companyId = _selected!['id'] as String;
+    final results = await Future.wait([
+      _service.vehicles(companyId, _token!),
+      _service.groups(companyId, _token!),
+      _service.reservations(_token!),
+    ]);
+    return _RentalDashboardData(
+      companies: companies,
+      vehicles: results[0] as List<Map<String, dynamic>>,
+      groups: results[1] as List<Map<String, dynamic>>,
+      reservations: (results[2] as List<Map<String, dynamic>>)
+          .where((item) => item['company_id'] == companyId)
+          .toList(),
+    );
   }
 
   Future<void> _createCompany() async {
@@ -84,7 +102,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestão da locadora'),
+        title: const Text('Operação da frota'),
         actions: [
           IconButton(
             onPressed: () => setState(() => _future = _load()),
@@ -92,7 +110,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
           ),
         ],
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
+      body: FutureBuilder<_RentalDashboardData>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting)
@@ -104,7 +122,8 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 child: Text('${snapshot.error}'),
               ),
             );
-          final companies = snapshot.data ?? const [];
+          final data = snapshot.data!;
+          final companies = data.companies;
           if (companies.isEmpty)
             return Center(
               child: FilledButton.icon(
@@ -113,56 +132,450 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 label: const Text('Cadastrar locadora'),
               ),
             );
-          return ListView(
-            padding: const EdgeInsets.all(16),
+          return _dashboard(context, data);
+        },
+      ),
+    );
+  }
+
+  Widget _dashboard(BuildContext context, _RentalDashboardData data) {
+    final vehicles = data.vehicles.where((vehicle) {
+      final status = vehicle['status']?.toString() ?? '';
+      final groupId = vehicle['group_id']?.toString();
+      final text =
+          '${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''} ${vehicle['plate'] ?? ''}'
+              .toLowerCase();
+      return (_statusFilter == 'all' || status == _statusFilter) &&
+          (_categoryFilter == 'all' || groupId == _categoryFilter) &&
+          (_search.isEmpty || text.contains(_search.toLowerCase()));
+    }).toList();
+    final available = data.vehicles
+        .where((v) => v['status'] == 'available')
+        .length;
+    final reserved = data.vehicles
+        .where((v) => v['status'] == 'reserved')
+        .length;
+    final maintenance = data.vehicles
+        .where((v) => v['status'] == 'maintenance')
+        .length;
+    final paid = data.reservations
+        .where((r) => r['payment_status'] == 'paid')
+        .toList();
+    final pending = data.reservations
+        .where((r) => r['payment_status'] != 'paid')
+        .toList();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 900;
+        return RefreshIndicator(
+          onRefresh: () async => setState(() => _future = _load()),
+          child: ListView(
+            padding: EdgeInsets.all(compact ? 16 : 28),
             children: [
-              DropdownButtonFormField<String>(
-                value: _selected?['id'] as String?,
-                decoration: const InputDecoration(
-                  labelText: 'Unidade de locação',
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final item in companies)
-                    DropdownMenuItem(
-                      value: item['id'] as String,
-                      child: Text(item['name'] as String? ?? 'Locadora'),
-                    ),
-                ],
-                onChanged: (id) => setState(
-                  () => _selected = companies.firstWhere(
-                    (item) => item['id'] == id,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                runSpacing: 12,
                 children: [
-                  Text('Frota', style: Theme.of(context).textTheme.titleLarge),
-                  const Spacer(),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Parceiro de locação',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      Text(
+                        'Operação da frota',
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const Text(
+                        'Disponibilidade, reservas e status dos veículos da unidade.',
+                      ),
+                    ],
+                  ),
+                  SizedBox(
+                    width: compact ? constraints.maxWidth : 300,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _selected?['id'] as String?,
+                      decoration: const InputDecoration(
+                        labelText: 'Unidade',
+                        prefixIcon: Icon(Icons.location_on_outlined),
+                      ),
+                      items: [
+                        for (final item in data.companies)
+                          DropdownMenuItem(
+                            value: item['id'] as String,
+                            child: Text(item['name'] as String? ?? 'Locadora'),
+                          ),
+                      ],
+                      onChanged: (id) {
+                        if (id == null) return;
+                        setState(() {
+                          _selected = data.companies.firstWhere(
+                            (item) => item['id'] == id,
+                          );
+                          _future = _load();
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _Metric(
+                    label: 'Veículos na frota',
+                    value: '${data.vehicles.length}',
+                    icon: Icons.directions_car_outlined,
+                    color: Colors.blue,
+                  ),
+                  _Metric(
+                    label: 'Disponíveis',
+                    value: '$available',
+                    icon: Icons.check_circle_outline,
+                    color: Colors.green,
+                  ),
+                  _Metric(
+                    label: 'Em locação',
+                    value: '$reserved',
+                    icon: Icons.event_available_outlined,
+                    color: Colors.indigo,
+                  ),
+                  _Metric(
+                    label: 'Em manutenção',
+                    value: '$maintenance',
+                    icon: Icons.build_outlined,
+                    color: Colors.teal,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: compact ? constraints.maxWidth : 190,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _statusFilter,
+                      decoration: const InputDecoration(labelText: 'Status'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text('Todos os status'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'available',
+                          child: Text('Disponíveis'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'reserved',
+                          child: Text('Reservados'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'maintenance',
+                          child: Text('Manutenção'),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _statusFilter = value ?? 'all'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: compact ? constraints.maxWidth : 190,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _categoryFilter,
+                      decoration: const InputDecoration(labelText: 'Categoria'),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('Todas as categorias'),
+                        ),
+                        for (final group in data.groups)
+                          DropdownMenuItem(
+                            value: group['id'] as String,
+                            child: Text(
+                              group['name'] as String? ?? 'Categoria',
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _categoryFilter = value ?? 'all'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: compact ? constraints.maxWidth : 260,
+                    child: TextField(
+                      onChanged: (value) =>
+                          setState(() => _search = value.trim()),
+                      decoration: const InputDecoration(
+                        labelText: 'Buscar veículo',
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Placa, modelo ou código',
+                      ),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _manageGroups(data.groups),
+                    icon: const Icon(Icons.block_outlined),
+                    label: const Text('Bloquear categoria'),
+                  ),
                   FilledButton.icon(
                     onPressed: _createVehicle,
-                    icon: const Icon(Icons.directions_car),
-                    label: const Text('Novo veículo'),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Cadastrar veículo'),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              if (_selected != null)
-                _FleetList(
-                  companyId: _selected!['id'] as String,
-                  service: _service,
-                  token: _token!,
+              const SizedBox(height: 24),
+              _sectionHeader(
+                context,
+                'Mapa de disponibilidade da frota',
+                'Visão por veículo e status em tempo real.',
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Text('Exibir por: '),
+                  IconButton(
+                    onPressed: () => setState(() => _gridView = true),
+                    icon: Icon(
+                      Icons.grid_view,
+                      color: _gridView
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => setState(() => _gridView = false),
+                    icon: Icon(
+                      Icons.view_list,
+                      color: !_gridView
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+              _gridView ? _vehicleGrid(vehicles) : _vehicleList(vehicles),
+              const SizedBox(height: 28),
+              _sectionHeader(
+                context,
+                'Reservas',
+                'Acompanhe as reservas por status de pagamento.',
+              ),
+              const SizedBox(height: 12),
+              if (compact)
+                Column(
+                  children: [
+                    _reservationPanel(
+                      context,
+                      'Confirmadas e pagas',
+                      paid,
+                      Colors.green,
+                    ),
+                    const SizedBox(height: 16),
+                    _reservationPanel(
+                      context,
+                      'Aguardando pagamento',
+                      pending,
+                      Colors.orange,
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _reservationPanel(
+                        context,
+                        'Confirmadas e pagas',
+                        paid,
+                        Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _reservationPanel(
+                        context,
+                        'Aguardando pagamento',
+                        pending,
+                        Colors.orange,
+                      ),
+                    ),
+                  ],
                 ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
               OutlinedButton.icon(
                 onPressed: _createCompany,
                 icon: const Icon(Icons.add_business),
                 label: const Text('Adicionar unidade de locação'),
               ),
             ],
-          );
-        },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sectionHeader(BuildContext context, String title, String subtitle) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      );
+
+  Widget _vehicleGrid(List<Map<String, dynamic>> vehicles) => LayoutBuilder(
+    builder: (context, constraints) {
+      final columns = constraints.maxWidth >= 1100
+          ? 4
+          : constraints.maxWidth >= 700
+          ? 3
+          : 2;
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: vehicles.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 1.15,
+        ),
+        itemBuilder: (_, index) => _VehicleTile(vehicle: vehicles[index]),
+      );
+    },
+  );
+
+  Widget _vehicleList(List<Map<String, dynamic>> vehicles) => Card(
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        for (final vehicle in vehicles)
+          ListTile(
+            leading: _VehicleThumb(vehicle: vehicle, size: 58),
+            title: Text('${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''}'),
+            subtitle: Text(
+              '${vehicle['plate'] ?? 'Sem placa'} • ${vehicle['vehicle_type'] ?? 'car'}',
+            ),
+            trailing: _StatusChip(
+              status: vehicle['status']?.toString() ?? 'available',
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _reservationPanel(
+    BuildContext context,
+    String title,
+    List<Map<String, dynamic>> reservations,
+    Color color,
+  ) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.circle, size: 12, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Chip(label: Text('${reservations.length}')),
+            ],
+          ),
+          const Divider(),
+          if (reservations.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('Nenhuma reserva neste status.'),
+            ),
+          for (final reservation in reservations.take(5))
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text('#${reservation['id'] ?? '—'}'),
+              subtitle: Text(
+                '${reservation['start_date'] ?? '—'} → ${reservation['end_date'] ?? '—'}',
+              ),
+              trailing: Text(
+                'R\$ ${reservation['final_total'] ?? reservation['total_price'] ?? '—'}',
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _manageGroups(List<Map<String, dynamic>> groups) async {
+    if (groups.isEmpty || _token == null) {
+      _message('Cadastre uma categoria antes de bloquear a frota.');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Bloqueio de categorias'),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final group in groups)
+                SwitchListTile(
+                  title: Text(group['name'] as String? ?? 'Categoria'),
+                  subtitle: Text(
+                    (group['is_blocked'] == true)
+                        ? 'Bloqueada para novas reservas'
+                        : 'Disponível para reservas',
+                  ),
+                  value: group['is_blocked'] == true,
+                  onChanged: (value) async {
+                    try {
+                      await _service.setGroupBlocked(
+                        groupId: group['id'] as String,
+                        token: _token!,
+                        blocked: value,
+                      );
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      if (mounted) setState(() => _future = _load());
+                    } catch (error) {
+                      _message(
+                        'Não foi possível atualizar a categoria: $error',
+                      );
+                    }
+                  },
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Fechar'),
+          ),
+        ],
       ),
     );
   }
@@ -468,52 +881,155 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
   }
 }
 
-class _FleetList extends StatelessWidget {
-  final String companyId;
-  final RentalService service;
-  final String token;
-  const _FleetList({
-    required this.companyId,
-    required this.service,
-    required this.token,
+class _RentalDashboardData {
+  final List<Map<String, dynamic>> companies;
+  final List<Map<String, dynamic>> vehicles;
+  final List<Map<String, dynamic>> groups;
+  final List<Map<String, dynamic>> reservations;
+  const _RentalDashboardData({
+    required this.companies,
+    this.vehicles = const [],
+    this.groups = const [],
+    this.reservations = const [],
+  });
+}
+
+class _Metric extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _Metric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
   });
   @override
-  Widget build(
-    BuildContext context,
-  ) => FutureBuilder<List<Map<String, dynamic>>>(
-    future: service.vehicles(companyId, token),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting)
-        return const LinearProgressIndicator();
-      if (snapshot.hasError)
-        return Text('Erro ao carregar a frota: ${snapshot.error}');
-      final vehicles = snapshot.data ?? const [];
-      if (vehicles.isEmpty)
-        return const Card(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Nenhum veículo cadastrado.'),
-          ),
-        );
-      return Column(
-        children: [
-          for (final vehicle in vehicles)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.directions_car_outlined),
-                title: Text(
-                  '${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''}',
-                ),
-                subtitle: Text(
-                  '${vehicle['vehicle_type'] ?? 'car'} • ${vehicle['year'] ?? '-'}',
-                ),
-                trailing: Text('R\$ ${vehicle['price_per_day'] ?? '-'}'),
+  Widget build(BuildContext context) => SizedBox(
+    width: 210,
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: color.withValues(alpha: .12),
+              foregroundColor: color,
+              child: Icon(icon),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    value,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
             ),
-        ],
-      );
-    },
+          ],
+        ),
+      ),
+    ),
   );
+}
+
+class _VehicleTile extends StatelessWidget {
+  final Map<String, dynamic> vehicle;
+  const _VehicleTile({required this.vehicle});
+  @override
+  Widget build(BuildContext context) => Card(
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _VehicleThumb(vehicle: vehicle),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _StatusChip(
+                  status: vehicle['status']?.toString() ?? 'available',
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              Text(
+                '${vehicle['plate'] ?? 'Sem placa'} • ${vehicle['vehicle_type'] ?? 'car'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _VehicleThumb extends StatelessWidget {
+  final Map<String, dynamic> vehicle;
+  final double? size;
+  const _VehicleThumb({required this.vehicle, this.size});
+  @override
+  Widget build(BuildContext context) {
+    final photos = (vehicle['photo_urls'] as List<dynamic>?) ?? const [];
+    final url = photos.isNotEmpty ? photos.first.toString() : '';
+    final fallback = Container(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Icon(Icons.directions_car_outlined, size: size == null ? 42 : 28),
+    );
+    if (url.isEmpty)
+      return SizedBox(width: size, height: size, child: fallback);
+    return Image.network(
+      url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => fallback,
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String status;
+  const _StatusChip({required this.status});
+  @override
+  Widget build(BuildContext context) {
+    final normalized = status.toLowerCase();
+    final (label, color) = switch (normalized) {
+      'reserved' => ('Em locação', Colors.indigo),
+      'maintenance' => ('Manutenção', Colors.orange),
+      'blocked' => ('Bloqueado', Colors.red),
+      _ => ('Disponível', Colors.green),
+    };
+    return Chip(
+      label: Text(label, style: TextStyle(color: color, fontSize: 11)),
+      backgroundColor: color.withValues(alpha: .12),
+      side: BorderSide.none,
+      visualDensity: VisualDensity.compact,
+    );
+  }
 }
 
 class _CompanyForm {

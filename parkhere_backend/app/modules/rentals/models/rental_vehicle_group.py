@@ -17,5 +17,6 @@ class RentalVehicleGroup(BaseModel):
     suggested_price_per_day = Column(Float, nullable=True)
     is_default = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_blocked = Column(Boolean, nullable=False, default=False)
 
     company = relationship("RentalCompany")

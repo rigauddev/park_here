@@ -34,6 +34,20 @@ class RentalService:
         return result.all()
 
     @staticmethod
+    async def set_group_blocked(db: AsyncSession, group_id: str, blocked: bool, current_user: User):
+        if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN}:
+            raise HTTPException(status_code=403, detail="Somente o gestor pode bloquear categorias")
+        group = await db.scalar(select(RentalVehicleGroup).where(RentalVehicleGroup.id == group_id))
+        if group is None:
+            raise HTTPException(status_code=404, detail="Categoria não encontrada")
+        company = await RentalService.company(db, group.company_id, current_user)
+        await RentalService.ensure_approved_partner(db, current_user)
+        group.is_blocked = blocked
+        await db.commit()
+        await db.refresh(group)
+        return group
+
+    @staticmethod
     async def create_group(db: AsyncSession, data, current_user: User):
         company = await RentalService.company(db, data.company_id, current_user)
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
@@ -247,9 +261,13 @@ class RentalService:
     @staticmethod
     async def list_vehicles(db: AsyncSession, company_id: str, current_user: User):
         company = await RentalService.company(db, company_id, current_user)
-        result = await db.scalars(select(RentalVehicle).where(
-            RentalVehicle.company_id == company.id, RentalVehicle.is_active.is_(True),
-            RentalVehicle.status == "available"))
+        stmt = select(RentalVehicle).where(
+            RentalVehicle.company_id == company.id,
+            RentalVehicle.is_active.is_(True),
+        )
+        if current_user.role == UserRoleEnum.CUSTOMER:
+            stmt = stmt.where(RentalVehicle.status == "available")
+        result = await db.scalars(stmt.order_by(RentalVehicle.created_at.desc()))
         return result.all()
 
     @staticmethod
@@ -300,6 +318,11 @@ class RentalService:
             RentalVehicle.id == data.vehicle_id, RentalVehicle.company_id == company.id,
             RentalVehicle.status == "available", RentalVehicle.is_active.is_(True)).with_for_update())
         if vehicle is None: raise HTTPException(status_code=409, detail="Veículo indisponível")
+        if vehicle.group_id and await db.scalar(select(RentalVehicleGroup.id).where(
+            RentalVehicleGroup.id == vehicle.group_id,
+            RentalVehicleGroup.is_blocked.is_(True),
+        )):
+            raise HTTPException(status_code=409, detail="A categoria deste veículo está bloqueada")
         plan = None
         if data.plan_id:
             plan = await db.scalar(select(RentalPlan).where(
@@ -309,6 +332,11 @@ class RentalService:
             ))
             if plan is None:
                 raise HTTPException(status_code=404, detail="Plano de locação não encontrado")
+            if plan.group_id and await db.scalar(select(RentalVehicleGroup.id).where(
+                RentalVehicleGroup.id == plan.group_id,
+                RentalVehicleGroup.is_blocked.is_(True),
+            )):
+                raise HTTPException(status_code=409, detail="A categoria deste veículo está bloqueada")
         days = max(1, ceil((data.end_date - data.start_date).total_seconds() / 86400))
         daily_price = plan.price_per_day if plan else vehicle.price_per_day
         base_amount = round(daily_price * days, 2)
@@ -338,7 +366,7 @@ class RentalService:
             establishment_fee_amount=establishment_fee,
             platform_fee_amount=platform_fee, final_total=final_total,
             platform_fee_snapshot=json.dumps([line.to_dict() for line in fee_lines]),
-            status="pending", extras=json.dumps(data.extras or {}), km_start=data.km_start)
+            status="pending", payment_status="pending", extras=json.dumps(data.extras or {}), km_start=data.km_start)
         vehicle.status = "reserved"; db.add(reservation); await db.commit(); await db.refresh(reservation); return reservation
 
     @staticmethod

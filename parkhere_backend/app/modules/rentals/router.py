@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -27,6 +27,10 @@ async def list_groups(company_id: str, db: AsyncSession = Depends(get_db), curre
 @router.post("/groups", response_model=VehicleGroupOut, status_code=201)
 async def create_group(data: VehicleGroupCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.create_group(db, data, current_user)
+
+@router.patch("/groups/{group_id}/block", response_model=VehicleGroupOut)
+async def block_group(group_id: str, blocked: bool = Query(True), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.set_group_blocked(db, group_id, blocked, current_user)
 
 @router.get("/catalog/models", response_model=list[VehicleCatalogOut])
 async def catalog_models(make: str, year: int, vehicle_type: str = 'car', model: str | None = None, current_user: User = Depends(get_current_user)):

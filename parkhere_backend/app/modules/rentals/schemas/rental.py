@@ -53,6 +53,7 @@ class VehicleGroupOut(VehicleGroupCreate):
     id: str
     is_default: bool
     is_active: bool
+    is_blocked: bool
 
 
 class VehicleCatalogOut(BaseModel):
@@ -118,6 +119,7 @@ class ReservationOut(BaseModel):
     final_total: float = 0
     platform_fee_snapshot: list[dict[str, Any]] = Field(default_factory=list)
     status: str
+    payment_status: str = "pending"
     extras: dict[str, Any] | None = None
     km_start: int | None = None
     km_end: int | None = None

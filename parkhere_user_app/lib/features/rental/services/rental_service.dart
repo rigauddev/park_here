@@ -35,10 +35,26 @@ class RentalService {
     return response.cast<Map<String, dynamic>>();
   }
 
-  Future<List<Map<String, dynamic>>> groups(String companyId, String token) async {
-    final response = await _api.getAuthorized('/rentals/companies/$companyId/groups', token);
+  Future<List<Map<String, dynamic>>> groups(
+    String companyId,
+    String token,
+  ) async {
+    final response = await _api.getAuthorized(
+      '/rentals/companies/$companyId/groups',
+      token,
+    );
     return response.cast<Map<String, dynamic>>();
   }
+
+  Future<Map<String, dynamic>> setGroupBlocked({
+    required String groupId,
+    required String token,
+    required bool blocked,
+  }) => _api.patchAuthorized(
+    '/rentals/groups/$groupId/block?blocked=$blocked',
+    const {},
+    token,
+  );
 
   Future<List<Map<String, dynamic>>> catalogModels({
     required String make,
@@ -47,8 +63,11 @@ class RentalService {
     String? model,
     required String token,
   }) async {
-    final query = StringBuffer('/rentals/catalog/models?make=${Uri.encodeQueryComponent(make)}&year=$year&vehicle_type=$vehicleType');
-    if (model != null && model.trim().isNotEmpty) query.write('&model=${Uri.encodeQueryComponent(model.trim())}');
+    final query = StringBuffer(
+      '/rentals/catalog/models?make=${Uri.encodeQueryComponent(make)}&year=$year&vehicle_type=$vehicleType',
+    );
+    if (model != null && model.trim().isNotEmpty)
+      query.write('&model=${Uri.encodeQueryComponent(model.trim())}');
     final response = await _api.getAuthorized(query.toString(), token);
     return response.cast<Map<String, dynamic>>();
   }
@@ -132,13 +151,11 @@ class RentalService {
     return response.cast<Map<String, dynamic>>();
   }
 
-  Future<Map<String, dynamic>> contract(
-    String reservationId,
-    String token,
-  ) => _api.getAuthorizedMap(
-    '/rentals/reservations/$reservationId/contract',
-    token,
-  );
+  Future<Map<String, dynamic>> contract(String reservationId, String token) =>
+      _api.getAuthorizedMap(
+        '/rentals/reservations/$reservationId/contract',
+        token,
+      );
 
   Future<Map<String, dynamic>> acceptContract({
     required String reservationId,

@@ -22,6 +22,7 @@ class RentalReservation(BaseModel):
     final_total = Column(Float, nullable=False, default=0)
     platform_fee_snapshot = Column(Text, nullable=True)
     status = Column(String(24), nullable=False, default="pending")
+    payment_status = Column(String(32), nullable=False, default="pending")
     extras = Column(Text, nullable=True)
     km_start = Column(Integer, nullable=True)
     km_end = Column(Integer, nullable=True)

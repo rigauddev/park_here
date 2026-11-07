@@ -102,6 +102,11 @@ pode duplicar ou editar grupos e pode buscar sugestões de marca/modelo e fotos
 de referência no catálogo integrado, sempre revisando a licença antes de
 publicar.
 
+A tela operacional da locadora separa disponibilidade, veículos reservados,
+reservas pagas e reservas aguardando pagamento. O gestor pode bloquear uma
+categoria inteira quando não houver veículos disponíveis; o bloqueio impede
+novas reservas, mas preserva a frota e o histórico já existentes.
+
 Tipos de veículo disponíveis no cadastro: carro, SUV, picape, van, motocicleta,
 scooter, bicicleta, ônibus, caminhão, motorhome e carro elétrico. O catálogo é
 extensível por código, mas o app lista apenas tipos ativos e traduzidos.
