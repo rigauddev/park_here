@@ -226,3 +226,12 @@ class FineOut(FineCreate):
     model_config = ConfigDict(from_attributes=True)
     id: str
     status: str
+
+
+class RentalAlertOut(BaseModel):
+    type: str
+    severity: str
+    vehicle_id: str
+    reservation_id: str | None = None
+    message: str
+    due_at: datetime | None = None

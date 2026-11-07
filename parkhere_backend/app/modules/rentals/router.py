@@ -77,6 +77,10 @@ async def list_fines(db: AsyncSession = Depends(get_db), current_user: User = De
 async def create_fine(data: FineCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.create_fine(db, data, current_user)
 
+@router.get("/alerts", response_model=list[RentalAlertOut])
+async def list_alerts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.list_alerts(db, current_user)
+
 @router.post("/vehicles", response_model=VehicleOut, status_code=201)
 async def create_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.create_vehicle(db, data, current_user)

@@ -241,6 +241,47 @@ class RentalService:
         return result.all()
 
     @staticmethod
+    async def list_alerts(db: AsyncSession, current_user: User):
+        """Return actionable fleet warnings without introducing a second alert model.
+
+        Maintenance due dates and pending fines remain the source of truth. The
+        endpoint is intentionally read-only and scoped to the current customer
+        or partner tenant.
+        """
+        now = datetime.now(timezone.utc)
+        alerts = []
+        maintenance_stmt = select(RentalMaintenance, RentalVehicle).join(
+            RentalVehicle, RentalVehicle.id == RentalMaintenance.vehicle_id
+        ).join(RentalCompany, RentalCompany.id == RentalVehicle.company_id).where(
+            RentalVehicle.is_active.is_(True),
+            RentalMaintenance.next_due_at.is_not(None),
+            RentalMaintenance.next_due_at <= now,
+            RentalMaintenance.status != 'cancelled',
+        )
+        if current_user.role not in {UserRoleEnum.SUPER_ADMIN, UserRoleEnum.CUSTOMER}:
+            maintenance_stmt = maintenance_stmt.where(RentalCompany.tenant_id == current_user.tenant_id)
+        elif current_user.role == UserRoleEnum.CUSTOMER:
+            maintenance_stmt = maintenance_stmt.where(False)
+        for maintenance, vehicle in (await db.execute(maintenance_stmt)).all():
+            alerts.append({'type': 'maintenance_due', 'severity': 'warning', 'vehicle_id': vehicle.id,
+                           'message': f'Manutenção vencida: {maintenance.maintenance_type}',
+                           'due_at': maintenance.next_due_at})
+
+        fine_stmt = select(RentalFine, RentalReservation).join(
+            RentalReservation, RentalReservation.id == RentalFine.reservation_id
+        ).where(RentalFine.status == 'pending')
+        if current_user.role == UserRoleEnum.CUSTOMER:
+            fine_stmt = fine_stmt.where(RentalReservation.user_id == current_user.id)
+        elif current_user.role != UserRoleEnum.SUPER_ADMIN:
+            fine_stmt = fine_stmt.where(RentalReservation.tenant_id == current_user.tenant_id)
+        for fine, reservation in (await db.execute(fine_stmt)).all():
+            alerts.append({'type': 'fine_pending', 'severity': 'critical', 'vehicle_id': fine.vehicle_id,
+                           'reservation_id': reservation.id,
+                           'message': f'Multa pendente de R$ {fine.amount:.2f}',
+                           'due_at': fine.occurred_at})
+        return alerts
+
+    @staticmethod
     async def create_maintenance(db: AsyncSession, data, current_user: User):
         vehicle = await db.scalar(select(RentalVehicle).join(RentalCompany).where(
             RentalVehicle.id == data.vehicle_id, RentalCompany.is_active.is_(True)

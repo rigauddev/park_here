@@ -1330,6 +1330,11 @@ Blocos operacionais adicionais:
 - `GET /rentals/fines` lista multas por escopo de usuário/tenant e
   `POST /rentals/fines` registra uma ocorrência vinculada à reserva e ao
   veículo, para cobrança posterior pelo módulo central.
+- `GET /rentals/alerts` consolida alertas derivados das tabelas existentes:
+  manutenção vencida (`maintenance_due`) e multa pendente (`fine_pending`).
+  Gestores/operadores recebem somente alertas do próprio tenant e clientes
+  apenas multas vinculadas às suas reservas. No MVP o alerta orienta a equipe;
+  cobrança automática e WhatsApp ficam para a evolução de notificações.
 
 ## Descoberta de serviços no mapa
 
