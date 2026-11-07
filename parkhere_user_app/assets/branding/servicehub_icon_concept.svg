@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">ServiceHub</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#081A3A"/>
+      <stop offset="1" stop-color="#123D78"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <circle cx="128" cy="126" r="48" fill="#fff" opacity=".98"/>
+  <path d="M128 87c-27 0-44 22-44 49 0 35 44 65 44 65s44-30 44-65c0-27-17-49-44-49Z" fill="#081A3A"/>
+  <circle cx="128" cy="132" r="13" fill="#fff"/>
+  <circle cx="128" cy="132" r="6" fill="#1677FF"/>
+  <circle cx="128" cy="48" r="28" fill="#1677FF"/>
+  <path d="M114 39h28v18h-28z" fill="none" stroke="#fff" stroke-width="5"/>
+  <circle cx="62" cy="202" r="25" fill="#19C7D9"/>
+  <circle cx="194" cy="202" r="25" fill="#35D39A"/>
+  <path d="M80 187l30-29M176 187l-30-29" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+</svg>
