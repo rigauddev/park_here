@@ -41,6 +41,7 @@ class HomeMapPage extends ConsumerStatefulWidget {
 
 class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   static const _valencaCenter = LatLng(-13.3703, -39.0731);
+  static const _brazilCenter = LatLng(-15.7942, -47.8828);
   static const _cityCenters = {
     'valença': LatLng(-13.3703, -39.0731),
     'salvador': LatLng(-12.9777, -38.5016),
@@ -123,8 +124,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       ref.read(selectedCityProvider.notifier).state = nearest.city;
       await ref.read(parkingProvider.notifier).searchByCity(nearest.city);
     } catch (_) {
+      // Sem localização, não invente a cidade de Valença: o usuário pode
+      // pesquisar qualquer cidade manualmente.
       if (!mounted) return;
-      setState(() => userLocation = _valencaCenter);
+      setState(() => userLocation = null);
     }
   }
 
@@ -332,6 +335,26 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       ref.read(selectedCityProvider.notifier).state = parkings.first.city;
       _focusSearchResults(parkings, normalizedCity);
       return;
+    }
+
+    // A cidade pode ter apenas locadora/guia. Consulte o índice de serviços
+    // antes de exibir estado de erro baseado apenas em estacionamentos.
+    try {
+      final payload = await ref
+          .read(apiServiceProvider)
+          .getMap(
+            '/parkings/services/map?city=${Uri.encodeQueryComponent(normalizedCity)}',
+          );
+      final services = payload['services'] as List<dynamic>? ?? const [];
+      if (services.isNotEmpty) {
+        final canonical = payload['city']?.toString();
+        if (canonical != null && canonical.isNotEmpty) {
+          ref.read(selectedCityProvider.notifier).state = canonical;
+        }
+        return;
+      }
+    } catch (_) {
+      // A mensagem abaixo é exibida apenas quando nenhum serviço foi obtido.
     }
 
     final cityCenter = _cityCenterFor(normalizedCity);
@@ -1025,6 +1048,14 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
 
           final query = _normalizeSearch(searchQuery);
           final filteredParkings = parkings.where((p) {
+            if (selectedCity.trim().isEmpty && userLocation != null) {
+              final distance = const Distance().as(
+                LengthUnit.Meter,
+                userLocation!,
+                LatLng(p.lat, p.lng),
+              );
+              if (distance > 10000) return false;
+            }
             if (selectedServiceType != null &&
                 selectedServiceType != 'parking') {
               return false;
@@ -1062,7 +1093,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
               FlutterMap(
                 mapController: mapController,
                 options: MapOptions(
-                  initialCenter: userLocation ?? _valencaCenter,
+                  initialCenter: userLocation ?? _brazilCenter,
                   initialZoom: 14,
                   interactionOptions: const InteractionOptions(
                     flags: InteractiveFlag.all,
@@ -1094,6 +1125,14 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                               const <MapServiceModel>[])
                           .where(
                             (service) =>
+                                (selectedCity.trim().isNotEmpty ||
+                                    userLocation == null ||
+                                    const Distance().as(
+                                          LengthUnit.Meter,
+                                          userLocation!,
+                                          LatLng(service.lat!, service.lng!),
+                                        ) <=
+                                        10000) &&
                                 service.serviceType != 'parking' &&
                                 (selectedServiceType == null ||
                                     service.serviceType ==

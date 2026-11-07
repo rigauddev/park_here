@@ -5,6 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 import unicodedata
+from math import asin, cos, radians, sin, sqrt
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -125,6 +126,9 @@ async def _ibge_cities() -> list[str]:
 async def list_map_services(
     city: str | None = Query(default=None, min_length=2),
     service_type: str | None = Query(default=None, max_length=40),
+    latitude: float | None = Query(default=None, ge=-90, le=90),
+    longitude: float | None = Query(default=None, ge=-180, le=180),
+    radius_km: float = Query(default=10, gt=0, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     """Public discovery index used by the map.
@@ -187,11 +191,26 @@ async def list_map_services(
                 'available_count': 1, 'is_open': True,
             })
 
+    if city is None and latitude is not None and longitude is not None:
+        items = [
+            item for item in items
+            if item.get('lat') is not None and item.get('lng') is not None
+            and _distance_km(latitude, longitude, item['lat'], item['lng']) <= radius_km
+        ]
+
     return {
         'city': _canonical_city(city) if city else None,
         'service_types': sorted({item['service_type'] for item in items}),
         'services': items,
     }
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius = 6371.0
+    d_lat = radians(lat2 - lat1)
+    d_lon = radians(lon2 - lon1)
+    value = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+    return earth_radius * 2 * asin(sqrt(value))
 
 
 @router.get('/{parking_id}/guides')

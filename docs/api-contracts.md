@@ -1346,3 +1346,9 @@ na cidade. Cada item contém `id`, `name`, `city`, `lat`, `lng`,
 `service_type`, `available_count` e `is_open`. O mapa mantém os detalhes e a
 reserva de estacionamento no endpoint existente; locadoras e guias são
 encaminhados aos módulos próprios.
+
+Quando `city` não é informado, a consulta aceita `latitude`, `longitude` e
+`radius_km` (padrão de 10 km, máximo de 100 km) para descoberta por proximidade.
+No app, a localização do usuário é a primeira fonte; a busca manual por cidade
+substitui esse filtro e aceita municípios sem estacionamento, incluindo
+locadoras e guias.
