@@ -95,6 +95,10 @@ class RentalService {
     String? groupId,
     List<String> photoUrls = const [],
     Map<String, dynamic> specifications = const {},
+    int? manufactureYear,
+    String? crlvCode,
+    String? renavam,
+    String? chassis,
   }) => _api.postAuthorized('/rentals/vehicles', {
     'company_id': companyId,
     if (groupId != null) 'group_id': groupId,
@@ -103,10 +107,71 @@ class RentalService {
     'model': model.trim(),
     'price_per_day': pricePerDay,
     if (year != null) 'year': year,
+    if (manufactureYear != null) 'manufacture_year': manufactureYear,
     if (plate != null && plate.trim().isNotEmpty) 'plate': plate.trim(),
+    if (crlvCode != null && crlvCode.trim().isNotEmpty)
+      'crlv_code': crlvCode.trim(),
+    if (renavam != null && renavam.trim().isNotEmpty) 'renavam': renavam.trim(),
+    if (chassis != null && chassis.trim().isNotEmpty) 'chassis': chassis.trim(),
     'photo_urls': photoUrls,
     'specifications': specifications,
   }, token);
+
+  Future<Map<String, dynamic>> updateVehicle({
+    required String vehicleId,
+    required String token,
+    String? groupId,
+    String? vehicleType,
+    String? brand,
+    String? model,
+    double? pricePerDay,
+    int? year,
+    int? manufactureYear,
+    String? plate,
+    String? crlvCode,
+    String? renavam,
+    String? chassis,
+    List<String>? photoUrls,
+    Map<String, dynamic>? specifications,
+  }) => _api.patchAuthorized('/rentals/vehicles/$vehicleId', {
+    if (groupId != null) 'group_id': groupId,
+    if (vehicleType != null) 'vehicle_type': vehicleType,
+    if (brand != null) 'brand': brand.trim(),
+    if (model != null) 'model': model.trim(),
+    if (pricePerDay != null) 'price_per_day': pricePerDay,
+    if (year != null) 'year': year,
+    if (manufactureYear != null) 'manufacture_year': manufactureYear,
+    if (plate != null) 'plate': plate.trim(),
+    if (crlvCode != null) 'crlv_code': crlvCode.trim(),
+    if (renavam != null) 'renavam': renavam.trim(),
+    if (chassis != null) 'chassis': chassis.trim(),
+    if (photoUrls != null) 'photo_urls': photoUrls,
+    if (specifications != null) 'specifications': specifications,
+  }, token);
+
+  Future<Map<String, dynamic>> uploadCrlv({
+    required String vehicleId,
+    required String token,
+    required String fileName,
+    required List<int> bytes,
+  }) => _api.uploadAuthorizedFile(
+    '/rentals/vehicles/$vehicleId/documents/crlv',
+    token,
+    fileName,
+    bytes,
+  );
+
+  Future<Map<String, dynamic>> uploadVehiclePhoto({
+    required String vehicleId,
+    required String token,
+    required String fileName,
+    required List<int> bytes,
+  }) => _api.uploadAuthorizedFile(
+    '/rentals/vehicles/$vehicleId/photos',
+    token,
+    fileName,
+    bytes,
+  );
 
   Future<Map<String, dynamic>> reserve({
     required String companyId,

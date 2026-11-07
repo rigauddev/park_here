@@ -1,5 +1,8 @@
 import asyncio
 import json
+import os
+from pathlib import Path
+from uuid import uuid4
 from datetime import datetime, timezone
 from math import ceil
 from urllib.parse import quote, urlencode
@@ -307,7 +310,116 @@ class RentalService:
             group = await db.scalar(select(RentalVehicleGroup).where(RentalVehicleGroup.id == data.group_id, RentalVehicleGroup.company_id == company.id, RentalVehicleGroup.is_active.is_(True)))
             if group is None:
                 raise HTTPException(status_code=422, detail='Grupo de veículos inválido para esta locadora')
-        vehicle = RentalVehicle(**data.model_dump()); db.add(vehicle); await db.commit(); await db.refresh(vehicle); return vehicle
+        payload = data.model_dump()
+        if payload.get('manufacture_year') is None:
+            payload['manufacture_year'] = payload.get('year')
+        vehicle = RentalVehicle(**payload); db.add(vehicle); await db.commit(); await db.refresh(vehicle); return vehicle
+
+    @staticmethod
+    async def update_vehicle(db, vehicle_id, data, current_user):
+        vehicle = await db.scalar(select(RentalVehicle).where(RentalVehicle.id == vehicle_id, RentalVehicle.is_active.is_(True)))
+        if vehicle is None:
+            raise HTTPException(status_code=404, detail='Veículo não encontrado')
+        company = await RentalService.company(db, vehicle.company_id, current_user)
+        if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail='Sem permissão para editar veículos')
+        await RentalService.ensure_approved_partner(db, current_user)
+        payload = data.model_dump(exclude_unset=True)
+        if payload.get('group_id') is not None:
+            group = await db.scalar(select(RentalVehicleGroup).where(
+                RentalVehicleGroup.id == payload['group_id'], RentalVehicleGroup.company_id == company.id,
+                RentalVehicleGroup.is_active.is_(True)))
+            if group is None:
+                raise HTTPException(status_code=422, detail='Grupo de veículos inválido para esta locadora')
+        for key, value in payload.items():
+            setattr(vehicle, key, value)
+        if vehicle.manufacture_year is None:
+            vehicle.manufacture_year = vehicle.year
+        await db.commit(); await db.refresh(vehicle); return vehicle
+
+    @staticmethod
+    async def upload_crlv(db, vehicle_id, file, current_user):
+        vehicle = await db.scalar(select(RentalVehicle).where(RentalVehicle.id == vehicle_id, RentalVehicle.is_active.is_(True)))
+        if vehicle is None:
+            raise HTTPException(status_code=404, detail='Veículo não encontrado')
+        company = await RentalService.company(db, vehicle.company_id, current_user)
+        allowed_staff = current_user.role in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.OPERATOR, UserRoleEnum.SUPER_ADMIN} and company.tenant_id == current_user.tenant_id
+        allowed_customer = False
+        if current_user.role == UserRoleEnum.CUSTOMER:
+            allowed_customer = await db.scalar(select(RentalReservation.id).where(
+                RentalReservation.vehicle_id == vehicle.id, RentalReservation.user_id == current_user.id
+            )) is not None
+        if not (allowed_staff or allowed_customer):
+            raise HTTPException(status_code=403, detail='Sem permissão para acessar o documento do veículo')
+        suffix = Path(file.filename or '').suffix.lower()
+        allowed = {'.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png'}
+        if suffix not in allowed or (file.content_type and file.content_type != allowed[suffix]):
+            raise HTTPException(status_code=415, detail='O CRLV deve estar em PDF, JPG ou PNG')
+        content = await file.read()
+        if len(content) > 30 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail='O arquivo do CRLV deve ter no máximo 30 MB')
+        folder = Path(os.getenv('RENTAL_DOCUMENTS_DIR', '/app/storage/rental_documents'))
+        folder.mkdir(parents=True, exist_ok=True)
+        name = f'{vehicle.id}-{uuid4().hex}{suffix}'
+        path = folder / name
+        path.write_bytes(content)
+        vehicle.crlv_file_url = f'/rentals/vehicles/{vehicle.id}/documents/crlv'
+        await db.commit(); await db.refresh(vehicle)
+        return {'file_url': vehicle.crlv_file_url, 'file_name': file.filename}
+
+    @staticmethod
+    async def read_crlv(db, vehicle_id, current_user):
+        vehicle = await db.scalar(select(RentalVehicle).where(RentalVehicle.id == vehicle_id, RentalVehicle.is_active.is_(True)))
+        if vehicle is None or not vehicle.crlv_file_url:
+            raise HTTPException(status_code=404, detail='CRLV não encontrado')
+        company = await RentalService.company(db, vehicle.company_id, current_user)
+        allowed_staff = current_user.role in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.OPERATOR, UserRoleEnum.SUPER_ADMIN} and company.tenant_id == current_user.tenant_id
+        allowed_customer = current_user.role == UserRoleEnum.CUSTOMER and await db.scalar(select(RentalReservation.id).where(RentalReservation.vehicle_id == vehicle.id, RentalReservation.user_id == current_user.id)) is not None
+        if not (allowed_staff or allowed_customer):
+            raise HTTPException(status_code=403, detail='Sem permissão para acessar o documento do veículo')
+        folder = Path(os.getenv('RENTAL_DOCUMENTS_DIR', '/app/storage/rental_documents'))
+        files = list(folder.glob(f'{vehicle.id}-*'))
+        if not files:
+            raise HTTPException(status_code=404, detail='Arquivo do CRLV não encontrado')
+        return files[0]
+
+    @staticmethod
+    async def upload_vehicle_photo(db, vehicle_id, file, current_user):
+        vehicle = await db.scalar(select(RentalVehicle).where(RentalVehicle.id == vehicle_id, RentalVehicle.is_active.is_(True)))
+        if vehicle is None:
+            raise HTTPException(status_code=404, detail='Veículo não encontrado')
+        company = await RentalService.company(db, vehicle.company_id, current_user)
+        if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail='Sem permissão para adicionar fotos')
+        suffix = Path(file.filename or '').suffix.lower()
+        if suffix not in {'.jpg', '.jpeg', '.png', '.webp'}:
+            raise HTTPException(status_code=415, detail='A foto deve estar em JPG, PNG ou WEBP')
+        content = await file.read()
+        if len(content) > 30 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail='A foto deve ter no máximo 30 MB')
+        folder = Path(os.getenv('RENTAL_DOCUMENTS_DIR', '/app/storage/rental_documents'))
+        folder.mkdir(parents=True, exist_ok=True)
+        name = f'{vehicle.id}-photo-{uuid4().hex}{suffix}'
+        (folder / name).write_bytes(content)
+        urls = list(vehicle.photo_urls or [])
+        urls.append(f'/rentals/vehicles/{vehicle.id}/photos/{name}')
+        vehicle.photo_urls = urls[:8]
+        await db.commit(); await db.refresh(vehicle)
+        return {'photo_url': urls[-1]}
+
+    @staticmethod
+    async def read_vehicle_photo(db, vehicle_id, name, current_user):
+        vehicle = await db.scalar(select(RentalVehicle).where(RentalVehicle.id == vehicle_id, RentalVehicle.is_active.is_(True)))
+        if vehicle is None:
+            raise HTTPException(status_code=404, detail='Veículo não encontrado')
+        company = await RentalService.company(db, vehicle.company_id, current_user)
+        allowed_staff = current_user.role in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.OPERATOR, UserRoleEnum.SUPER_ADMIN} and company.tenant_id == current_user.tenant_id
+        allowed_customer = current_user.role == UserRoleEnum.CUSTOMER and await db.scalar(select(RentalReservation.id).where(RentalReservation.vehicle_id == vehicle.id, RentalReservation.user_id == current_user.id)) is not None
+        if not (allowed_staff or allowed_customer) or not any(str(item).endswith('/' + name) for item in (vehicle.photo_urls or [])):
+            raise HTTPException(status_code=403, detail='Sem permissão para acessar esta foto')
+        path = Path(os.getenv('RENTAL_DOCUMENTS_DIR', '/app/storage/rental_documents')) / name
+        if not path.exists(): raise HTTPException(status_code=404, detail='Foto não encontrada')
+        return path
 
     @staticmethod
     async def create_reservation(db, data, current_user):

@@ -1305,6 +1305,20 @@ locação. Contrato/assinatura digital, cobrança de multas e integração de
 pagamento serão blocos posteriores e reutilizarão o serviço central de
 pagamentos.
 
+### Cadastro e documento da frota
+
+`POST /rentals/vehicles` aceita, além do catálogo de marca/modelo, `plate`,
+`manufacture_year`, `crlv_code`, `renavam` e `chassis`. O campo `year` é
+mantido por compatibilidade e é usado como ano de fabricação quando o novo
+campo não for informado. `PATCH /rentals/vehicles/{vehicle_id}` permite ao
+gestor corrigir os dados sem trocar a unidade/locadora.
+
+`POST /rentals/vehicles/{vehicle_id}/documents/crlv` recebe PDF, JPG ou PNG
+de até 30 MB. O arquivo fica em armazenamento privado e nunca é exposto por
+URL pública; `GET` no mesmo caminho valida o escopo do gestor/operador ou uma
+reserva do cliente antes de retornar o documento. O app apresenta feedback de
+carregamento e resultado ao consultar imagens do catálogo público.
+
 Blocos operacionais adicionais:
 
 - `GET /rentals/companies/{company_id}/items` e `POST /rentals/items` mantêm

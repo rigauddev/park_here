@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, File, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -79,6 +80,28 @@ async def create_fine(data: FineCreate, db: AsyncSession = Depends(get_db), curr
 @router.post("/vehicles", response_model=VehicleOut, status_code=201)
 async def create_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.create_vehicle(db, data, current_user)
+
+@router.patch("/vehicles/{vehicle_id}", response_model=VehicleOut)
+async def update_vehicle(vehicle_id: str, data: VehicleUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.update_vehicle(db, vehicle_id, data, current_user)
+
+@router.post("/vehicles/{vehicle_id}/documents/crlv")
+async def upload_crlv(vehicle_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.upload_crlv(db, vehicle_id, file, current_user)
+
+@router.get("/vehicles/{vehicle_id}/documents/crlv")
+async def read_crlv(vehicle_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    path = await RentalService.read_crlv(db, vehicle_id, current_user)
+    return FileResponse(path)
+
+@router.post("/vehicles/{vehicle_id}/photos")
+async def upload_vehicle_photo(vehicle_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.upload_vehicle_photo(db, vehicle_id, file, current_user)
+
+@router.get("/vehicles/{vehicle_id}/photos/{name}")
+async def read_vehicle_photo(vehicle_id: str, name: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    path = await RentalService.read_vehicle_photo(db, vehicle_id, name, current_user)
+    return FileResponse(path)
 
 @router.post("/reservations", response_model=ReservationOut, status_code=201)
 async def create_reservation(data: ReservationCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):

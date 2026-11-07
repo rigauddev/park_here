@@ -30,6 +30,11 @@ class VehicleCreate(BaseModel):
     price_per_day: float = Field(gt=0)
     plate: str | None = Field(default=None, max_length=20)
     year: int | None = Field(default=None, ge=1950, le=2100)
+    manufacture_year: int | None = Field(default=None, ge=1950, le=2100)
+    crlv_code: str | None = Field(default=None, max_length=40)
+    renavam: str | None = Field(default=None, max_length=20)
+    chassis: str | None = Field(default=None, max_length=40)
+    crlv_file_url: str | None = Field(default=None, max_length=500)
     photo_urls: list[str] = Field(default_factory=list, max_length=8)
     specifications: dict[str, Any] = Field(default_factory=dict)
 
@@ -38,6 +43,21 @@ class VehicleOut(VehicleCreate):
     id: str
     status: str
     is_active: bool
+
+class VehicleUpdate(BaseModel):
+    group_id: str | None = None
+    vehicle_type: str | None = Field(default=None, pattern=r"^(car|suv|pickup|van|motorcycle|scooter|bicycle|bus|truck|motorhome|electric_car)$")
+    model: str | None = Field(default=None, min_length=1, max_length=120)
+    brand: str | None = Field(default=None, min_length=1, max_length=80)
+    price_per_day: float | None = Field(default=None, gt=0)
+    plate: str | None = Field(default=None, max_length=20)
+    year: int | None = Field(default=None, ge=1950, le=2100)
+    manufacture_year: int | None = Field(default=None, ge=1950, le=2100)
+    crlv_code: str | None = Field(default=None, max_length=40)
+    renavam: str | None = Field(default=None, max_length=20)
+    chassis: str | None = Field(default=None, max_length=40)
+    photo_urls: list[str] | None = Field(default=None, max_length=8)
+    specifications: dict[str, Any] | None = None
 
     @field_validator("photo_urls", mode="before")
     @classmethod

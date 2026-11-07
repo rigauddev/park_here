@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../core/services/local_storage_service.dart';
 import '../services/rental_service.dart';
@@ -79,7 +80,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     final result = await _showVehicleDialog(groups);
     if (result == null) return;
     try {
-      await _service.createVehicle(
+      final created = await _service.createVehicle(
         companyId: company['id'] as String,
         token: _token!,
         vehicleType: result.type,
@@ -87,13 +88,87 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
         model: result.model,
         pricePerDay: result.price,
         year: result.year,
+        plate: result.plate,
         groupId: result.groupId,
         photoUrls: result.photoUrls,
         specifications: result.specifications,
+        manufactureYear: result.manufactureYear,
+        crlvCode: result.crlvCode,
+        renavam: result.renavam,
+        chassis: result.chassis,
       );
+      if (result.crlvFileName != null &&
+          result.crlvBytes != null &&
+          created['id'] != null) {
+        await _service.uploadCrlv(
+          vehicleId: created['id'].toString(),
+          token: _token!,
+          fileName: result.crlvFileName!,
+          bytes: result.crlvBytes!,
+        );
+      }
+      if (result.ownPhotoName != null &&
+          result.ownPhotoBytes != null &&
+          created['id'] != null) {
+        await _service.uploadVehiclePhoto(
+          vehicleId: created['id'].toString(),
+          token: _token!,
+          fileName: result.ownPhotoName!,
+          bytes: result.ownPhotoBytes!,
+        );
+      }
+      if (mounted) _message('Veículo cadastrado com sucesso.');
       if (mounted) setState(() => _future = _load());
     } catch (error) {
       if (mounted) _message('Não foi possível cadastrar o veículo: $error');
+    }
+  }
+
+  Future<void> _editVehicle(Map<String, dynamic> vehicle) async {
+    if (_token == null || _selected == null) return;
+    final groups = await _service.groups(_selected!['id'] as String, _token!);
+    final result = await _showVehicleDialog(groups, vehicle: vehicle);
+    if (result == null) return;
+    try {
+      await _service.updateVehicle(
+        vehicleId: vehicle['id'].toString(),
+        token: _token!,
+        groupId: result.groupId,
+        vehicleType: result.type,
+        brand: result.brand,
+        model: result.model,
+        pricePerDay: result.price,
+        year: result.year,
+        manufactureYear: result.manufactureYear,
+        plate: result.plate,
+        crlvCode: result.crlvCode,
+        renavam: result.renavam,
+        chassis: result.chassis,
+        photoUrls: result.photoUrls,
+        specifications: result.specifications,
+      );
+      if (result.crlvFileName != null && result.crlvBytes != null) {
+        await _service.uploadCrlv(
+          vehicleId: vehicle['id'].toString(),
+          token: _token!,
+          fileName: result.crlvFileName!,
+          bytes: result.crlvBytes!,
+        );
+      }
+      if (result.ownPhotoName != null && result.ownPhotoBytes != null) {
+        await _service.uploadVehiclePhoto(
+          vehicleId: vehicle['id'].toString(),
+          token: _token!,
+          fileName: result.ownPhotoName!,
+          bytes: result.ownPhotoBytes!,
+        );
+      }
+      if (mounted) {
+        _message('Veículo atualizado com sucesso.');
+        setState(() => _future = _load());
+      }
+    } catch (error) {
+      if (mounted) _message('Não foi possível atualizar o veículo: $error');
     }
   }
 
@@ -463,7 +538,12 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
           mainAxisSpacing: 12,
           childAspectRatio: 1.15,
         ),
-        itemBuilder: (_, index) => _VehicleTile(vehicle: vehicles[index]),
+        itemBuilder: (_, index) => _VehicleTile(
+          vehicle: vehicles[index],
+          onEdit: widget.operatorMode
+              ? null
+              : () => _editVehicle(vehicles[index]),
+        ),
       );
     },
   );
@@ -636,17 +716,39 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
   }
 
   Future<_VehicleForm?> _showVehicleDialog(
-    List<Map<String, dynamic>> groups,
-  ) async {
-    final brand = TextEditingController();
-    final model = TextEditingController();
-    final year = TextEditingController();
-    final price = TextEditingController();
-    var type = 'car';
-    String? groupId = groups.firstOrNull?['id'] as String?;
+    List<Map<String, dynamic>> groups, {
+    Map<String, dynamic>? vehicle,
+  }) async {
+    final brand = TextEditingController(text: vehicle?['brand']?.toString());
+    final model = TextEditingController(text: vehicle?['model']?.toString());
+    final year = TextEditingController(
+      text: (vehicle?['manufacture_year'] ?? vehicle?['year'])?.toString(),
+    );
+    final crlvCode = TextEditingController(
+      text: vehicle?['crlv_code']?.toString(),
+    );
+    final renavam = TextEditingController(
+      text: vehicle?['renavam']?.toString(),
+    );
+    final chassis = TextEditingController(
+      text: vehicle?['chassis']?.toString(),
+    );
+    String? crlvFileName;
+    List<int>? crlvBytes;
+    String? ownPhotoName;
+    List<int>? ownPhotoBytes;
+    final price = TextEditingController(
+      text: vehicle?['price_per_day']?.toString(),
+    );
+    final plate = TextEditingController(text: vehicle?['plate']?.toString());
+    var type = vehicle?['vehicle_type']?.toString() ?? 'car';
+    String? groupId =
+        vehicle?['group_id']?.toString() ??
+        groups.firstOrNull?['id'] as String?;
     List<Map<String, dynamic>> suggestions = const [];
     List<String> photoUrls = const [];
     Map<String, dynamic> specifications = const {};
+    var searching = false;
     var step = 0;
     return showDialog<_VehicleForm>(
       context: context,
@@ -655,6 +757,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
           Future<void> searchCatalog() async {
             final parsedYear = int.tryParse(year.text);
             if (brand.text.trim().isEmpty || parsedYear == null) return;
+            setDialogState(() => searching = true);
             try {
               final found = await _service.catalogModels(
                 make: brand.text,
@@ -662,8 +765,16 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 vehicleType: type,
                 token: _token!,
               );
-              setDialogState(() => suggestions = found);
-            } catch (_) {}
+              setDialogState(() {
+                suggestions = found;
+                searching = false;
+              });
+            } catch (_) {
+              setDialogState(() {
+                suggestions = [];
+                searching = false;
+              });
+            }
           }
 
           void finish() {
@@ -682,8 +793,17 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 parsed,
                 int.tryParse(year.text),
                 groupId,
-                photoUrls,
+                photoUrls.where((item) => item.isNotEmpty).toList(),
                 specifications,
+                int.tryParse(year.text),
+                crlvCode.text,
+                renavam.text,
+                chassis.text,
+                plate.text,
+                crlvFileName,
+                crlvBytes,
+                ownPhotoName,
+                ownPhotoBytes,
               ),
             );
           }
@@ -704,7 +824,13 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                         for (final group in groups)
                           DropdownMenuItem(
                             value: group['id'] as String,
-                            child: Text(group['name'] as String? ?? 'Grupo'),
+                            child: SizedBox(
+                              width: 360,
+                              child: Text(
+                                group['name'] as String? ?? 'Grupo',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ),
                       ],
                       onChanged: (value) {
@@ -759,6 +885,10 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                     decoration: const InputDecoration(labelText: 'Modelo'),
                   ),
                   TextField(
+                    controller: plate,
+                    decoration: const InputDecoration(labelText: 'Placa'),
+                  ),
+                  TextField(
                     controller: year,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'Ano'),
@@ -771,6 +901,41 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                       label: const Text('Buscar modelo e especificações'),
                     ),
                   ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final picked = await FilePicker.platform.pickFiles(
+                          type: FileType.image,
+                          withData: true,
+                        );
+                        if (picked != null &&
+                            picked.files.single.bytes != null) {
+                          setDialogState(() {
+                            ownPhotoName = picked.files.single.name;
+                            ownPhotoBytes = picked.files.single.bytes;
+                            photoUrls = [...photoUrls, ''];
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                      label: Text(
+                        ownPhotoName == null
+                            ? 'Adicionar foto do veículo'
+                            : 'Foto adicionada: $ownPhotoName',
+                      ),
+                    ),
+                  ),
+                  if (searching)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: LinearProgressIndicator(),
+                    ),
+                  if (!searching && suggestions.isEmpty)
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Nenhum modelo encontrado ainda.'),
+                    ),
                   if (suggestions.isNotEmpty)
                     DropdownButtonFormField<Map<String, dynamic>>(
                       initialValue: suggestions.first,
@@ -801,15 +966,69 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                         });
                       },
                     ),
+                  if (photoUrls.isNotEmpty)
+                    SizedBox(
+                      height: 90,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: photoUrls.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, index) => ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            photoUrls[index],
+                            width: 120,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const Icon(Icons.broken_image),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
             Step(
-              title: const Text('Preço e revisão'),
+              title: const Text('Documentos e preço'),
               isActive: step >= 2,
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  TextField(
+                    controller: crlvCode,
+                    decoration: const InputDecoration(
+                      labelText: 'Código do CRLV',
+                    ),
+                  ),
+                  TextField(
+                    controller: renavam,
+                    decoration: const InputDecoration(labelText: 'RENAVAM'),
+                  ),
+                  TextField(
+                    controller: chassis,
+                    decoration: const InputDecoration(labelText: 'Chassi'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await FilePicker.platform.pickFiles(
+                        type: FileType.custom,
+                        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                        withData: true,
+                      );
+                      if (picked != null && picked.files.single.bytes != null)
+                        setDialogState(() {
+                          crlvFileName = picked.files.single.name;
+                          crlvBytes = picked.files.single.bytes;
+                        });
+                    },
+                    icon: const Icon(Icons.attach_file),
+                    label: Text(
+                      crlvFileName == null
+                          ? 'Anexar CRLV (PDF ou imagem)'
+                          : 'CRLV: $crlvFileName',
+                    ),
+                  ),
                   TextField(
                     controller: price,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -950,7 +1169,8 @@ class _Metric extends StatelessWidget {
 
 class _VehicleTile extends StatelessWidget {
   final Map<String, dynamic> vehicle;
-  const _VehicleTile({required this.vehicle});
+  final VoidCallback? onEdit;
+  const _VehicleTile({required this.vehicle, this.onEdit});
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
@@ -983,9 +1203,22 @@ class _VehicleTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-              Text(
-                '${vehicle['plate'] ?? 'Sem placa'} • ${vehicle['vehicle_type'] ?? 'car'}',
-                style: Theme.of(context).textTheme.bodySmall,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${vehicle['plate'] ?? 'Sem placa'} • ${vehicle['vehicle_type'] ?? 'car'}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (onEdit != null)
+                    IconButton(
+                      tooltip: 'Editar veículo',
+                      onPressed: onEdit,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                    ),
+                ],
               ),
             ],
           ),
@@ -1052,6 +1285,15 @@ class _VehicleForm {
   final String? groupId;
   final List<String> photoUrls;
   final Map<String, dynamic> specifications;
+  final int? manufactureYear;
+  final String crlvCode;
+  final String renavam;
+  final String chassis;
+  final String plate;
+  final String? crlvFileName;
+  final List<int>? crlvBytes;
+  final String? ownPhotoName;
+  final List<int>? ownPhotoBytes;
   const _VehicleForm(
     this.type,
     this.brand,
@@ -1061,5 +1303,14 @@ class _VehicleForm {
     this.groupId,
     this.photoUrls,
     this.specifications,
+    this.manufactureYear,
+    this.crlvCode,
+    this.renavam,
+    this.chassis,
+    this.plate,
+    this.crlvFileName,
+    this.crlvBytes,
+    this.ownPhotoName,
+    this.ownPhotoBytes,
   );
 }

@@ -353,3 +353,17 @@ e horário.
   frota. O marcador de guia apresenta a identificação do serviço; o fluxo de
   contratação de guia permanece no módulo próprio.
 
+# Frota: cadastro e documentação
+
+- No gestor da locadora, abra **Operação da frota > Cadastrar veículo** e
+  selecione um grupo, marca, modelo e ano. Use **Buscar modelo** e confirme o
+  carregamento, o estado vazio e a exibição das imagens encontradas.
+- Preencha placa, ano de fabricação, código CRLV, RENAVAM e chassi. Anexe um
+  PDF/JPG/PNG de até 30 MB e confirme a mensagem de sucesso; arquivo inválido
+  deve mostrar o erro sem deixar a tela em carregamento.
+- Reabra o veículo e confirme que grupo, dados e foto estão persistidos. O
+  documento deve ser acessível ao gestor/operador autorizado e ao cliente que
+  possui uma reserva do veículo, mas não por URL pública.
+- Crie uma reserva pendente e uma confirmada e confira os dois blocos na tela
+  de reservas da locadora; o cliente deve ver somente veículos disponíveis.
+
