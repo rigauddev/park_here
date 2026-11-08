@@ -77,7 +77,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
       }
       if (mounted) setState(() => _future = _load());
     } catch (error) {
-      if (mounted) _message('Não foi possível criar a locadora: $error');
+      if (mounted) _message('Não foi possível criar o serviço: $error');
     }
   }
 
@@ -685,7 +685,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     return showDialog<_CompanyForm>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Nova unidade de locação'),
+        title: const Text('Novo serviço de locação'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
