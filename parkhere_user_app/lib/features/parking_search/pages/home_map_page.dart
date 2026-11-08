@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,7 +38,6 @@ class HomeMapPage extends ConsumerStatefulWidget {
 }
 
 class _HomeMapPageState extends ConsumerState<HomeMapPage> {
-  static const _valencaCenter = LatLng(-13.3703, -39.0731);
   static const _brazilCenter = LatLng(-15.7942, -47.8828);
   static const _cityCenters = {
     'valença': LatLng(-13.3703, -39.0731),
@@ -110,19 +107,6 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
       setState(
         () => userLocation = LatLng(position.latitude, position.longitude),
       );
-      final parkings = await ref.read(parkingProvider.future);
-      if (!mounted || parkings.isEmpty) return;
-      final nearest = parkings.reduce((a, b) {
-        final distanceA =
-            math.pow(a.lat - position.latitude, 2) +
-            math.pow(a.lng - position.longitude, 2);
-        final distanceB =
-            math.pow(b.lat - position.latitude, 2) +
-            math.pow(b.lng - position.longitude, 2);
-        return distanceA < distanceB ? a : b;
-      });
-      ref.read(selectedCityProvider.notifier).state = nearest.city;
-      await ref.read(parkingProvider.notifier).searchByCity(nearest.city);
     } catch (_) {
       // Sem localização, não invente a cidade de Valença: o usuário pode
       // pesquisar qualquer cidade manualmente.
@@ -158,7 +142,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
   void _focusSearchResults(List<ParkingModel> parkings, String query) {
     final normalizedQuery = _normalizeSearch(query);
     if (normalizedQuery.isEmpty) {
-      mapController.move(userLocation ?? _valencaCenter, 14);
+      mapController.move(userLocation ?? _brazilCenter, 14);
       return;
     }
 
@@ -177,6 +161,21 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
     if (cityCenter != null) {
       mapController.move(cityCenter, 12);
     }
+  }
+
+  void _focusServiceResults(List<MapServiceModel> services, String query) {
+    final needle = _normalizeSearch(query);
+    if (needle.isEmpty) return;
+    final match = services.where((service) {
+      return service.lat != null &&
+          service.lng != null &&
+          (_normalizeSearch(service.name).contains(needle) ||
+              _normalizeSearch(service.city).contains(needle) ||
+              _normalizeSearch(
+                _serviceTypeLabel(service.serviceType),
+              ).contains(needle));
+    }).firstOrNull;
+    if (match != null) mapController.move(LatLng(match.lat!, match.lng!), 14);
   }
 
   LatLng? _cityCenterFor(String city) {
@@ -1125,6 +1124,8 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                               const <MapServiceModel>[])
                           .where(
                             (service) =>
+                                service.lat != null &&
+                                service.lng != null &&
                                 (selectedCity.trim().isNotEmpty ||
                                     userLocation == null ||
                                     const Distance().as(
@@ -1135,10 +1136,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                                         10000) &&
                                 service.serviceType != 'parking' &&
                                 (selectedServiceType == null ||
-                                    service.serviceType ==
-                                        selectedServiceType) &&
-                                service.lat != null &&
-                                service.lng != null,
+                                    service.serviceType == selectedServiceType),
                           )
                           .map(
                             (service) => Marker(
@@ -1160,7 +1158,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                             onTap: () => openParkingDetails(
                               context,
                               parking,
-                              userLocation ?? _valencaCenter,
+                              userLocation ?? LatLng(parking.lat, parking.lng),
                             ),
                             child: _ParkingMarker(parking: parking),
                           ),
@@ -1223,7 +1221,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                       TextField(
                         controller: parkingSearchController,
                         decoration: InputDecoration(
-                          hintText: "Buscar estacionamento...",
+                          hintText: 'Buscar serviço ou cidade...',
                           prefixIcon: const Icon(Icons.search),
                           suffixIcon: searchQuery.isNotEmpty
                               ? IconButton(
@@ -1257,6 +1255,21 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                             ).contains(_normalizeSearch(value));
                           }).toList();
                           _focusSearchResults(match, value);
+                          _focusServiceResults(
+                            mapServicesState.asData?.value ?? const [],
+                            value,
+                          );
+                        },
+                        onSubmitted: (value) {
+                          final query = value.trim();
+                          if (query.length >= 2 &&
+                              !parkings.any(
+                                (parking) => _normalizeSearch(
+                                  parking.name,
+                                ).contains(_normalizeSearch(query)),
+                              )) {
+                            _applyCitySearch(query);
+                          }
                         },
                       ),
                       if (mapServicesState.hasValue) ...[
@@ -1343,7 +1356,7 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                   onPressed: () async {
                     if (userLocation == null) await _loadUserLocation();
                     if (!mounted) return;
-                    mapController.move(userLocation ?? _valencaCenter, 15);
+                    mapController.move(userLocation ?? _brazilCenter, 15);
                   },
                   child: const Icon(Icons.my_location),
                 ),
@@ -1496,7 +1509,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                                               parking: parking,
                                               userLocation:
                                                   userLocation ??
-                                                  _valencaCenter,
+                                                  LatLng(
+                                                    parking.lat,
+                                                    parking.lng,
+                                                  ),
                                             ),
 
                                             const SizedBox(height: 10),
@@ -1537,7 +1553,10 @@ class _HomeMapPageState extends ConsumerState<HomeMapPage> {
                                                       context,
                                                       parking,
                                                       userLocation ??
-                                                          _valencaCenter,
+                                                          LatLng(
+                                                            parking.lat,
+                                                            parking.lng,
+                                                          ),
                                                     ),
                                                 child: Text(
                                                   parking.isOpen
