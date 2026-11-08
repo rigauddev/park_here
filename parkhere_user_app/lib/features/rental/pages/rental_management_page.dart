@@ -47,13 +47,36 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
       _service.groups(companyId, _token!),
       _service.reservations(_token!),
     ]);
+    final vehicles = results[0] as List<Map<String, dynamic>>;
+    final maintenanceRecords = <Map<String, dynamic>>[];
+    for (final vehicle in vehicles) {
+      try {
+        final records = await _service.maintenance(
+          vehicle['id'].toString(),
+          _token!,
+        );
+        maintenanceRecords.addAll(
+          records.map(
+            (record) => {
+              ...record,
+              'vehicle_label':
+                  '${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''}',
+              'vehicle_plate': vehicle['plate'] ?? 'Sem placa',
+            },
+          ),
+        );
+      } catch (_) {
+        // A missing maintenance history must not prevent the fleet screen.
+      }
+    }
     return _RentalDashboardData(
       companies: companies,
-      vehicles: results[0] as List<Map<String, dynamic>>,
+      vehicles: vehicles,
       groups: results[1] as List<Map<String, dynamic>>,
       reservations: (results[2] as List<Map<String, dynamic>>)
           .where((item) => item['company_id'] == companyId)
           .toList(),
+      maintenance: maintenanceRecords,
     );
   }
 
@@ -453,6 +476,8 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 ],
               ),
               _gridView ? _vehicleGrid(vehicles) : _vehicleList(vehicles),
+              const SizedBox(height: 24),
+              _maintenanceSection(context, data.maintenance, vehicles),
               const SizedBox(height: 28),
               _sectionHeader(
                 context,
@@ -528,6 +553,160 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
           Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
         ],
       );
+
+  Widget _maintenanceSection(
+    BuildContext context,
+    List<Map<String, dynamic>> records,
+    List<Map<String, dynamic>> vehicles,
+  ) {
+    final visible = records.take(6).toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.build_circle_outlined),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Revisões e manutenção',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (!widget.operatorMode)
+                  TextButton.icon(
+                    onPressed: vehicles.isEmpty
+                        ? null
+                        : () => _showMaintenanceDialog(vehicles),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Registrar revisão'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (visible.isEmpty)
+              const Text('Nenhuma revisão registrada para esta unidade.'),
+            for (final record in visible)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  record['status'] == 'scheduled'
+                      ? Icons.event_outlined
+                      : Icons.check_circle_outline,
+                  color: record['status'] == 'scheduled'
+                      ? Colors.orange
+                      : Colors.green,
+                ),
+                title: Text(
+                  '${record['vehicle_label']} • ${record['vehicle_plate']}',
+                ),
+                subtitle: Text(
+                  '${record['maintenance_type'] ?? 'Revisão'} · próxima: ${record['next_due_at'] ?? 'não informada'}',
+                ),
+                trailing: Text(record['status']?.toString() ?? 'completed'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMaintenanceDialog(
+    List<Map<String, dynamic>> vehicles,
+  ) async {
+    if (_token == null) return;
+    final type = TextEditingController(text: 'Revisão preventiva');
+    final description = TextEditingController();
+    final odometer = TextEditingController();
+    final cost = TextEditingController();
+    String? vehicleId = vehicles.first['id']?.toString();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Registrar revisão'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: vehicleId,
+                decoration: const InputDecoration(labelText: 'Veículo'),
+                items: [
+                  for (final vehicle in vehicles)
+                    DropdownMenuItem(
+                      value: vehicle['id']?.toString(),
+                      child: Text(
+                        '${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''} · ${vehicle['plate'] ?? 'Sem placa'}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) => vehicleId = value,
+              ),
+              TextField(
+                controller: type,
+                decoration: const InputDecoration(labelText: 'Tipo de revisão'),
+              ),
+              TextField(
+                controller: odometer,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Quilometragem'),
+              ),
+              TextField(
+                controller: cost,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Custo (opcional)',
+                ),
+              ),
+              TextField(
+                controller: description,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Observações'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (vehicleId == null || type.text.trim().isEmpty) return;
+              try {
+                await _service.createMaintenance(
+                  vehicleId: vehicleId!,
+                  token: _token!,
+                  maintenanceType: type.text,
+                  performedAt: DateTime.now(),
+                  odometer: int.tryParse(odometer.text),
+                  cost: double.tryParse(cost.text.replaceAll(',', '.')),
+                  description: description.text,
+                );
+                if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+              } catch (error) {
+                if (dialogContext.mounted) {
+                  _message('Não foi possível registrar a revisão: $error');
+                }
+              }
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+    if (saved == true && mounted) setState(() => _future = _load());
+  }
 
   Widget _vehicleGrid(List<Map<String, dynamic>> vehicles) => LayoutBuilder(
     builder: (context, constraints) {
@@ -1242,11 +1421,13 @@ class _RentalDashboardData {
   final List<Map<String, dynamic>> vehicles;
   final List<Map<String, dynamic>> groups;
   final List<Map<String, dynamic>> reservations;
+  final List<Map<String, dynamic>> maintenance;
   const _RentalDashboardData({
     required this.companies,
     this.vehicles = const [],
     this.groups = const [],
     this.reservations = const [],
+    this.maintenance = const [],
   });
 }
 

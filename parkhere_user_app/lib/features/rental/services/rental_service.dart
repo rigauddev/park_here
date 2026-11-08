@@ -217,6 +217,26 @@ class RentalService {
     return response.cast<Map<String, dynamic>>();
   }
 
+  Future<Map<String, dynamic>> createMaintenance({
+    required String vehicleId,
+    required String token,
+    required String maintenanceType,
+    required DateTime performedAt,
+    DateTime? nextDueAt,
+    int? odometer,
+    double? cost,
+    String? description,
+  }) => _api.postAuthorized('/rentals/maintenance', {
+    'vehicle_id': vehicleId,
+    'maintenance_type': maintenanceType,
+    'performed_at': performedAt.toUtc().toIso8601String(),
+    if (nextDueAt != null) 'next_due_at': nextDueAt.toUtc().toIso8601String(),
+    if (odometer != null) 'odometer': odometer,
+    if (cost != null) 'cost': cost,
+    if (description != null && description.trim().isNotEmpty)
+      'description': description.trim(),
+  }, token);
+
   Future<List<Map<String, dynamic>>> items(
     String companyId,
     String token,
