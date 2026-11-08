@@ -65,6 +65,18 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
             },
           ),
         );
+        final odometer = (vehicle['current_odometer'] as num?)?.toInt() ?? 0;
+        final dueRecords = records.where((record) {
+          final due = (record['next_due_odometer'] as num?)?.toInt();
+          return due != null && odometer >= due - 1000;
+        }).toList();
+        if (dueRecords.isNotEmpty) {
+          final overdue = dueRecords.any((record) {
+            final due = (record['next_due_odometer'] as num?)?.toInt() ?? 0;
+            return odometer >= due;
+          });
+          vehicle['maintenance_alert'] = overdue ? 'overdue' : 'upcoming';
+        }
       } catch (_) {
         // A missing maintenance history must not prevent the fleet screen.
       }
@@ -127,6 +139,9 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
         crlvCode: result.crlvCode,
         renavam: result.renavam,
         chassis: result.chassis,
+        vehicleCondition: result.vehicleCondition,
+        currentOdometer: result.currentOdometer,
+        lastServiceOdometer: result.lastServiceOdometer,
       );
       if (result.crlvFileName != null &&
           result.crlvBytes != null &&
@@ -175,6 +190,9 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
         crlvCode: result.crlvCode,
         renavam: result.renavam,
         chassis: result.chassis,
+        vehicleCondition: result.vehicleCondition,
+        currentOdometer: result.currentOdometer,
+        lastServiceOdometer: result.lastServiceOdometer,
         photoUrls: result.photoUrls,
         specifications: result.specifications,
       );
@@ -475,7 +493,9 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                   ),
                 ],
               ),
-              _gridView ? _vehicleGrid(vehicles) : _vehicleList(vehicles),
+              _gridView
+                  ? _vehicleGrid(vehicles, data.maintenance)
+                  : _vehicleList(vehicles),
               const SizedBox(height: 24),
               _maintenanceSection(context, data.maintenance, vehicles),
               const SizedBox(height: 28),
@@ -621,9 +641,12 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     List<Map<String, dynamic>> vehicles,
   ) async {
     if (_token == null) return;
-    final type = TextEditingController(text: 'Revisão preventiva');
+    final type = TextEditingController(text: 'Troca de óleo');
     final description = TextEditingController();
     final odometer = TextEditingController();
+    final intervalKm = TextEditingController(text: '10000');
+    final parts = TextEditingController();
+    final incident = TextEditingController();
     final cost = TextEditingController();
     String? vehicleId = vehicles.first['id']?.toString();
     final saved = await showDialog<bool>(
@@ -649,14 +672,37 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 ],
                 onChanged: (value) => vehicleId = value,
               ),
-              TextField(
-                controller: type,
+              DropdownButtonFormField<String>(
+                initialValue: type.text,
                 decoration: const InputDecoration(labelText: 'Tipo de revisão'),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Troca de óleo',
+                    child: Text('Troca de óleo'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Óleo e filtros',
+                    child: Text('Óleo e filtros'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Revisão completa',
+                    child: Text('Revisão completa'),
+                  ),
+                  DropdownMenuItem(value: 'Freios', child: Text('Freios')),
+                  DropdownMenuItem(value: 'Pneus', child: Text('Pneus')),
+                  DropdownMenuItem(value: 'Outro', child: Text('Outro')),
+                ],
+                onChanged: (value) => type.text = value ?? type.text,
               ),
               TextField(
                 controller: odometer,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Quilometragem'),
+              ),
+              TextField(
+                controller: intervalKm,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Intervalo (km)'),
               ),
               TextField(
                 controller: cost,
@@ -671,6 +717,19 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 controller: description,
                 maxLines: 2,
                 decoration: const InputDecoration(labelText: 'Observações'),
+              ),
+              TextField(
+                controller: parts,
+                decoration: const InputDecoration(
+                  labelText: 'Peças trocadas (separe por vírgula)',
+                ),
+              ),
+              TextField(
+                controller: incident,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Incidente/avaria (opcional)',
+                ),
               ),
             ],
           ),
@@ -692,6 +751,13 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                   odometer: int.tryParse(odometer.text),
                   cost: double.tryParse(cost.text.replaceAll(',', '.')),
                   description: description.text,
+                  intervalKm: int.tryParse(intervalKm.text),
+                  parts: parts.text
+                      .split(',')
+                      .map((item) => item.trim())
+                      .where((item) => item.isNotEmpty)
+                      .toList(),
+                  incident: incident.text,
                 );
                 if (dialogContext.mounted) Navigator.pop(dialogContext, true);
               } catch (error) {
@@ -708,7 +774,10 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     if (saved == true && mounted) setState(() => _future = _load());
   }
 
-  Widget _vehicleGrid(List<Map<String, dynamic>> vehicles) => LayoutBuilder(
+  Widget _vehicleGrid(
+    List<Map<String, dynamic>> vehicles,
+    List<Map<String, dynamic>> maintenance,
+  ) => LayoutBuilder(
     builder: (context, constraints) {
       final columns = constraints.maxWidth >= 1100
           ? 4
@@ -723,10 +792,16 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
           crossAxisCount: columns,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: 1.15,
+          childAspectRatio: 1.05,
         ),
         itemBuilder: (_, index) => _VehicleTile(
           vehicle: vehicles[index],
+          onMaintenance: () => _showVehicleMaintenanceHistory(
+            vehicles[index],
+            maintenance
+                .where((item) => item['vehicle_id'] == vehicles[index]['id'])
+                .toList(),
+          ),
           onEdit: widget.operatorMode
               ? null
               : () => _editVehicle(vehicles[index]),
@@ -734,6 +809,51 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
       );
     },
   );
+
+  Future<void> _showVehicleMaintenanceHistory(
+    Map<String, dynamic> vehicle,
+    List<Map<String, dynamic>> records,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          'Revisões · ${vehicle['brand'] ?? ''} ${vehicle['model'] ?? ''}',
+        ),
+        content: SizedBox(
+          width: 460,
+          child: records.isEmpty
+              ? const Text('Nenhuma revisão registrada.')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: records.length,
+                  itemBuilder: (_, index) {
+                    final item = records[index];
+                    return ListTile(
+                      leading: const Icon(Icons.build_circle_outlined),
+                      title: Text(
+                        item['maintenance_type']?.toString() ?? 'Revisão',
+                      ),
+                      subtitle: Text(
+                        'Km ${item['odometer'] ?? '-'} · próxima em ${item['next_due_odometer'] ?? '-'} km\n'
+                        '${item['parts'] is List ? (item['parts'] as List).join(', ') : ''}',
+                      ),
+                      trailing: item['cost'] == null
+                          ? null
+                          : Text('R\$ ${item['cost']}'),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _vehicleList(List<Map<String, dynamic>> vehicles) => Card(
     clipBehavior: Clip.antiAlias,
@@ -959,6 +1079,13 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
       text: vehicle?['price_per_day']?.toString(),
     );
     final plate = TextEditingController(text: vehicle?['plate']?.toString());
+    final currentOdometer = TextEditingController(
+      text: (vehicle?['current_odometer'] ?? 0).toString(),
+    );
+    final lastServiceOdometer = TextEditingController(
+      text: vehicle?['last_service_odometer']?.toString(),
+    );
+    var vehicleCondition = vehicle?['vehicle_condition']?.toString() ?? 'new';
     var type = vehicle?['vehicle_type']?.toString() ?? 'car';
     String? groupId =
         vehicle?['group_id']?.toString() ??
@@ -1037,6 +1164,11 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                   ...specifications,
                   'group_code': groupCode,
                   'category': category,
+                  'maintenance_profile': const [
+                    {'type': 'Troca de óleo', 'interval_km': 10000},
+                    {'type': 'Óleo e filtros', 'interval_km': 10000},
+                    {'type': 'Revisão completa', 'interval_km': 20000},
+                  ],
                 },
                 int.tryParse(year.text),
                 crlvCode.text,
@@ -1047,6 +1179,9 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 crlvBytes,
                 ownPhotoName,
                 ownPhotoBytes,
+                vehicleCondition,
+                int.tryParse(currentOdometer.text) ?? 0,
+                int.tryParse(lastServiceOdometer.text),
               ),
             );
           }
@@ -1214,10 +1349,6 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                         });
                       },
                     ),
-                  TextField(
-                    controller: plate,
-                    decoration: const InputDecoration(labelText: 'Placa'),
-                  ),
                   DropdownButtonFormField<int>(
                     initialValue: int.tryParse(year.text),
                     decoration: const InputDecoration(
@@ -1316,6 +1447,43 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                     controller: chassis,
                     decoration: const InputDecoration(labelText: 'Chassi'),
                   ),
+                  DropdownButtonFormField<String>(
+                    initialValue: vehicleCondition,
+                    decoration: const InputDecoration(
+                      labelText: 'Condição do veículo',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'new',
+                        child: Text('Veículo novo'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'used',
+                        child: Text('Veículo usado'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => vehicleCondition = value ?? 'new'),
+                  ),
+                  TextField(
+                    controller: plate,
+                    decoration: const InputDecoration(labelText: 'Placa'),
+                  ),
+                  TextField(
+                    controller: currentOdometer,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Quilometragem atual',
+                    ),
+                  ),
+                  if (vehicleCondition == 'used')
+                    TextField(
+                      controller: lastServiceOdometer,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Km da última revisão',
+                      ),
+                    ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: () async {
@@ -1480,7 +1648,8 @@ class _Metric extends StatelessWidget {
 class _VehicleTile extends StatelessWidget {
   final Map<String, dynamic> vehicle;
   final VoidCallback? onEdit;
-  const _VehicleTile({required this.vehicle, this.onEdit});
+  final VoidCallback? onMaintenance;
+  const _VehicleTile({required this.vehicle, this.onEdit, this.onMaintenance});
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
@@ -1499,6 +1668,26 @@ class _VehicleTile extends StatelessWidget {
                   status: vehicle['status']?.toString() ?? 'available',
                 ),
               ),
+              if (vehicle['maintenance_alert'] != null)
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(
+                      vehicle['maintenance_alert'] == 'overdue'
+                          ? 'Revisão vencida'
+                          : 'Revisão próxima',
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                    backgroundColor:
+                        (vehicle['maintenance_alert'] == 'overdue'
+                                ? Colors.red
+                                : Colors.amber)
+                            .withValues(alpha: .92),
+                    side: BorderSide.none,
+                  ),
+                ),
             ],
           ),
         ),
@@ -1529,6 +1718,16 @@ class _VehicleTile extends StatelessWidget {
                       icon: const Icon(Icons.edit_outlined, size: 18),
                     ),
                 ],
+              ),
+              TextButton.icon(
+                onPressed: onMaintenance,
+                icon: const Icon(Icons.build_outlined, size: 16),
+                label: const Text('Revisões'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 28),
+                ),
               ),
             ],
           ),
@@ -1612,6 +1811,9 @@ class _VehicleForm {
   final List<int>? crlvBytes;
   final String? ownPhotoName;
   final List<int>? ownPhotoBytes;
+  final String vehicleCondition;
+  final int currentOdometer;
+  final int? lastServiceOdometer;
   const _VehicleForm(
     this.type,
     this.brand,
@@ -1629,6 +1831,9 @@ class _VehicleForm {
     this.crlvFileName,
     this.crlvBytes,
     this.ownPhotoName,
-    this.ownPhotoBytes,
-  );
+    this.ownPhotoBytes, [
+    this.vehicleCondition = 'new',
+    this.currentOdometer = 0,
+    this.lastServiceOdometer,
+  ]);
 }

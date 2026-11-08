@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 class RentalCompanyCreate(BaseModel):
     parent_parking_id: str | None = None
@@ -38,12 +38,24 @@ class VehicleCreate(BaseModel):
     crlv_file_url: str | None = Field(default=None, max_length=500)
     photo_urls: list[str] = Field(default_factory=list, max_length=8)
     specifications: dict[str, Any] = Field(default_factory=dict)
+    vehicle_condition: str = Field(default="new", pattern=r"^(new|used)$")
+    current_odometer: int = Field(default=0, ge=0)
+    last_service_odometer: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def used_vehicle_has_service_odometer(self):
+        if self.vehicle_condition == "used" and self.last_service_odometer is None:
+            raise ValueError("Informe a quilometragem da última revisão para veículo usado")
+        return self
 
 class VehicleOut(VehicleCreate):
     model_config = ConfigDict(from_attributes=True)
     id: str
     status: str
     is_active: bool
+    vehicle_condition: str = "new"
+    current_odometer: int = 0
+    last_service_odometer: int | None = None
 
     @field_validator("photo_urls", mode="before")
     @classmethod
@@ -69,6 +81,9 @@ class VehicleUpdate(BaseModel):
     chassis: str | None = Field(default=None, max_length=40)
     photo_urls: list[str] | None = Field(default=None, max_length=8)
     specifications: dict[str, Any] | None = None
+    vehicle_condition: str | None = Field(default=None, pattern=r"^(new|used)$")
+    current_odometer: int | None = Field(default=None, ge=0)
+    last_service_odometer: int | None = Field(default=None, ge=0)
 
 class VehicleGroupCreate(BaseModel):
     company_id: str
@@ -175,7 +190,11 @@ class MaintenanceCreate(BaseModel):
     performed_at: datetime
     next_due_at: datetime | None = None
     odometer: int | None = Field(default=None, ge=0)
+    interval_km: int | None = Field(default=None, ge=1, le=1_000_000)
+    next_due_odometer: int | None = Field(default=None, ge=0)
     cost: float | None = Field(default=None, ge=0)
+    parts: list[str] = Field(default_factory=list, max_length=30)
+    incident: str | None = Field(default=None, max_length=4000)
     status: str = Field(default="completed", pattern=r"^(scheduled|in_progress|completed|cancelled)$")
 
 

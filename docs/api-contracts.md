@@ -1269,7 +1269,9 @@ legados `suv`, `pickup`, `van`, `scooter`, `bus`, `truck`, `motorhome` e
 Também aceita `photo_urls` (até oito referências de imagens próprias ou de um
 catálogo licenciado) e `specifications` (metadados do modelo/ano, incluindo
 `group_code` (`A`, `B` ou `C`) e `category` (`hatch`, `sedan`, `suv`, `pickup`,
-`truck` ou `van`)). A busca de
+`truck` ou `van`)). `vehicle_condition` informa `new` ou `used`; para veículos
+usados o cadastro exige `current_odometer` e `last_service_odometer`. Veículos
+novos começam com odômetro zero. A busca de
 catálogo é feita sob demanda e retorna sugestões de fontes públicas; fotos
 reais devem ser revisadas pelo parceiro ou substituídas por uploads próprios.
 
@@ -1309,7 +1311,10 @@ Planos e frota:
 - `GET /rentals/vehicles/{vehicle_id}/maintenance` lista o histórico de
   manutenção em ordem decrescente.
 - `POST /rentals/maintenance` registra manutenção, próxima revisão,
-  quilometragem, custo e status. A operação é restrita ao gestor do parceiro.
+  quilometragem, intervalo em km, próximo odômetro, custo, peças substituídas,
+  incidentes e status. Quando `interval_km` e `odometer` são enviados, a API
+  calcula `next_due_odometer` automaticamente e atualiza a quilometragem do
+  veículo. A operação é restrita ao gestor do parceiro.
 
 Planos, veículos e manutenções permanecem em tabelas próprias do módulo de
 locação. Contrato/assinatura digital, cobrança de multas e integração de
@@ -1342,7 +1347,10 @@ Blocos operacionais adicionais:
   `POST /rentals/fines` registra uma ocorrência vinculada à reserva e ao
   veículo, para cobrança posterior pelo módulo central.
 - `GET /rentals/alerts` consolida alertas derivados das tabelas existentes:
-  manutenção vencida (`maintenance_due`) e multa pendente (`fine_pending`).
+  manutenção vencida por data (`maintenance_due`), manutenção próxima/vencida
+  por quilometragem (`maintenance_mileage`) e multa pendente (`fine_pending`).
+  O alerta de quilometragem aparece até 1.000 km antes do limite e é sempre
+  filtrado pelo tenant do parceiro.
   Gestores/operadores recebem somente alertas do próprio tenant e clientes
   apenas multas vinculadas às suas reservas. No MVP o alerta orienta a equipe;
   cobrança automática e WhatsApp ficam para a evolução de notificações.

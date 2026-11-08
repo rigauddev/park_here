@@ -267,6 +267,32 @@ class RentalService:
                            'message': f'Manutenção vencida: {maintenance.maintenance_type}',
                            'due_at': maintenance.next_due_at})
 
+        # Mileage alerts are derived from the vehicle odometer and the latest
+        # maintenance record.  The warning starts 1,000 km before the limit.
+        mileage_stmt = select(RentalMaintenance, RentalVehicle).join(
+            RentalVehicle, RentalVehicle.id == RentalMaintenance.vehicle_id
+        ).join(RentalCompany, RentalCompany.id == RentalVehicle.company_id).where(
+            RentalVehicle.is_active.is_(True),
+            RentalMaintenance.next_due_odometer.is_not(None),
+            RentalMaintenance.status != 'cancelled',
+        )
+        if current_user.role not in {UserRoleEnum.SUPER_ADMIN, UserRoleEnum.CUSTOMER}:
+            mileage_stmt = mileage_stmt.where(RentalCompany.tenant_id == current_user.tenant_id)
+        elif current_user.role == UserRoleEnum.CUSTOMER:
+            mileage_stmt = mileage_stmt.where(False)
+        for maintenance, vehicle in (await db.execute(mileage_stmt)).all():
+            current = vehicle.current_odometer or 0
+            due = maintenance.next_due_odometer
+            if due is None or current < max(0, due - 1000):
+                continue
+            overdue = current >= due
+            alerts.append({'type': 'maintenance_mileage',
+                           'severity': 'critical' if overdue else 'warning',
+                           'vehicle_id': vehicle.id,
+                           'message': ('Manutenção vencida' if overdue else 'Manutenção próxima')
+                                      + f': {maintenance.maintenance_type}',
+                           'due_at': None})
+
         fine_stmt = select(RentalFine, RentalReservation).join(
             RentalReservation, RentalReservation.id == RentalFine.reservation_id
         ).where(RentalFine.status == 'pending')
@@ -292,7 +318,16 @@ class RentalService:
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Sem permissão para registrar manutenção")
         await RentalService.ensure_approved_partner(db, current_user)
-        row = RentalMaintenance(**data.model_dump())
+        payload = data.model_dump()
+        # If the operator informs an interval, calculate the next odometer
+        # automatically from the performed reading.  A manually supplied
+        # value still wins, which allows manufacturer-specific schedules.
+        if payload.get('next_due_odometer') is None and payload.get('interval_km') and payload.get('odometer') is not None:
+            payload['next_due_odometer'] = payload['odometer'] + payload['interval_km']
+        row = RentalMaintenance(**payload)
+        if payload.get('odometer') is not None:
+            vehicle.current_odometer = max(vehicle.current_odometer or 0, payload['odometer'])
+            vehicle.last_service_odometer = payload['odometer']
         db.add(row); await db.commit(); await db.refresh(row); return row
 
     @staticmethod

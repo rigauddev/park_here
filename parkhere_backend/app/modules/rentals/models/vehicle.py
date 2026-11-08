@@ -20,5 +20,10 @@ class RentalVehicle(BaseModel):
     crlv_file_url = Column(String(500), nullable=True)
     photo_urls = Column(JSON, nullable=True)
     specifications = Column(JSON, nullable=True)
+    # Estado de entrada e odômetro atual são usados para calcular a próxima
+    # revisão sem depender de um registro de manutenção prévio.
+    vehicle_condition = Column(String(12), nullable=False, default="new")
+    current_odometer = Column(Integer, nullable=False, default=0)
+    last_service_odometer = Column(Integer, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     company = relationship("RentalCompany", back_populates="vehicles")

@@ -111,6 +111,9 @@ class RentalService {
     String? crlvCode,
     String? renavam,
     String? chassis,
+    String vehicleCondition = 'new',
+    int currentOdometer = 0,
+    int? lastServiceOdometer,
   }) => _api.postAuthorized('/rentals/vehicles', {
     'company_id': companyId,
     if (groupId != null) 'group_id': groupId,
@@ -125,6 +128,10 @@ class RentalService {
       'crlv_code': crlvCode.trim(),
     if (renavam != null && renavam.trim().isNotEmpty) 'renavam': renavam.trim(),
     if (chassis != null && chassis.trim().isNotEmpty) 'chassis': chassis.trim(),
+    'vehicle_condition': vehicleCondition,
+    'current_odometer': currentOdometer,
+    if (lastServiceOdometer != null)
+      'last_service_odometer': lastServiceOdometer,
     'photo_urls': photoUrls,
     'specifications': specifications,
   }, token);
@@ -143,6 +150,9 @@ class RentalService {
     String? crlvCode,
     String? renavam,
     String? chassis,
+    String? vehicleCondition,
+    int? currentOdometer,
+    int? lastServiceOdometer,
     List<String>? photoUrls,
     Map<String, dynamic>? specifications,
   }) => _api.patchAuthorized('/rentals/vehicles/$vehicleId', {
@@ -157,6 +167,10 @@ class RentalService {
     if (crlvCode != null) 'crlv_code': crlvCode.trim(),
     if (renavam != null) 'renavam': renavam.trim(),
     if (chassis != null) 'chassis': chassis.trim(),
+    if (vehicleCondition != null) 'vehicle_condition': vehicleCondition,
+    if (currentOdometer != null) 'current_odometer': currentOdometer,
+    if (lastServiceOdometer != null)
+      'last_service_odometer': lastServiceOdometer,
     if (photoUrls != null) 'photo_urls': photoUrls,
     if (specifications != null) 'specifications': specifications,
   }, token);
@@ -226,6 +240,10 @@ class RentalService {
     int? odometer,
     double? cost,
     String? description,
+    int? intervalKm,
+    int? nextDueOdometer,
+    List<String> parts = const [],
+    String? incident,
   }) => _api.postAuthorized('/rentals/maintenance', {
     'vehicle_id': vehicleId,
     'maintenance_type': maintenanceType,
@@ -233,8 +251,13 @@ class RentalService {
     if (nextDueAt != null) 'next_due_at': nextDueAt.toUtc().toIso8601String(),
     if (odometer != null) 'odometer': odometer,
     if (cost != null) 'cost': cost,
+    if (intervalKm != null) 'interval_km': intervalKm,
+    if (nextDueOdometer != null) 'next_due_odometer': nextDueOdometer,
+    'parts': parts,
     if (description != null && description.trim().isNotEmpty)
       'description': description.trim(),
+    if (incident != null && incident.trim().isNotEmpty)
+      'incident': incident.trim(),
   }, token);
 
   Future<List<Map<String, dynamic>>> items(
