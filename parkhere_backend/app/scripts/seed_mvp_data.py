@@ -98,6 +98,21 @@ async def seed_homologation_valenca():
         db.add(hybrid_tenant)
         await db.flush()
 
+        # Segunda praça de homologação: Cotia/SP. As coordenadas foram
+        # conferidas pelo Nominatim/OpenStreetMap para o endereço informado
+        # (Avenida Doutor Odair Pacheco Pedroso, 1393, Vila Montserrat,
+        # Cotia). Mantemos Valença intacta e usamos um tenant separado para
+        # validar busca por proximidade e isolamento multi-serviço.
+        cotia_tenant = Tenant(
+            name="ServiceHub Cotia",
+            cnpj="66777888000199",
+            email="gestor.cotia@servicehub.test",
+            plan=PlanEnum.PRO,
+            status=TenantStatusEnum.ACTIVE,
+        )
+        db.add(cotia_tenant)
+        await db.flush()
+
         admin = User(
             name="Administrador ParkHere", firt_name="Administrador",
             email="admin@parkhere.test", password_hash=hash_password("123456"),
@@ -137,7 +152,19 @@ async def seed_homologation_valenca():
             phone="75999990101", phone_verified=True, email_verified=True,
             role=UserRoleEnum.PARTNER_MANAGER,
         )
-        db.add_all([admin, manager, *operators, customer, rental_manager, hybrid_manager])
+        cotia_manager = User(
+            tenant_id=cotia_tenant.id, name="Gestor ServiceHub Cotia", firt_name="Gestor",
+            email="gestor.cotia@servicehub.test", password_hash=hash_password("123456"),
+            phone="11999990200", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.PARTNER_MANAGER,
+        )
+        cotia_operator = User(
+            tenant_id=cotia_tenant.id, name="Operador ServiceHub Cotia", firt_name="Operador",
+            email="operador.cotia@servicehub.test", password_hash=hash_password("123456"),
+            phone="11999990201", phone_verified=True, email_verified=True,
+            role=UserRoleEnum.OPERATOR, permissions=json.dumps(DEFAULT_OPERATOR_PERMISSIONS),
+        )
+        db.add_all([admin, manager, *operators, customer, rental_manager, hybrid_manager, cotia_manager, cotia_operator])
         await db.flush()
 
         parking = Parking(
@@ -207,6 +234,44 @@ async def seed_homologation_valenca():
             price=0, is_active=True,
         ))
 
+        cotia_parking = Parking(
+            tenant_id=cotia_tenant.id,
+            name="ServiceHub Estacionamento Cotia",
+            address="Avenida Doutor Odair Pacheco Pedroso, 1393, Cotia - SP",
+            street="Avenida Doutor Odair Pacheco Pedroso", number="1393",
+            neighborhood="Vila Montserrat", postal_code="06717-503", city="Cotia",
+            lat=-23.628874, lng=-46.909681, rating=4.7,
+            total_spots=36, available_spots=36, covered_spots=16, uncovered_spots=20,
+            vip_spots=0, large_spots=0, bus_spots=0, pickup_spots=0, moto_home_spots=0,
+            has_covered_area=True, has_24h_gate=True, has_security_system=True,
+            is_active=True, accepts_guide_affiliates=True, work_regime="commercial",
+            operating_hours=json.dumps({
+                "mon": {"open": "06:00", "close": "22:00"},
+                "tue": {"open": "06:00", "close": "22:00"},
+                "wed": {"open": "06:00", "close": "22:00"},
+                "thu": {"open": "06:00", "close": "22:00"},
+                "fri": {"open": "06:00", "close": "23:00"},
+                "sat": {"open": "07:00", "close": "23:00"},
+                "sun": {"open": "07:00", "close": "20:00"},
+            }),
+            category_pricing=json.dumps({
+                "covered": {"first_hour_price": 12, "additional_hour_price": 6, "daily_price": 45, "weekly_price": 210, "monthly_price": 360},
+                "uncovered": {"first_hour_price": 9, "additional_hour_price": 5, "daily_price": 35, "weekly_price": 175, "monthly_price": 300},
+            }),
+            covered_first_hour_price=12, covered_additional_hour_price=6,
+            covered_daily_price=45, covered_weekly_price=210, covered_monthly_price=360,
+            uncovered_first_hour_price=9, uncovered_additional_hour_price=5,
+            uncovered_daily_price=35, uncovered_weekly_price=175, uncovered_monthly_price=300,
+            first_hour_price=9, additional_hour_price=5, daily_price=35,
+            weekly_price=175, monthly_price=300,
+        )
+        db.add(cotia_parking)
+        await db.flush()
+        db.add(ParkingService(
+            parking_id=cotia_parking.id, code="car_wash", name="Lava-jato",
+            description="Lavagem externa sob demanda.", price=35, is_active=True,
+        ))
+
         db.add(PartnerProfile(
             tenant_id=tenant.id, service_type="parking", company_name="ParkHere Valença",
             cnpj=tenant.cnpj, document_type="cnpj", document_number=tenant.cnpj,
@@ -225,6 +290,14 @@ async def seed_homologation_valenca():
             company_name="ServiceHub Mobilidade Valença", cnpj=hybrid_tenant.cnpj,
             document_type="cnpj", document_number=hybrid_tenant.cnpj,
             registration_status="active", responsible_name=hybrid_manager.name,
+            approval_status="approved",
+        ))
+        db.add(PartnerProfile(
+            tenant_id=cotia_tenant.id, service_type="parking",
+            company_name="ServiceHub Estacionamento Cotia", cnpj=cotia_tenant.cnpj,
+            document_type="cnpj", document_number=cotia_tenant.cnpj,
+            registration_status="active", responsible_name=cotia_manager.name,
+            city="Cotia", latitude=-23.628874, longitude=-46.909681,
             approval_status="approved",
         ))
 
@@ -309,6 +382,32 @@ async def seed_homologation_valenca():
             RentalPlan(company_id=hybrid_rental.id, group_id=hybrid_groups[1].id, name="Diária motocicleta", description="Plano diário para motocicleta.", vehicle_type="motorcycle", price_per_day=79, price_per_week=490, price_per_month=1600, deposit_amount=250, mileage_limit_per_day=180, included_items=["Capacete"]),
         ])
 
+        cotia_rental = RentalCompany(
+            tenant_id=cotia_tenant.id,
+            name="ServiceHub Locadora Cotia",
+            service_type="vehicle_rental", unit_kind="branch",
+            address="Avenida Doutor Odair Pacheco Pedroso, 1393, Cotia - SP",
+            city="Cotia", latitude=-23.6284, longitude=-46.9089,
+            cnpj=cotia_tenant.cnpj, is_active=True,
+        )
+        db.add(cotia_rental)
+        await db.flush()
+        cotia_groups = [
+            RentalVehicleGroup(company_id=cotia_rental.id, name="Econômico com ar", code="ECON", vehicle_type="car", description="Compactos econômicos para uso urbano, com ar-condicionado.", suggested_price_per_day=169, is_default=True),
+            RentalVehicleGroup(company_id=cotia_rental.id, name="Motocicleta urbana", code="MOTO", vehicle_type="motorcycle", description="Motocicletas práticas para deslocamentos na região.", suggested_price_per_day=95, is_default=True),
+        ]
+        db.add_all(cotia_groups)
+        await db.flush()
+        cotia_vehicles = [
+            RentalVehicle(company_id=cotia_rental.id, group_id=cotia_groups[0].id, vehicle_type="car", brand="Fiat", model="Mobi", year=2025, plate="COT1A25", price_per_day=169, status="available", photo_urls=[], specifications={"air_conditioning": True, "seats": 5}),
+            RentalVehicle(company_id=cotia_rental.id, group_id=cotia_groups[1].id, vehicle_type="motorcycle", brand="Honda", model="CG 160", year=2024, plate="COT2B24", price_per_day=95, status="available", photo_urls=[], specifications={"engine_cc": 160}),
+        ]
+        db.add_all(cotia_vehicles)
+        db.add_all([
+            RentalPlan(company_id=cotia_rental.id, group_id=cotia_groups[0].id, name="Diária econômico Cotia", description="Carro compacto com ar-condicionado e assistência básica.", vehicle_type="car", price_per_day=169, price_per_week=1050, price_per_month=3400, deposit_amount=500, mileage_limit_per_day=200, included_items=["Proteção básica"]),
+            RentalPlan(company_id=cotia_rental.id, group_id=cotia_groups[1].id, name="Diária motocicleta Cotia", description="Motocicleta urbana com capacete incluso.", vehicle_type="motorcycle", price_per_day=95, price_per_week=590, price_per_month=1900, deposit_amount=250, mileage_limit_per_day=180, included_items=["Capacete"]),
+        ])
+
         guide_tenants = [
             Tenant(name="Guia Valença Histórico", cnpj="33333444000155", email="guia1@servicehub.test", plan=PlanEnum.FREE, status=TenantStatusEnum.ACTIVE),
             Tenant(name="Guia Valença Natureza", cnpj="44444555000166", email="guia2@servicehub.test", plan=PlanEnum.FREE, status=TenantStatusEnum.ACTIVE),
@@ -389,6 +488,16 @@ async def seed_homologation_valenca():
                 db.add(OperatorWorkShift(operator_id=operator.id, parking_id=parking.id,
                                          starts_at=start, ends_at=end))
 
+        # Turno mínimo da unidade de Cotia para validar escopo de operador.
+        db.add(OperatorParkingAssignment(operator_id=cotia_operator.id, parking_id=cotia_parking.id))
+        db.add(OperatorWorkProfile(operator_id=cotia_operator.id, parking_id=cotia_parking.id,
+                                   daily_hours=8, lunch_minutes=60,
+                                   work_modality="commercial", days_off="[]", bank_hours=0))
+        cotia_day = now
+        db.add(OperatorWorkShift(operator_id=cotia_operator.id, parking_id=cotia_parking.id,
+                                 starts_at=cotia_day + timedelta(hours=6),
+                                 ends_at=cotia_day + timedelta(hours=14)))
+
         db.add(Vehicle(id=SEED_VEHICLE_ID, user_id=customer.id, nickname="Meu carro",
                        plate="PKH1A23", brand="Toyota", model="Corolla", color="Prata",
                        vehicle_document="CRLV-2026-TESTE", ownership_type="owner",
@@ -449,11 +558,26 @@ async def seed_homologation_valenca():
                                               billing_period="monthly",
                                               billing_prices=json.dumps({"monthly": price, "annual": price * 10}),
                                               notes="Homologação locação multi-serviço"))
+        for feature, price, enabled in (
+            ("financial_management", 49.90, True),
+            ("dashboard", 39.90, True),
+            ("rental_management", 49.90, True),
+            ("rental_operations", 69.90, True),
+            ("convenience", 29.90, False),
+        ):
+            db.add(PartnerFeatureEntitlement(
+                tenant_id=cotia_tenant.id, feature_key=feature,
+                is_enabled=enabled, is_paid=not enabled, price=price,
+                billing_period="monthly",
+                billing_prices=json.dumps({"monthly": price, "annual": price * 10}),
+                notes="Homologação Cotia",
+            ))
         await db.commit()
         print("Seed de homologação criado: estacionamento, locadora, dois guias e empresa híbrida estacionamento + locação, sem reservas.")
         print("admin@parkhere.test / gestor@parkhere.test / operador1..3@parkhere.test / cliente@parkhere.test - senha 123456")
         print("Locadora: gestor.locadora@servicehub.test / senha 123456")
         print("Empresa híbrida: gestor.mobilidade@servicehub.test / senha 123456")
+        print("Cotia: gestor.cotia@servicehub.test / operador.cotia@servicehub.test - senha 123456")
         print("Guias: guia1@servicehub.test e guia2@servicehub.test - senha 123456")
         return
 

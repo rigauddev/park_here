@@ -249,6 +249,7 @@ _CANONICAL_CITIES = {
     'belem': 'Belém',
     'joao pessoa': 'João Pessoa',
     'florianopolis': 'Florianópolis',
+    'cotia': 'Cotia',
 }
 
 
