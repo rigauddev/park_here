@@ -13,7 +13,8 @@ from app.modules.payments.mercado_pago import MercadoPagoClient, MercadoPagoErro
 from app.modules.payments.schemas import CreatePaymentIntentRequest
 from app.modules.payments.service import PaymentService, _ensure_payable_reservation, settings
 from app.modules.users.models.user_model_role_enum import UserRoleEnum
-from app.modules.reservations.service import _selected_services, _guide_commission
+from app.modules.reservations.service import _selected_services, _guide_commission, _base_amount
+from app.modules.parkings.router import _normalize_category_pricing
 from app.modules.platform_fees.models import PlatformFee, PartnerPlatformFee, ParkingPlatformFee
 from app.modules.platform_fees.service import PlatformFeeService
 from app.modules.payments.service import _reservation_establishment_fee
@@ -21,6 +22,47 @@ from app.core.email_service import EmailService
 
 
 class ParkingRulesTests(unittest.TestCase):
+    def test_category_pricing_reads_current_and_legacy_seed_shapes(self):
+        parking = SimpleNamespace(
+            category_pricing=(
+                '{"vip":{"first_hour_price":22,"additional_hour_price":11,'
+                '"daily_price":90,"weekly_price":390,"monthly_price":680},'
+                '"large":{"hourly":18,"daily":75,"weekly":330,"monthly":560}}'
+            ),
+            covered_first_hour_price=0, covered_additional_hour_price=0,
+            covered_daily_price=0, covered_weekly_price=0, covered_monthly_price=0,
+            uncovered_first_hour_price=0, first_hour_price=0,
+            uncovered_additional_hour_price=0, additional_hour_price=0,
+            uncovered_daily_price=0, daily_price=0,
+            uncovered_weekly_price=0, weekly_price=0,
+            uncovered_monthly_price=0, monthly_price=0,
+        )
+        self.assertEqual(_base_amount(parking, 'vip', 'daily', 1), 90)
+        self.assertEqual(_base_amount(parking, 'large', 'daily', 1), 75)
+        self.assertEqual(_base_amount(parking, 'large', 'hourly', 2), 36)
+
+    def test_public_category_pricing_normalizes_legacy_seed(self):
+        self.assertEqual(
+            _normalize_category_pricing({'hourly': 16, 'daily': 70, 'weekly': 300, 'monthly': 900}),
+            {
+                'first_hour_price': 16,
+                'additional_hour_price': 16,
+                'daily_price': 70,
+                'weekly_price': 300,
+                'monthly_price': 900,
+            },
+        )
+
+    def test_unit_schedule_regime_is_validated(self):
+        base = dict(
+            name='Unidade', address='Rua Central', lat=-13.37, lng=-39.07,
+            total_spots=3, uncovered_spots=3, uncovered_pricing={},
+        )
+        for regime in ('commercial', 'three_shifts', '24h_on_3off', 'administrative_8h'):
+            ParkingManagementRequest(**base, work_regime=regime)
+        with self.assertRaises(ValidationError):
+            ParkingManagementRequest(**base, work_regime='single_24h_operator')
+
     def test_prices_reject_negative_and_non_finite(self):
         for price in (-1, float('nan'), float('inf')):
             with self.subTest(price=price):

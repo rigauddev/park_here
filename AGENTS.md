@@ -16,6 +16,8 @@ ParkHere e um SaaS/app de gestao e reserva de estacionamentos. O MVP tem backend
 
 ## Regras De Trabalho
 
+- **Unificação e Anti-duplicação**: Antes de implementar novas features, verificar rigorosamente se já existe funcionalidade similar ou fluxo existente; unificar fluxos e evitar duplicações de código, telas ou contratos.
+- **Revisão Prévia de Fluxo**: Revisar o fluxo ponta a ponta (requisitos, permissões, cenários de sucesso e caminhos de erro) antes de codificar.
 - Ler `docs/product-overview.md`, `docs/features.md` e `docs/architecture.md` antes de criar modulo novo.
 - Manter check-in/checkout por placa e reconhecimento facial como V2.
 - No MVP, usar validacao manual/app/portaria e projetar extensibilidade por metodo.

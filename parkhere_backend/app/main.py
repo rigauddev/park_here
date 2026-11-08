@@ -1,4 +1,7 @@
 import os
+import json
+import logging
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.modules.auth.router import router as auth_router
@@ -8,13 +11,37 @@ from app.modules.parkings.router import router as parkings_router
 from app.modules.partners.router import router as partners_router
 from app.modules.payments.router import router as payments_router
 from app.modules.platform_fees.router import router as platform_fees_router
+from app.modules.dashboard.router import router as dashboard_router
+from app.modules.parkings.convenience_router import router as convenience_router
 from app.modules.reservations.router import router as reservations_router
 from app.modules.users.user_router import router as user_router
+from app.modules.rentals.router import router as rentals_router
 
 app = FastAPI(
-    title="ParkHere SaaS API",
+    title="ServiceHub SaaS API",
     version="1.0.0"
 )
+
+logger = logging.getLogger("parkhere.api")
+
+
+@app.middleware("http")
+async def structured_request_log(request, call_next):
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("api_request_failed", extra={"path": request.url.path, "method": request.method})
+        raise
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+    logger.info(json.dumps({
+        "event": "api_request",
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "duration_ms": elapsed_ms,
+    }, ensure_ascii=False))
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +60,9 @@ app.include_router(partners_router)
 app.include_router(reservations_router)
 app.include_router(payments_router)
 app.include_router(platform_fees_router)
+app.include_router(dashboard_router)
+app.include_router(convenience_router)
+app.include_router(rentals_router)
 
 
 @app.get("/health")

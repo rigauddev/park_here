@@ -1,5 +1,35 @@
 # Roadmap
 
+## Jornada, precificação, carteira e solicitações — 13/09/2026
+
+- A unidade persiste sua jornada-base separada do horário da portaria. Escalas
+  podem ser geradas em horário comercial, três faixas de 8h para cobertura 24h,
+  plantão 24h com ciclo 1x3, ou administrativo de até 8h; turnos sem operador
+  ficam abertos para atribuição posterior. O calendário diferencia unidades por
+  cor, filtra por unidade/operador e exporta PDF agrupado por unidade.
+- Compatibilidade de tarifa aceita tanto o formato antigo do seed (`hourly`,
+  `daily`, etc.) quanto as chaves atuais (`first_hour_price`, `daily_price`,
+  etc.). O valor da reserva volta a usar a categoria selecionada, com fallback
+  para tarifa da área quando a categoria ainda não tem configuração própria.
+- A carteira local permite selecionar o cartão padrão e mostra cada cartão com
+  identidade visual distinta. Guarda somente metadados mascarados em
+  SharedPreferences; não armazena PAN completo nem CVV e ainda não tokeniza no
+  Mercado Pago.
+- Pedidos de funcionalidades pagas aceitam preços mensal, anual e único por
+  30 dias, Pix/crédito/débito e comprovante para revisão manual. O admin pode
+  consultar o comprovante e aprovar/rejeitar; aprovação mensal dura 30 dias e
+  anual, 365 dias. Renovação recorrente automática e confirmação de pagamento
+  via provedor continuam pendentes da integração Mercado Pago. Isso não é uma
+  cobrança ou confirmação automática nesta fase.
+- O seed MVP é idempotente para os cenários ParkHere Valença e atualiza contas
+  e tarifas de demonstração identificadas; não exige `docker compose down -v`.
+  Ele também remove quatro contas de exemplo antigas explicitamente nomeadas.
+  Inspecione os dados locais antes de executá-lo. Aplique a migration e seed sem
+  remover o volume `mysql_data`.
+
+Critérios manuais desta rodada estão em
+[`manual-tests.md`](manual-tests.md#jornadas-cores-por-unidade-e-pdf).
+
 ## Revisao de continuidade — 06/09/2026
 
 Escopo desta rodada: servicos adicionais do estacionamento e gestao operacional do ParkHere.
@@ -114,6 +144,8 @@ O backlog detalhado, regras de negócio e tarefas restantes estão em
 - Cadastro do estacionamento deve coletar portaria 24h, sistema de seguranca e interesse em atendimento automatico.
 - Exigir aceite dos termos de responsabilidade no cadastro de cliente, parceiro e operador.
 - Criar seed com parceiros de cada tipo.
+- Chat entre cliente e estabelecimento, com histórico por reserva e notificações
+  (V2; fora do fluxo MVP atual).
 - Testar listagem e aprovacao manual via API.
 - Separar parceiros de divulgacao e parceiros de gestao.
 - Separar interface `Minha empresa` do parceiro da futura gestao geral do admin do sistema.
@@ -255,11 +287,15 @@ templates de e-mail PT/EN com marca ParkHere. O snapshot da taxa é preservado
 na reserva para que uma alteração administrativa futura não modifique uma
 cobrança já apresentada.
 
-Ainda pendente: cobrança/renovação dos módulos pagos e bloqueio backend dos
-módulos quando o entitlement expirar; tela de auditoria no app; busca/paginação
+Ainda pendente: cobrança/renovação automática dos módulos pagos; tela de auditoria no app; busca/paginação
 de parceiros/clientes; afiliação genérica de guias a serviços que não sejam
 estacionamentos; idioma preferido de e-mail por usuário; módulos operacionais
 de hotel, lava-jato, restaurante, turismo e transporte.
+## Próximos itens V2
+
+- Enviar automaticamente o termo de responsabilidade da reserva criada por operador ou gestor por e-mail ou WhatsApp, registrando canal e versão do documento.
+- Exibir consulta ampliada das fotos de check-in/checkout e reconhecimento de veículo somente após consentimento LGPD, retenção definida e fallback manual.
+
 # Marketing, termos e privacidade — bloco atual
 
 - [x] Preparar copy bilíngue e esqueleto responsivo para a subpágina ParkHere na Wix; distinguir módulos ativos de roadmap.
@@ -270,3 +306,39 @@ de hotel, lava-jato, restaurante, turismo e transporte.
 - [ ] Revisão de advogado brasileiro das minutas por categoria, contratos de intermediação e política de privacidade.
 - [ ] Definir controladores/operadores, retenção e base legal para cada integração de anúncios; implementar tela separada de preferências e revogação antes de publicidade personalizada.
 - [ ] Ligar botões, políticas, suporte, URLs de download e logos finais na Wix após publicação/aprovação editorial.
+## Agendamento em unidade fechada
+
+O MVP permite escolher data e hora futuras quando a unidade está fechada e envia
+`arrival_estimate_at` para validação no servidor. Os lembretes push de 1 hora e
+30 minutos antes, com confirmação da pré-reserva, dependem da integração de
+notificações (FCM/APNs) e permanecem no próximo bloco de homologação.
+### Checkout Transparente Mercado Pago (homologação)
+
+O backend possui o endpoint `POST /payments/reservations/{id}/transparent-order`
+para iniciar um pedido no Orders API. Ele exige `PAYMENT_PROVIDER=mercado_pago`,
+usa chave de idempotência por transação e nunca recebe ou armazena número do
+cartão, validade ou CVV. A tokenização deve ser feita pelo SDK/Card Payment Brick
+no app e o resultado confirmado por webhook no backend. O endpoint é um bloco de
+homologação: o SDK nativo e o tratamento completo de Pix devem ser conectados
+antes de produção.
+
+O Checkout Transparente mantém o usuário no app, mas os dados sensíveis ficam no
+SDK do Mercado Pago. Consulte a [documentação oficial](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api/overview).
+
+### Reconhecimento facial (V2)
+
+O MVP continua usando validação manual e fotos no check-in/checkout. A futura
+detecção facial usará `google_mlkit_face_detection` somente em Android/iOS; Web
+não é suportado pelo plugin. A feature deve ficar atrás de flag, com fallback
+manual e consentimento específico. Referências: [plugin Flutter](https://pub.dev/packages/google_mlkit_face_detection)
+e [ML Kit](https://developers.google.com/ml-kit/vision/face-detection).
+
+### Maquininhas Android
+
+O APK atual não deve ser instalado diretamente em terminais de pagamento. O
+Mercado Pago Point Smart usa SmartApps/SDK, OAuth e homologação; deve ser um alvo
+Android separado, com modo PDV limitado. Consulte a [visão geral SmartApps](https://www.mercadopago.com.br/developers/pt/docs/smartapps/overview?scope=prod).
+
+
+## anotacoes
+Quando o operador do estacionamento, criar um reserva ao informar a placa consultar se a placa ja existe no sistema se ja existir retorna dados do cliente operador confirma se o cliente ja tem cadastro e qual nome, se quando o operador criar a reserva ja atrelar ao cliente. se nao segue o fluxo ja criado, que ao finalizar a reserva enviar via whatsapp, link da play store e link da apple store, com nuemro da reserva do cliente, para que ele ao instalar app criar cadastro possa  associar a reserva ao usuario dele, na tela de reserva deve ter capo buscar reserva, ele cola o codigo mostra a reaerva e tem botao de associar a reserva  caso a reserva tenha sido criada pelo o operador ou gestor do estacionamento 

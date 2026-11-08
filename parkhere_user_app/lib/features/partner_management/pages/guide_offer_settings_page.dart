@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/api_feedback.dart';
 import '../../../core/i18n/app_localizations.dart';
 import '../../../core/services/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -66,7 +67,7 @@ class _GuideOfferSettingsPageState
       if (_parkingId != null) await _loadOffer(_parkingId!, token);
     } catch (error) {
       if (mounted) {
-        _message(
+        await _message(
           '${_copy('Não foi possível carregar as unidades', 'Could not load locations')}: $error',
         );
       }
@@ -101,7 +102,7 @@ class _GuideOfferSettingsPageState
       if (value == null ||
           value < 0 ||
           (_types[period] == 'percentage' && value > 100)) {
-        _message(
+        await _message(
           _copy(
             'Revise os valores. Percentuais devem ficar entre 0 e 100.',
             'Check the values. Percentages must be between 0 and 100.',
@@ -119,7 +120,7 @@ class _GuideOfferSettingsPageState
             terms.values.any(
               (term) => (term['commission_value'] as double) <= 0,
             ))) {
-      _message(
+      await _message(
         _copy(
           'Preencha uma comissão positiva para cada modalidade antes de aceitar afiliados.',
           'Set a positive commission for every plan before accepting affiliates.',
@@ -135,11 +136,14 @@ class _GuideOfferSettingsPageState
         token,
       );
       if (mounted) {
-        _message(_copy('Oferta de afiliados salva.', 'Affiliate offer saved.'));
+        await _message(
+          _copy('Oferta de afiliados salva.', 'Affiliate offer saved.'),
+          isError: false,
+        );
       }
     } catch (error) {
       if (mounted) {
-        _message(
+        await _message(
           '${_copy('Não foi possível salvar a oferta', 'Could not save the offer')}: $error',
         );
       }
@@ -148,8 +152,8 @@ class _GuideOfferSettingsPageState
     }
   }
 
-  void _message(String text) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  Future<void> _message(String text, {bool isError = true}) =>
+      ApiFeedback.show(context, text, isError: isError);
 
   @override
   Widget build(BuildContext context) => Scaffold(

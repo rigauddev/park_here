@@ -1,6 +1,12 @@
+import json
+import asyncio
+import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 import unicodedata
-from sqlalchemy import select
+from math import asin, cos, radians, sin, sqrt
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -8,9 +14,12 @@ from app.core.database import get_db
 from app.modules.parkings.models import Parking
 from app.modules.parkings.schemas import ParkingPricingResponse, ParkingResponse
 from app.modules.partners.guide_models import GuideParkingLink
+from app.modules.partners.models import PartnerProfile
+from app.modules.rentals.models import RentalCompany, RentalVehicle
 from app.modules.users.models.user_model import User
 
 router = APIRouter(prefix="/parkings", tags=["Parkings"])
+_IBGE_CITY_CACHE: list[str] | None = None
 
 
 @router.get("", response_model=list[ParkingResponse])
@@ -35,6 +44,173 @@ async def list_parkings(
             if normalized_city in _normalize_city(parking.city)
         ]
     return [_to_response(parking) for parking in parkings]
+
+
+@router.get("/cities")
+async def list_service_cities(
+    q: str | None = Query(default=None, min_length=1, max_length=120),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return distinct cities that currently have an active service.
+
+    City lookup is deliberately data-driven: an unknown city returns an empty
+    list and never becomes a client-side parsing error. The app can still
+    accept arbitrary text and then display the no-results state.
+    """
+    parking_rows = await db.scalars(
+        select(Parking.city).where(Parking.is_active.is_(True)).distinct()
+    )
+    rental_rows = await db.scalars(
+        select(RentalCompany.city).where(RentalCompany.is_active.is_(True)).distinct()
+    )
+    partner_rows = await db.scalars(
+        select(PartnerProfile.city)
+        .where(PartnerProfile.approval_status == 'approved', PartnerProfile.city.is_not(None))
+        .distinct()
+    )
+    normalized_query = _normalize_city(q) if q else ""
+    values = []
+    seen = set()
+    values_to_scan = list(parking_rows.all()) + list(partner_rows.all())
+    values_to_scan.extend(rental_rows.all())
+    for value in values_to_scan:
+        if not value:
+            continue
+        if normalized_query and normalized_query not in _normalize_city(value):
+            continue
+        canonical = _canonical_city(value)
+        key = _normalize_city(canonical)
+        if key not in seen:
+            seen.add(key)
+            values.append(canonical)
+    # A cidade pode ainda não possuir serviço no ServiceHub, mas deve ser
+    # selecionável para que o cliente pesquise antes da expansão do catálogo.
+    # O IBGE é a fonte pública oficial; o cache em memória evita uma chamada a
+    # cada tecla e o catálogo local continua sendo o fallback offline.
+    if q and len(normalized_query) >= 2:
+        for city in await _ibge_cities():
+            if normalized_query in _normalize_city(city):
+                canonical = _canonical_city(city)
+                if _normalize_city(canonical) not in seen:
+                    values.append(canonical)
+                if len(values) >= 100:
+                    break
+    return {"cities": sorted(set(values), key=_normalize_city)}
+
+
+async def _ibge_cities() -> list[str]:
+    global _IBGE_CITY_CACHE
+    if _IBGE_CITY_CACHE is not None:
+        return _IBGE_CITY_CACHE
+
+    def fetch() -> list[str]:
+        request = urllib.request.Request(
+            'https://servicodados.ibge.gov.br/api/v1/localidades/municipios',
+            headers={'User-Agent': 'ServiceHub/1.0'},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+        return sorted({
+            item['nome'] for item in payload
+            if isinstance(item, dict) and item.get('nome')
+        }, key=_normalize_city)
+
+    try:
+        _IBGE_CITY_CACHE = await asyncio.to_thread(fetch)
+    except Exception:
+        _IBGE_CITY_CACHE = []
+    return _IBGE_CITY_CACHE
+
+
+@router.get('/services/map')
+async def list_map_services(
+    city: str | None = Query(default=None, min_length=2),
+    service_type: str | None = Query(default=None, max_length=40),
+    latitude: float | None = Query(default=None, ge=-90, le=90),
+    longitude: float | None = Query(default=None, ge=-180, le=180),
+    radius_km: float = Query(default=10, gt=0, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Public discovery index used by the map.
+
+    Each item is a service unit, not a second reservation contract. Parking
+    keeps its existing detail flow; other service types are exposed so the map
+    can filter and route to their own module pages.
+    """
+    normalized_city = _normalize_city(city) if city else ''
+    allowed = {'parking', 'vehicle_rental', 'tour_guide'}
+    requested = service_type if service_type in allowed else None
+    items = []
+
+    if requested in (None, 'parking'):
+        parkings = (await db.scalars(select(Parking).where(Parking.is_active.is_(True)))).all()
+        for parking in parkings:
+            if normalized_city and normalized_city not in _normalize_city(parking.city):
+                continue
+            items.append({
+                'id': parking.id, 'name': parking.name, 'city': _canonical_city(parking.city),
+                'lat': parking.lat, 'lng': parking.lng, 'service_type': 'parking',
+                'available_count': parking.available_spots, 'is_open': _is_open_now(parking),
+            })
+
+    if requested in (None, 'vehicle_rental'):
+        companies = (await db.scalars(select(RentalCompany).where(RentalCompany.is_active.is_(True)))).all()
+        for company in companies:
+            company_city = company.city or ''
+            if normalized_city and normalized_city not in _normalize_city(company_city):
+                continue
+            available = await db.scalar(
+                select(func.count(RentalVehicle.id)).where(
+                    RentalVehicle.company_id == company.id,
+                    RentalVehicle.is_active.is_(True),
+                    RentalVehicle.status == 'available',
+                )
+            )
+            items.append({
+                'id': company.id, 'name': company.name, 'city': company_city,
+                'lat': company.latitude, 'lng': company.longitude,
+                'service_type': 'vehicle_rental', 'available_count': int(available or 0),
+                'is_open': True,
+            })
+
+    if requested in (None, 'tour_guide'):
+        profiles = (await db.scalars(select(PartnerProfile).where(
+            PartnerProfile.service_type == 'tour_guide',
+            PartnerProfile.approval_status == 'approved',
+        ))).all()
+        for profile in profiles:
+            profile_city = profile.city or ''
+            if normalized_city and normalized_city not in _normalize_city(profile_city):
+                continue
+            if profile.latitude is None or profile.longitude is None:
+                continue
+            items.append({
+                'id': profile.tenant_id, 'name': profile.company_name,
+                'city': _canonical_city(profile_city), 'lat': profile.latitude,
+                'lng': profile.longitude, 'service_type': 'tour_guide',
+                'available_count': 1, 'is_open': True,
+            })
+
+    if city is None and latitude is not None and longitude is not None:
+        items = [
+            item for item in items
+            if item.get('lat') is not None and item.get('lng') is not None
+            and _distance_km(latitude, longitude, item['lat'], item['lng']) <= radius_km
+        ]
+
+    return {
+        'city': _canonical_city(city) if city else None,
+        'service_types': sorted({item['service_type'] for item in items}),
+        'services': items,
+    }
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius = 6371.0
+    d_lat = radians(lat2 - lat1)
+    d_lon = radians(lon2 - lon1)
+    value = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+    return earth_radius * 2 * asin(sqrt(value))
 
 
 @router.get('/{parking_id}/guides')
@@ -73,6 +249,7 @@ _CANONICAL_CITIES = {
     'belem': 'Belém',
     'joao pessoa': 'João Pessoa',
     'florianopolis': 'Florianópolis',
+    'cotia': 'Cotia',
 }
 
 
@@ -82,6 +259,13 @@ def _canonical_city(value: str) -> str:
 
 def _to_response(parking: Parking) -> ParkingResponse:
     services = {service.code: service for service in parking.services if service.is_active}
+    category_pricing = {
+        key: _normalize_category_pricing(value)
+        for key, value in json.loads(parking.category_pricing or '{}').items()
+    }
+
+    def category_price(category: str, key: str) -> float:
+        return float(category_pricing.get(category, {}).get(key, 0) or 0)
 
     return ParkingResponse(
         id=parking.id,
@@ -102,6 +286,7 @@ def _to_response(parking: Parking) -> ParkingResponse:
             coveredFirstHourPrice=parking.covered_first_hour_price,
             uncoveredFirstHourPrice=parking.uncovered_first_hour_price,
         ),
+        category_pricing=category_pricing,
         hasCarWash="car_wash" in services,
         hasTourGuide="tour_guide" in services,
         hasTransportService="transport" in services,
@@ -116,11 +301,49 @@ def _to_response(parking: Parking) -> ParkingResponse:
         motoHomeSpots=getattr(parking, 'moto_home_spots', 0),
         coveredDailyPrice=parking.covered_daily_price,
         uncoveredDailyPrice=parking.uncovered_daily_price,
-        vipDailyPrice=parking.covered_daily_price,
-        largeDailyPrice=parking.uncovered_daily_price,
-        busDailyPrice=parking.uncovered_daily_price,
-        pickupDailyPrice=parking.uncovered_daily_price,
+        vipDailyPrice=category_price("vip", "daily_price"),
+        largeDailyPrice=category_price("large", "daily_price"),
+        busDailyPrice=category_price("bus", "daily_price"),
+        pickupDailyPrice=category_price("pickup", "daily_price"),
         carWashPrice=services.get("car_wash").price if "car_wash" in services else 0,
         tourGuidePrice=services.get("tour_guide").price if "tour_guide" in services else 0,
         transportPrice=services.get("transport").price if "transport" in services else 0,
+        isOpen=_is_open_now(parking),
+        operating_hours=json.loads(parking.operating_hours or '{}'),
     )
+
+
+def _is_open_now(parking: Parking) -> bool:
+    raw = json.loads(parking.operating_hours or '{}')
+    if not raw:
+        return True
+    keys = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
+    # Container clocks are commonly UTC; opening hours are configured in the
+    # parking unit's local Brazil/Bahia time.
+    now = datetime.now(ZoneInfo("America/Bahia"))
+    hours = raw.get(keys[now.weekday()])
+    if not hours or hours.get('closed') is True:
+        return False
+    opening, closing = hours.get('open'), hours.get('close')
+    if not opening or not closing or opening == closing == '00:00':
+        return False
+    try:
+        open_h, open_m = (int(part) for part in opening.split(':', 1))
+        close_h, close_m = (int(part) for part in closing.split(':', 1))
+        current = now.hour * 60 + now.minute
+        start, end = open_h * 60 + open_m, close_h * 60 + close_m
+        return current >= start or current < end if end < start else start <= current < end
+    except (TypeError, ValueError):
+        return True
+
+
+def _normalize_category_pricing(value: dict) -> dict[str, float]:
+    """Read current and pre-MVP seed formats into the stable public contract."""
+    first_hour = value.get('first_hour_price', value.get('hourly', 0))
+    return {
+        'first_hour_price': float(first_hour or 0),
+        'additional_hour_price': float(value.get('additional_hour_price', value.get('hourly', 0)) or 0),
+        'daily_price': float(value.get('daily_price', value.get('daily', 0)) or 0),
+        'weekly_price': float(value.get('weekly_price', value.get('weekly', 0)) or 0),
+        'monthly_price': float(value.get('monthly_price', value.get('monthly', 0)) or 0),
+    }

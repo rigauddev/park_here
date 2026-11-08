@@ -70,9 +70,9 @@ class AccountNotifier extends StateNotifier<AccountState> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
+    final token = (await _storage.getTokens())['access'];
+    final role = _tokenClaim(token, 'role');
     final setupDone = prefs.getBool(_setupDoneKey) ?? false;
-    final walletDone = prefs.getBool(_walletDoneKey) ?? false;
-
     final driverDocumentJson = prefs.getString(_driverDocumentKey);
     final vehiclesJson = prefs.getString(_vehiclesKey);
     final walletJson = prefs.getString(_walletMethodsKey);
@@ -105,6 +105,12 @@ class AccountNotifier extends StateNotifier<AccountState> {
       final decoded = jsonDecode(walletJson) as List<dynamic>;
       walletMethods = decoded
           .map((item) => _walletFromJson(item as Map<String, dynamic>))
+          // Clientes mantêm cartões mascarados no cache até a sincronização
+          // com a API; parceiros mantêm somente a conta Pix de repasse.
+          .where(
+            (method) =>
+                role == 'customer' || method.type == WalletMethodType.pix,
+          )
           .toList();
     }
 
@@ -133,27 +139,13 @@ class AccountNotifier extends StateNotifier<AccountState> {
       ];
     }
 
-    if (walletMethods.isEmpty && walletDone) {
-      walletMethods = const [
-        WalletMethodModel(
-          id: 'seed-card',
-          type: WalletMethodType.creditCard,
-          label: 'Visa final 4242',
-          holderName: 'Cliente Teste',
-          brand: 'Visa',
-          lastFour: '4242',
-          expiry: '12/30',
-          isActive: true,
-        ),
-      ];
-    }
-
     state = AccountState(
       driverDocument: driverDocument,
       vehicles: vehicles,
       walletMethods: walletMethods,
     );
     await syncVehicles();
+    await syncWalletMethods();
   }
 
   Future<void> syncVehicles() async {
@@ -183,6 +175,8 @@ class AccountNotifier extends StateNotifier<AccountState> {
           'vehicle_document': vehicle.documentFileName ?? 'document.pdf',
           'ownership_type': vehicle.ownershipType.name,
           'is_active': vehicle.isActive,
+          'vehicle_type': vehicle.vehicleType.name,
+          'bicycle_parts': vehicle.bicycleParts,
         }, token);
       }
     } catch (_) {
@@ -236,7 +230,61 @@ class AccountNotifier extends StateNotifier<AccountState> {
     await _persistSetupIfComplete();
   }
 
-  Future<void> addWalletMethod(WalletMethodModel method) async {
+  Future<void> addWalletMethod(
+    WalletMethodModel method, {
+    String? accountHolderDocument,
+  }) async {
+    if (method.type == WalletMethodType.pix) {
+      final token = (await _storage.getTokens())['access'];
+      if (token == null || token.isEmpty) {
+        throw StateError('Entre novamente para salvar a conta de repasse.');
+      }
+      final saved = await _api.putAuthorized('/partners/payout-account', {
+        'pix_key': method.pixKey,
+        'account_holder_name': method.holderName,
+        'account_holder_document': accountHolderDocument,
+      }, token);
+      state = state.copyWith(walletMethods: [_walletFromJson(saved)]);
+      await _persistWalletMethods();
+      return;
+    }
+    if (method.type != WalletMethodType.pix) {
+      final token = (await _storage.getTokens())['access'];
+      if (token == null || token.isEmpty) {
+        throw StateError('Entre novamente para salvar o cartão na sua conta.');
+      }
+      final expiry = method.expiry?.split('/') ?? const [];
+      if (expiry.length != 2) {
+        throw StateError('Informe a validade do cartão no formato MM/AA.');
+      }
+      final year = 2000 + (int.tryParse(expiry[1]) ?? 0);
+      final saved = await _api
+          .postAuthorized('/customer-assets/payment-methods', {
+            'method_type': method.type == WalletMethodType.debitCard
+                ? 'debit_card'
+                : 'credit_card',
+            'brand': method.brand ?? 'Cartão',
+            'cardholder_name': method.holderName ?? '',
+            'last_four': method.lastFour ?? '',
+            'expiration_month': int.tryParse(expiry[0]) ?? 0,
+            'expiration_year': year,
+            'is_default': method.isActive,
+          }, token);
+      final savedMethod = _walletFromJson(saved);
+      final updated = [
+        for (final current in state.walletMethods)
+          current.copyWith(
+            isActive: savedMethod.isActive ? false : current.isActive,
+          ),
+        savedMethod,
+      ];
+      state = state.copyWith(walletMethods: updated);
+      await _persistWalletMethods();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_walletDoneKey, state.hasActivePaymentMethod);
+      return;
+    }
+
     final updated = [
       for (final current in state.walletMethods)
         current.copyWith(isActive: method.isActive ? false : current.isActive),
@@ -251,6 +299,24 @@ class AccountNotifier extends StateNotifier<AccountState> {
   }
 
   Future<void> setActiveWalletMethod(String methodId) async {
+    WalletMethodModel? method;
+    for (final item in state.walletMethods) {
+      if (item.id == methodId) {
+        method = item;
+        break;
+      }
+    }
+    if (method != null && method.type != WalletMethodType.pix) {
+      final token = (await _storage.getTokens())['access'];
+      if (token == null || token.isEmpty) {
+        throw StateError('Entre novamente para atualizar o cartão padrão.');
+      }
+      await _api.postAuthorized(
+        '/customer-assets/payment-methods/$methodId/default',
+        const {},
+        token,
+      );
+    }
     state = state.copyWith(
       walletMethods: [
         for (final method in state.walletMethods)
@@ -261,6 +327,56 @@ class AccountNotifier extends StateNotifier<AccountState> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_walletDoneKey, state.hasActivePaymentMethod);
+  }
+
+  Future<void> syncWalletMethods() async {
+    final token = (await _storage.getTokens())['access'];
+    if (token == null || token.isEmpty) {
+      return;
+    }
+    try {
+      if (_tokenClaim(token, 'role') != 'customer') {
+        final payout = await _api.getAuthorizedMap(
+          '/partners/payout-account',
+          token,
+        );
+        state = state.copyWith(
+          walletMethods: payout.isEmpty ? const [] : [_walletFromJson(payout)],
+        );
+        await _persistWalletMethods();
+        return;
+      }
+      final remote = await _api.getAuthorized(
+        '/customer-assets/payment-methods',
+        token,
+      );
+      state = state.copyWith(
+        walletMethods: remote
+            .map((item) => _walletFromJson(item as Map<String, dynamic>))
+            .toList(),
+      );
+      await _persistWalletMethods();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_walletDoneKey, state.hasActivePaymentMethod);
+    } catch (_) {
+      // Account API is the source of truth for customer cards.
+    }
+  }
+
+  String? _tokenClaim(String? token, String claim) {
+    if (token == null) return null;
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final payload =
+          jsonDecode(
+                utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+              )
+              as Map<String, dynamic>;
+      return payload[claim] as String?;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _persistDriverDocument() async {
@@ -307,6 +423,8 @@ class AccountNotifier extends StateNotifier<AccountState> {
       'documentFileName': vehicle.documentFileName,
       'ownershipType': vehicle.ownershipType.name,
       'isActive': vehicle.isActive,
+      'vehicleType': vehicle.vehicleType.name,
+      'bicycleParts': vehicle.bicycleParts,
     };
   }
 
@@ -324,6 +442,11 @@ class AccountNotifier extends StateNotifier<AccountState> {
         orElse: () => VehicleOwnershipType.owner,
       ),
       isActive: json['isActive'] ?? false,
+      vehicleType: VehicleType.values.firstWhere(
+        (value) => value.name == (json['vehicleType'] ?? 'car'),
+        orElse: () => VehicleType.car,
+      ),
+      bicycleParts: json['bicycleParts'],
     );
   }
 
@@ -342,16 +465,21 @@ class AccountNotifier extends StateNotifier<AccountState> {
   }
 
   WalletMethodModel _walletFromJson(Map<String, dynamic> json) {
+    final rawType = json['type'] ?? json['method_type'] ?? 'creditCard';
     return WalletMethodModel(
       id: json['id'] ?? '',
       type: WalletMethodType.values.firstWhere(
-        (value) => value.name == (json['type'] ?? 'creditCard'),
+        (value) =>
+            value.name == rawType ||
+            (rawType == 'credit_card' &&
+                value == WalletMethodType.creditCard) ||
+            (rawType == 'debit_card' && value == WalletMethodType.debitCard),
         orElse: () => WalletMethodType.creditCard,
       ),
       label: json['label'] ?? 'Metodo',
-      holderName: json['holderName'],
-      brand: json['brand'],
-      lastFour: json['lastFour'],
+      holderName: json['holderName'] ?? json['cardholder_name'],
+      brand: json['brand'] ?? json['card_brand'],
+      lastFour: json['lastFour'] ?? json['last_four'],
       expiry: json['expiry'],
       pixKey: json['pixKey'],
       isActive: json['isActive'] ?? false,

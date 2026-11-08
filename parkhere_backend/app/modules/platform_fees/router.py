@@ -1,6 +1,8 @@
 import json
-from datetime import datetime
+from pathlib import Path
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,8 +26,11 @@ from app.modules.parkings.models import Parking, ParkingService
 from app.modules.users.models.user_model import User
 from app.modules.partners.operator_package_models import OperatorPackageRequest
 from app.modules.partners.models import PartnerProfile
+from app.modules.partners.permission_profile_models import PartnerPermissionProfile
+from app.modules.partners.document_models import PartnerDocument
 from app.modules.partners.guide_service_models import GuideService
 from app.core.email_service import EmailService
+from app.core.security import hash_password
 
 router = APIRouter(prefix='/admin/platform-fees', tags=['Platform fees'])
 
@@ -44,6 +49,29 @@ class UserActiveRequest(BaseModel):
     is_active: bool
     reason: str | None = Field(default=None, min_length=5, max_length=1000)
 
+class SystemAdminUserCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    email: str = Field(min_length=5, max_length=255)
+    cpf: str | None = None
+    role: str = 'system_admin_operator'
+    permissions: list[str] = Field(default_factory=list)
+
+class SystemPermissionProfileRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    permissions: list[str] = Field(default_factory=list)
+
+SYSTEM_PERMISSION_LABELS = {
+    'partners.view': 'Visualizar parceiros',
+    'partners.edit': 'Editar parceiros',
+    'partners.delete': 'Desativar parceiros',
+    'customers.view': 'Visualizar clientes',
+    'customers.edit': 'Editar clientes',
+    'reports.view': 'Visualizar relatórios',
+    'support.manage': 'Atender suporte',
+    'fees.manage': 'Gerenciar taxas e planos',
+    'features.manage': 'Gerenciar funcionalidades',
+}
+
 
 class OperatorCapacityRequest(BaseModel):
     operator_limit: int = Field(ge=0, le=10000)
@@ -53,7 +81,9 @@ class PartnerFeatureRequest(BaseModel):
     is_enabled: bool
     is_paid: bool = False
     price: float = Field(default=0, ge=0)
+    billing_prices: dict[str, float] = Field(default_factory=dict)
     billing_period: str = 'monthly'
+    payment_terms: dict = Field(default_factory=dict)
     notes: str | None = Field(default=None, max_length=500)
 
 
@@ -74,9 +104,124 @@ class ParkingUnitUpdateRequest(BaseModel):
     lng: float | None = Field(default=None, ge=-180, le=180)
 
 
+class PartnerApprovalRequest(BaseModel):
+    stage: str = Field(pattern='^(documents|inspection)$')
+    decision: str = Field(pattern='^(approve|reject)$')
+
+
 def _ensure_admin(user: User) -> None:
     if user.role != UserRoleEnum.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail='System administrator required')
+
+
+@router.get('/permission-profiles')
+async def list_system_permission_profiles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    rows = (await db.scalars(select(PartnerPermissionProfile).where(
+        PartnerPermissionProfile.scope == 'system',
+        PartnerPermissionProfile.is_active.is_(True),
+    ).order_by(PartnerPermissionProfile.name))).all()
+    return [{
+        'id': row.id, 'name': row.name, 'scope': row.scope,
+        'permissions': json.loads(row.permissions or '[]'), 'is_active': row.is_active,
+    } for row in rows]
+
+
+@router.post('/permission-profiles', status_code=201)
+async def create_system_permission_profile(data: SystemPermissionProfileRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    invalid = [item for item in data.permissions if item not in SYSTEM_PERMISSION_LABELS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Permissões inválidas: {', '.join(invalid)}")
+    row = PartnerPermissionProfile(
+        tenant_id=None, scope='system', name=data.name.strip(),
+        permissions=json.dumps(sorted(set(data.permissions))),
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    _audit(db, current_user, 'system.permission_profile.created', 'permission_profile', row.id, None, {'after': {'name': row.name, 'permissions': data.permissions}})
+    await db.commit()
+    return {'id': row.id, 'name': row.name, 'scope': row.scope, 'permissions': data.permissions, 'is_active': True}
+
+
+@router.get('/system-users')
+async def list_system_users(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ensure_admin(current_user)
+    users = (await db.scalars(select(User).where(User.role.in_([
+        UserRoleEnum.SUPER_ADMIN, UserRoleEnum.SYSTEM_ADMIN_OPERATOR,
+    ])).order_by(User.created_at.desc()))).all()
+    return [{
+        'id': user.id, 'name': user.name, 'email': user.email,
+        'role': user.role.value, 'permissions': json.loads(user.permissions or '[]'),
+        'is_active': user.is_active, 'email_verified': user.email_verified,
+    } for user in users]
+
+
+@router.post('/system-users', status_code=201)
+async def create_system_user(
+    data: SystemAdminUserCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    email = data.email.strip().lower()
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        raise HTTPException(status_code=422, detail='Informe um e-mail válido para o MFA')
+    if data.role != UserRoleEnum.SYSTEM_ADMIN_OPERATOR.value:
+        raise HTTPException(status_code=422, detail='Perfil administrativo inválido')
+    if await db.scalar(select(User.id).where(User.email == email)):
+        raise HTTPException(status_code=409, detail='E-mail já cadastrado')
+    user = User(
+        name=data.name.strip(), firt_name=data.name.strip().split()[0],
+        email=email, password_hash=hash_password('Pending-Admin-Change-123!'),
+        role=UserRoleEnum.SYSTEM_ADMIN_OPERATOR, permissions=json.dumps(data.permissions),
+        is_active=False, email_verified=False,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    _audit(db, current_user, 'system_user_created', 'user', user.id, None, {'role': user.role.value})
+    await db.commit()
+    return {'id': user.id, 'name': user.name, 'email': user.email, 'role': user.role.value, 'is_active': False, 'email_verified': False}
+
+
+def _normalise_payment_terms(value: dict | None) -> dict:
+    """Validate the two supported recurring plans and return a safe snapshot."""
+    value = value or {}
+    allowed_methods = {'pix', 'credit_card', 'debit_card'}
+    result = {}
+    for period, default_months in (('monthly', 6), ('annual', 12)):
+        raw = value.get(period) or {}
+        if not isinstance(raw, dict):
+            raise HTTPException(status_code=422, detail='Configuração de cobrança inválida')
+        months = int(raw.get('minimum_months', default_months))
+        if period == 'monthly' and months < 6:
+            raise HTTPException(status_code=422, detail='O plano mensal exige contratação mínima de 6 meses')
+        if period == 'annual' and months < 12:
+            months = 12
+        installments = int(raw.get('installments', 1))
+        if installments < 1 or installments > 24:
+            raise HTTPException(status_code=422, detail='Quantidade de parcelas inválida')
+        discounts = raw.get('discounts') or {}
+        if not isinstance(discounts, dict):
+            raise HTTPException(status_code=422, detail='Descontos por meio de pagamento inválidos')
+        clean_discounts = {}
+        for method, discount in discounts.items():
+            if method not in allowed_methods:
+                raise HTTPException(status_code=422, detail='Meio de pagamento inválido nos descontos')
+            discount = float(discount)
+            if discount < 0 or discount > 100:
+                raise HTTPException(status_code=422, detail='Desconto deve estar entre 0 e 100%')
+            clean_discounts[method] = discount
+        result[period] = {
+            'minimum_months': months,
+            'installments': installments,
+            'discounts': clean_discounts,
+            'trial_enabled': bool(raw.get('trial_enabled', False)),
+            'trial_days': min(max(int(raw.get('trial_days', 30)), 1), 90),
+        }
+    return result
 
 
 def _audit(db: AsyncSession, actor: User, action: str, target_type: str,
@@ -135,6 +280,10 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
     _ensure_admin(current_user)
     tenants = (await db.scalars(select(Tenant).order_by(Tenant.created_at.desc()))).all()
     profiles = (await db.scalars(select(PartnerProfile))).all()
+    documents = (await db.scalars(select(PartnerDocument))).all()
+    documents_by_tenant: dict[str, list[PartnerDocument]] = {}
+    for document in documents:
+        documents_by_tenant.setdefault(document.tenant_id, []).append(document)
     profile_by_tenant = {profile.tenant_id: profile for profile in profiles}
     result = []
     for tenant in tenants:
@@ -142,7 +291,22 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
         users = (await db.scalars(select(User).where(User.tenant_id == tenant.id).order_by(User.created_at))).all()
         parkings = (await db.scalars(select(Parking).where(Parking.tenant_id == tenant.id).order_by(Parking.created_at))).all()
         operator_count = sum(1 for user in users if user.role == UserRoleEnum.OPERATOR)
-        calculated_operator_limit = max(1, sum(1 for parking in parkings if parking.is_active)) * 2
+        active_units = [parking for parking in parkings if parking.is_active]
+        service_count_by_parking = {
+            parking.id: int(count or 0)
+            for parking, count in (await db.execute(
+                select(Parking, func.count(ParkingService.id))
+                .outerjoin(
+                    ParkingService,
+                    (ParkingService.parking_id == Parking.id)
+                    & ParkingService.is_active.is_(True),
+                )
+                .where(Parking.tenant_id == tenant.id, Parking.is_active.is_(True))
+                .group_by(Parking.id)
+            )).all()
+        }
+        service_slots = sum(max(1, service_count_by_parking.get(parking.id, 0)) for parking in active_units)
+        calculated_operator_limit = max(1, service_slots) * 2
         allowed_operators = tenant.operator_limit_override if tenant.operator_limit_override is not None else calculated_operator_limit
         extra = await db.scalar(select(func.coalesce(func.sum(OperatorPackageRequest.quantity), 0)).where(OperatorPackageRequest.tenant_id == tenant.id, OperatorPackageRequest.status == 'approved')) or 0
         parking_service_count = await db.scalar(select(func.count(ParkingService.id)).join(Parking, Parking.id == ParkingService.parking_id).where(Parking.tenant_id == tenant.id, ParkingService.is_active.is_(True))) or 0
@@ -178,6 +342,16 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
             'tenant_status': tenant.status.value,
             'service_type': profile.service_type if profile else 'other',
             'approval_status': profile.approval_status if profile else 'profile_missing',
+            'documents': [
+                {
+                    'id': document.id,
+                    'document_type': document.document_type,
+                    'file_name': document.file_name,
+                    'download_path': f'/admin/platform-fees/partners/{tenant.id}/documents/{document.id}',
+                    'created_at': document.created_at.isoformat() + 'Z',
+                }
+                for document in documents_by_tenant.get(tenant.id, [])
+            ],
             'users': [{'id': user.id, 'name': user.name, 'email': user.email, 'role': user.role.value, 'is_active': user.is_active} for user in users],
             'parkings': [{'id': parking.id, 'name': parking.name, 'address': parking.address,
                 'city': parking.city, 'lat': parking.lat, 'lng': parking.lng,
@@ -192,6 +366,70 @@ async def list_admin_partners(db: AsyncSession = Depends(get_db), current_user: 
             'global_service_fee_count': await db.scalar(select(func.count(PlatformFee.id)).where(PlatformFee.is_active.is_(True))) or 0,
         })
     return result
+
+
+@router.patch('/partners/{tenant_id}/approval')
+async def review_partner_approval(
+    tenant_id: str,
+    data: PartnerApprovalRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Analisa o parceiro em duas etapas: documentos e vistoria do local."""
+    _ensure_admin(current_user)
+    profile = await db.scalar(select(PartnerProfile).where(PartnerProfile.tenant_id == tenant_id))
+    tenant = await db.get(Tenant, tenant_id)
+    if profile is None or tenant is None:
+        raise HTTPException(status_code=404, detail='Parceiro não encontrado')
+
+    previous = profile.approval_status
+    if data.decision == 'reject':
+        profile.approval_status = 'rejected'
+        tenant.status = TenantStatusEnum.SUSPENDED
+    elif data.stage == 'documents':
+        profile.approval_status = 'waiting_inspection'
+    else:
+        profile.approval_status = 'approved'
+        tenant.status = TenantStatusEnum.ACTIVE
+
+    _audit(
+        db,
+        current_user,
+        f'partner.approval.{data.stage}.{data.decision}',
+        'partner_profile',
+        profile.id,
+        tenant_id,
+        {'before': previous, 'after': profile.approval_status},
+    )
+    await db.commit()
+    return {
+        'tenant_id': tenant_id,
+        'approval_status': profile.approval_status,
+        'tenant_status': tenant.status.value,
+    }
+
+
+@router.get('/partners/{tenant_id}/documents/{document_id}')
+async def download_partner_document(
+    tenant_id: str,
+    document_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    document = await db.scalar(
+        select(PartnerDocument).where(
+            PartnerDocument.id == document_id,
+            PartnerDocument.tenant_id == tenant_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail='Documento não encontrado')
+    path = Path(document.storage_path).resolve()
+    root = Path('/app/storage/partner_documents').resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail='Documento não encontrado')
+    return FileResponse(path, filename=document.file_name)
 
 
 @router.get('/partners/{tenant_id}/fees')
@@ -330,6 +568,8 @@ def _unit_payload(unit: Parking) -> dict:
 @router.get('/customers')
 async def list_admin_customers(query: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     _ensure_admin(current_user)
+    # Admin keeps visibility of soft-deleted accounts so they can audit or
+    # explicitly reactivate them; partner-facing user lists filter these out.
     statement = select(User).where(User.role == UserRoleEnum.CUSTOMER)
     if query:
         needle = f"%{query.strip()}%"
@@ -348,6 +588,7 @@ async def set_admin_user_status(user_id: str, data: UserActiveRequest, db: Async
         raise HTTPException(status_code=422, detail='Informe o motivo da desativação')
     user.is_active = data.is_active
     user.deactivation_reason = None if data.is_active else data.reason.strip()
+    user.deleted_at = None if data.is_active else datetime.utcnow()
     _audit(db, current_user, 'user.status.updated', 'user', user.id, user.tenant_id,
            {'is_active': user.is_active, 'reason': user.deactivation_reason})
     await db.commit()
@@ -420,6 +661,9 @@ async def get_partner_features(tenant_id: str, db: AsyncSession = Depends(get_db
         'is_paid': by_key[feature['key']].is_paid if feature['key'] in by_key else feature['default_is_paid'],
         'price': by_key[feature['key']].price if feature['key'] in by_key else 0,
         'billing_period': by_key[feature['key']].billing_period if feature['key'] in by_key else feature['default_billing_period'],
+        'billing_prices': _feature_prices(by_key[feature['key']]) if feature['key'] in by_key else {},
+        'payment_terms': _feature_payment_terms(by_key.get(feature['key'])),
+        'expires_at': by_key[feature['key']].expires_at.isoformat() + 'Z' if feature['key'] in by_key and by_key[feature['key']].expires_at else None,
         'notes': by_key[feature['key']].notes if feature['key'] in by_key else None,
         'requestable': feature['requestable'],
         'quantity_based': feature.get('quantity_based', False),
@@ -437,8 +681,19 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
         raise HTTPException(status_code=404, detail='Funcionalidade não cadastrada')
     if data.is_paid and data.price <= 0:
         raise HTTPException(status_code=422, detail='Informe um preço maior que zero para uma funcionalidade paga')
-    if data.billing_period not in {'monthly', 'annual', 'one_time'}:
+    if data.billing_period not in {'monthly', 'annual'}:
         raise HTTPException(status_code=422, detail='Periodicidade inválida')
+    # Older web bundles sent the removed one-time field. Keep the endpoint
+    # backward compatible while storing only the two supported plans.
+    billing_prices = dict(data.billing_prices)
+    if 'one_time' in billing_prices and 'monthly' not in billing_prices:
+        billing_prices['monthly'] = billing_prices['one_time']
+    billing_prices.pop('one_time', None)
+    if set(billing_prices) - {'monthly', 'annual'}:
+        raise HTTPException(status_code=422, detail='Modalidade de cobrança inválida')
+    if any(value < 0 for value in billing_prices.values()):
+        raise HTTPException(status_code=422, detail='Os valores não podem ser negativos')
+    payment_terms = _normalise_payment_terms(data.payment_terms)
     item = await db.scalar(select(PartnerFeatureEntitlement).where(
         PartnerFeatureEntitlement.tenant_id == tenant_id,
         PartnerFeatureEntitlement.feature_key == feature_key,
@@ -448,9 +703,15 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
         db.add(item)
     before = {'is_enabled': item.is_enabled, 'is_paid': item.is_paid, 'price': item.price} if item.id else None
     item.is_enabled = data.is_enabled
+    if data.is_enabled:
+        item.expires_at = None
     item.is_paid = data.is_paid
     item.price = data.price
     item.billing_period = data.billing_period
+    item.billing_prices = json.dumps(
+        billing_prices or {data.billing_period: data.price}
+    )
+    item.payment_terms = json.dumps(payment_terms)
     item.notes = data.notes
     _audit(db, current_user, 'partner.feature.updated', 'partner_feature', item.id or tenant_id,
            tenant_id, {'feature_key': feature_key, 'before': before, 'after': data.model_dump()})
@@ -458,7 +719,29 @@ async def set_partner_feature(tenant_id: str, feature_key: str, data: PartnerFea
     await db.refresh(item)
     return {'tenant_id': tenant_id, 'feature_key': feature_key, 'is_enabled': item.is_enabled,
             'is_paid': item.is_paid, 'price': item.price, 'billing_period': item.billing_period,
+            'billing_prices': _feature_prices(item),
+            'payment_terms': payment_terms,
             'notes': item.notes}
+
+
+def _feature_prices(item: PartnerFeatureEntitlement) -> dict[str, float]:
+    try:
+        values = json.loads(item.billing_prices or '{}')
+    except json.JSONDecodeError:
+        values = {}
+    if 'monthly' not in values and 'one_time' in values:
+        values['monthly'] = values['one_time']
+    if not values and item.price > 0:
+        values[item.billing_period] = item.price
+    return {key: float(value) for key, value in values.items() if key in {'monthly', 'annual'}}
+
+
+def _feature_payment_terms(item: PartnerFeatureEntitlement | None) -> dict:
+    try:
+        value = json.loads(item.payment_terms or '{}') if item else {}
+    except json.JSONDecodeError:
+        value = {}
+    return _normalise_payment_terms(value)
 
 
 @router.get('/feature-requests')
@@ -487,6 +770,8 @@ async def list_partner_feature_requests(
             'unit_price': request.unit_price,
             'total_price': request.total_price,
             'billing_period': request.billing_period,
+            'payment_method': request.payment_method,
+            'has_receipt': bool(request.receipt_path),
             'status': request.status,
             'notes': request.notes,
             'created_at': request.created_at.isoformat() + 'Z',
@@ -510,6 +795,8 @@ async def review_partner_feature_request(
         raise HTTPException(status_code=404, detail='Solicitação não encontrada')
     if request.status != 'pending_review':
         raise HTTPException(status_code=409, detail='Solicitação já analisada')
+    if not request.receipt_path:
+        raise HTTPException(status_code=409, detail='Anexe um comprovante para que a gestão revise o pagamento')
     tenant = await db.get(Tenant, request.tenant_id)
     profile = await db.scalar(select(PartnerProfile).where(
         PartnerProfile.tenant_id == request.tenant_id
@@ -548,6 +835,8 @@ async def review_partner_feature_request(
                 )
                 db.add(entitlement)
             entitlement.is_enabled = True
+            period_days = {'monthly': 30, 'annual': 365}[request.billing_period]
+            entitlement.expires_at = datetime.utcnow() + timedelta(days=period_days)
         request.status = 'approved'
     else:
         request.status = 'rejected'
@@ -576,10 +865,82 @@ async def review_partner_feature_request(
     }
 
 
+@router.get('/feature-requests/{request_id}/receipt')
+async def download_feature_request_receipt(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    request = await db.get(PartnerFeatureRequestModel, request_id)
+    if request is None or not request.receipt_path:
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    path = Path(request.receipt_path).resolve()
+    root = Path('/app/storage/feature_requests').resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    return FileResponse(path, filename=path.name)
+
+
+DEFAULT_SYSTEM_EMAIL_TEMPLATES = [
+    {
+        "template_key": "reservation_confirmation",
+        "locale": "pt_BR",
+        "display_name": "Confirmação de Reserva",
+        "subject": "Sua reserva no ParkHere foi confirmada! [#{{reservation_id}}]",
+        "header_html": '<div style="background:#0F172A;padding:24px;text-align:center;color:#FFFFFF;"><h1 style="margin:0;font-size:22px;letter-spacing:1px;">ParkHere</h1><p style="margin:4px 0 0;font-size:13px;color:#94A3B8;">Mobilidade e Estacionamento Inteligente</p></div>',
+        "body_html": '<div style="padding:24px;font-family:sans-serif;color:#334155;line-height:1.6;"><h2 style="color:#0F172A;">Olá, {{customer_name}}!</h2><p>Sua vaga está garantida na unidade <strong>{{parking_name}}</strong>.</p><table style="width:100%;border-collapse:collapse;margin:18px 0;background:#F8FAFC;border-radius:8px;padding:12px;"><tr><td style="padding:8px;font-weight:bold;">Placa do Veículo:</td><td style="padding:8px;">{{vehicle_plate}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Previsão de Chegada:</td><td style="padding:8px;">{{arrival_time}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Tipo de Vaga:</td><td style="padding:8px;">{{spot_type}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Total:</td><td style="padding:8px;color:#16A34A;font-weight:bold;">R$ {{total_amount}}</td></tr></table><p>Apresente este comprovante ou o app na portaria para entrada expressa.</p></div>',
+        "footer_html": '<div style="background:#F1F5F9;padding:16px;text-align:center;font-size:12px;color:#64748B;"><p style="margin:0;">ParkHere Tecnologia e Estacionamentos · Valença, BA</p><p style="margin:4px 0 0;">Dúvidas? Entre em contato pelo app ou com nosso suporte.</p></div>',
+    },
+    {
+        "template_key": "reservation_confirmation",
+        "locale": "en",
+        "display_name": "Reservation Confirmation",
+        "subject": "Your ParkHere booking is confirmed! [#{{reservation_id}}]",
+        "header_html": '<div style="background:#0F172A;padding:24px;text-align:center;color:#FFFFFF;"><h1 style="margin:0;font-size:22px;letter-spacing:1px;">ParkHere</h1><p style="margin:4px 0 0;font-size:13px;color:#94A3B8;">Smart Parking & Mobility</p></div>',
+        "body_html": '<div style="padding:24px;font-family:sans-serif;color:#334155;line-height:1.6;"><h2 style="color:#0F172A;">Hello, {{customer_name}}!</h2><p>Your spot is reserved at <strong>{{parking_name}}</strong>.</p><table style="width:100%;border-collapse:collapse;margin:18px 0;background:#F8FAFC;border-radius:8px;padding:12px;"><tr><td style="padding:8px;font-weight:bold;">License Plate:</td><td style="padding:8px;">{{vehicle_plate}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Estimated Arrival:</td><td style="padding:8px;">{{arrival_time}}</td></tr><tr><td style="padding:8px;font-weight:bold;">Total:</td><td style="padding:8px;color:#16A34A;font-weight:bold;">R$ {{total_amount}}</td></tr></table></div>',
+        "footer_html": '<div style="background:#F1F5F9;padding:16px;text-align:center;font-size:12px;color:#64748B;"><p style="margin:0;">ParkHere Technology · Need help? Contact customer support.</p></div>',
+    },
+    {
+        "template_key": "reservation_cancellation",
+        "locale": "pt_BR",
+        "display_name": "Cancelamento de Reserva",
+        "subject": "Confirmação de Cancelamento de Reserva [#{{reservation_id}}]",
+        "header_html": '<div style="background:#0F172A;padding:24px;text-align:center;color:#FFFFFF;"><h1 style="margin:0;font-size:22px;">ParkHere</h1></div>',
+        "body_html": '<div style="padding:24px;font-family:sans-serif;color:#334155;line-height:1.6;"><h2>Olá, {{customer_name}}</h2><p>Confirmamos o cancelamento da sua reserva no <strong>{{parking_name}}</strong>.</p><p>Motivo: {{cancel_reason}}</p><p>Caso tenha havido cobrança com direito a estorno, o valor de R$ {{refund_amount}} será creditado na sua forma de pagamento original conforme os termos da contratação.</p></div>',
+        "footer_html": '<div style="background:#F1F5F9;padding:16px;text-align:center;font-size:12px;color:#64748B;"><p style="margin:0;">ParkHere Tecnologia</p></div>',
+    },
+    {
+        "template_key": "checkout_receipt_pdf",
+        "locale": "pt_BR",
+        "display_name": "Recibo e Comprovante de Saída (PDF / Impressão)",
+        "subject": "Comprovante de Saída e Estadia ParkHere",
+        "header_html": '<div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:10px;"><h2 style="margin:0;">PARKHERE</h2><p style="margin:2px 0;font-size:12px;">Comprovante de Permanência e Recibo</p><p style="margin:2px 0;font-size:11px;">Unidade: {{parking_name}}</p></div>',
+        "body_html": '<div style="font-family:monospace;font-size:12px;padding:10px 0;"><p>RES: #{{reservation_id}}</p><p>PLACA: {{vehicle_plate}}</p><p>ENTRADA: {{checkin_time}}</p><p>SAÍDA:   {{checkout_time}}</p><p>TEMPO TOTAL: {{duration_formatted}}</p><hr style="border:none;border-top:1px dashed #000;margin:8px 0;"/><table style="width:100%;font-size:12px;"><tr><td>Subtotal Vaga:</td><td style="text-align:right;">R$ {{base_amount}}</td></tr><tr><td>Serviços Extras:</td><td style="text-align:right;">R$ {{services_amount}}</td></tr><tr><td>Excesso de Horas:</td><td style="text-align:right;">R$ {{excess_amount}}</td></tr><tr style="font-weight:bold;font-size:14px;"><td>TOTAL PAGO:</td><td style="text-align:right;">R$ {{total_paid}}</td></tr></table><p style="margin-top:8px;">Forma de Pagamento: {{payment_method}}</p></div>',
+        "footer_html": '<div style="text-align:center;border-top:2px dashed #000;padding-top:8px;font-size:10px;font-family:monospace;"><p style="margin:2px 0;">DOCUMENTO NÃO FISCAL</p><p style="margin:2px 0;">Obrigado pela preferência e boa viagem!</p><p style="margin:2px 0;">www.parkhere.app</p></div>',
+    },
+    {
+        "template_key": "convenience_receipt_pdf",
+        "locale": "pt_BR",
+        "display_name": "Cupom de Venda de Conveniência (PDF / Impressão)",
+        "subject": "Recibo de Compra na Loja de Conveniência",
+        "header_html": '<div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:10px;"><h2 style="margin:0;">PARKHERE CONVENIÊNCIA</h2><p style="margin:2px 0;font-size:12px;">{{parking_name}}</p></div>',
+        "body_html": '<div style="font-family:monospace;font-size:12px;padding:10px 0;"><p>CUPOM: #{{sale_id}}</p><p>DATA: {{issued_at}}</p><p>CPF CLIENTE: {{customer_cpf}}</p><hr style="border:none;border-top:1px dashed #000;margin:8px 0;"/><table style="width:100%;font-size:12px;"><thead><tr><th style="text-align:left;">Item</th><th style="text-align:center;">Qtd</th><th style="text-align:right;">Total</th></tr></thead><tbody>{{items_rows}}</tbody></table><hr style="border:none;border-top:1px dashed #000;margin:8px 0;"/><table style="width:100%;font-size:12px;"><tr><td>Subtotal:</td><td style="text-align:right;">R$ {{subtotal}}</td></tr><tr><td>Desconto:</td><td style="text-align:right;">- R$ {{discount_total}}</td></tr><tr style="font-weight:bold;font-size:14px;"><td>TOTAL:</td><td style="text-align:right;">R$ {{total_amount}}</td></tr><tr><td>Pagamento:</td><td style="text-align:right;">{{payment_method}}</td></tr><tr><td>Troco:</td><td style="text-align:right;">R$ {{change_amount}}</td></tr></table></div>',
+        "footer_html": '<div style="text-align:center;border-top:2px dashed #000;padding-top:8px;font-size:10px;font-family:monospace;"><p style="margin:2px 0;">CUPOM NÃO FISCAL</p><p style="margin:2px 0;">ParkHere - Volte Sempre!</p></div>',
+    },
+]
+
+
 @router.get('/email-templates')
 async def list_email_templates(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     _ensure_admin(current_user)
     rows = (await db.scalars(select(EmailTemplate).order_by(EmailTemplate.template_key, EmailTemplate.locale))).all()
+    if not rows:
+        for tpl in DEFAULT_SYSTEM_EMAIL_TEMPLATES:
+            new_row = EmailTemplate(**tpl)
+            db.add(new_row)
+        await db.commit()
+        rows = (await db.scalars(select(EmailTemplate).order_by(EmailTemplate.template_key, EmailTemplate.locale))).all()
     return [_email_template_payload(row) for row in rows]
 
 
@@ -686,8 +1047,30 @@ async def upsert_platform_fee(
 
 
 def _fee_payload(row: PlatformFee) -> dict:
+    labels = {
+        'reservation': ('Reservas', 'Reservations'),
+        'payment': ('Pagamentos', 'Payments'),
+        'parking': ('Reservas de estacionamento', 'Parking reservations'),
+        'car_wash': ('Serviços de lava-jato', 'Car wash services'),
+        'insurance': ('Seguro', 'Insurance'),
+        'transport': ('Transporte', 'Transport'),
+        'tour_guide': ('Serviços de guia turístico', 'Tour guide services'),
+        'guide_commission': ('Comissão de guia', 'Guide commission'),
+        'cancellation': ('Cancelamento', 'Cancellation'),
+        'establishment': ('Taxa do estabelecimento', 'Establishment fee'),
+        'feature': ('Funcionalidades', 'Features'),
+        'additional_units': ('Filiais adicionais', 'Additional branches'),
+        'additional_services': ('Serviços extras do estacionamento', 'Extra parking services'),
+        'financial_management': ('Financeiro Pro', 'Finance Pro'),
+        'convenience_management': ('Módulo de conveniência', 'Convenience module'),
+    }
+    name, name_en = labels.get(row.service_type, (row.service_type, row.service_type))
     return {
         'service_type': row.service_type,
+        'service_name': name,
+        'service_name_en': name_en,
+        'description': f'Taxa aplicada ao serviço {name}.',
+        'description_en': f'Fee applied to the {name_en} service.',
         'fee_mode': row.fee_mode,
         'fixed_amount': row.fixed_amount,
         'percentage': row.percentage,
@@ -707,6 +1090,23 @@ async def list_operator_package_requests(db: AsyncSession = Depends(get_db), cur
         'status': row.status, 'has_receipt': bool(row.receipt_path),
         'created_at': row.created_at.isoformat() + 'Z',
     } for row in rows]
+
+
+@router.get('/operator-packages/requests/{request_id}/receipt')
+async def download_operator_package_receipt(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_admin(current_user)
+    row = await db.get(OperatorPackageRequest, request_id)
+    if row is None or not row.receipt_path:
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    path = Path(row.receipt_path).resolve()
+    root = Path('/app/storage/operator_packages').resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail='Comprovante não encontrado')
+    return FileResponse(path, filename=path.name)
 
 
 @router.post('/operator-packages/requests/{request_id}/{decision}')

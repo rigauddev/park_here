@@ -3,17 +3,22 @@
 Use este roteiro para validar busca, reserva, caixa, check-in, checkout, tenant e
 compensacao de taxas do ParkHere.
 
-## Reset local
+## Preparar e reiniciar a homologação local
 
-Apagar banco, subir containers, aplicar migrations e rodar seed:
+O seed é repetível e não exige remover dados. Para um reset intencional, apague
+somente o schema MySQL de desenvolvimento; isso preserva os volumes separados
+de fotos, documentos e comprovantes:
 
 ```bash
-docker compose down -v
 docker compose up -d mysql api
+docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE parkfinder; CREATE DATABASE parkfinder CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"'
 docker compose exec -T api alembic upgrade head
 docker compose exec -T api python -m app.scripts.seed_mvp_data
-docker compose up -d web
+docker compose up -d --build web
 ```
+
+Não use `docker compose down -v` para esse reset: ele também apaga os arquivos
+guardados nos volumes Docker, inclusive as fotos temporárias.
 
 URLs:
 
@@ -66,6 +71,26 @@ bash scripts/run_android_usb.sh ZF524HQSZV
 O script configura `adb reverse` e passa `API_URL=http://127.0.0.1:8000` por
 `--dart-define`. Execute novamente se desconectar o cabo.
 
+## iPhone fisico na rede local
+
+No iPhone, mantenha o aparelho desbloqueado e na mesma rede Wi-Fi do Mac. Com a
+API local na porta 8000, execute:
+
+```bash
+bash scripts/run_ios_lan.sh 00008120-001874E11AC0201E
+```
+
+O script usa `--no-pub` e não reinstala dependências a cada execução. Faça
+`flutter pub get` apenas quando `pubspec.yaml` mudar. Para melhor velocidade,
+use o iPhone por cabo e desative temporariamente o modo sem fio; no Android,
+selecione o ID USB (`adb devices`) e desconecte endpoints `adb-..._tls` que
+apareçam duplicados. Depois do primeiro build, mantenha o processo aberto e
+use hot reload (`r`) em vez de executar `flutter run` novamente.
+
+O script verifica a API pelo IP local do Mac e injeta esse endereço por
+`--dart-define`. Se houver mais de uma interface de rede, informe o IP
+explicitamente com `API_HOST_IP=192.168.1.7`.
+
 ## Fluxo completo cliente, guia e estacionamento
 
 1. Entre como cliente e faça login; confira que os estacionamentos próximos à
@@ -86,6 +111,9 @@ O script configura `adb reverse` e passa `API_URL=http://127.0.0.1:8000` por
 8. Repita escolhendo `Sem indicação` e confirme que a reserva não possui comissão
    de guia.
 9. Cancele uma pré-reserva não paga e confirme que a vaga volta a ficar livre.
+10. Aguarde uma pré-reserva vencer ou use o fixture `seed_expired_pre_reservation`;
+    o banco deve ter `status=cancelled` e `payment_status=expired`, a tela deve
+    exibir **Expirada**, e a vaga não deve continuar ocupada.
 
 ## Fluxo parceiro
 
@@ -181,6 +209,18 @@ docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s te
 - Na reserva operacional, o operador deve visualizar os termos do estacionamento e confirmar que o cliente os revisou antes de criar.
 - Aceite de marketing personalizado deve permanecer opcional, separado de reserva e conta, desmarcado por padrão e revogável em preferências. Esse controle ainda deve ser desenvolvido antes de qualquer segmentação de anúncios.
 
+## Central de Ajuda
+
+- No cliente, abra **Menu → Central de ajuda**; no parceiro, operador e admin,
+  abra **Ajuda** no menu. Confirme que cada perfil chega à central sem receber
+  acesso adicional a rotas operacionais.
+- Pesquise por “pré-reserva”, “cartão” e “escala”; os artigos devem filtrar e
+  expandir sem overflow em celular e tablet.
+- Troque o idioma para inglês e confirme título, busca, perguntas e respostas em
+  inglês. Volte ao português e confirme o conteúdo PT-BR.
+- Confira que a orientação de cartão descreve os registros do MVP como dados
+  mascarados de teste e recomenda não usar dados reais até a tokenização.
+
 ## Unidades, escalas e acesso do operador
 
 - Associe um operador à matriz e a uma filial. Feche e reabra os detalhes do
@@ -200,3 +240,133 @@ docker compose exec -T -e RUN_PILOT_HTTP=1 api python -m unittest discover -s te
   concluir a operação; teste também a criação de uma escala para filial.
 - Envie um template de e-mail com cabeçalho customizado sem imagem e confirme
   que o e-mail recebido ainda exibe o logo inline do ParkHere.
+
+O seed também recria a matriz `ParkHere Valenca VIP` e a filial
+`ESTACIONAMENTO TESTE` na mesma empresa, com os IDs de unidade já usados no
+ambiente de teste. O gestor é `gestor.valenca.vip@parkhere.test` e o operador
+compartilhado entre unidades é `operador.valenca.vip@parkhere.test`; senha
+`123456`, MFA local `000000`. Um segundo operador de filial é
+`operador.valenca.filial@parkhere.test`.
+
+Para validar cobertura, o seed cria para dois dias após sua execução um turno
+da matriz atribuído ao operador compartilhado e um turno aberto sobreposto na
+filial. No dia seguinte há um turno de filial atribuído ao segundo operador.
+Na tela de escala, use as visões mês/semana, selecione o turno aberto e tente
+atribuir o operador compartilhado: a API deve recusar a colisão entre unidades
+com `409`. O segundo operador deve ser aceito. Edite horários, atualize a tela e
+confira que a alteração persiste e entra no histórico. O seed não apaga escalas
+manuais nem reserva; ele mantém estes turnos-fixture identificados por unidade
+e horário.
+
+## Checkout com excedente e cancelamento
+
+- Crie uma pré-reserva de teste, pague, faça check-in e deixe o horário passar.
+  O checkout deve consultar a API; a resposta `402` deve apresentar minutos e
+  valor do excedente calculados no backend. Pague o propósito
+  `checkout_excess`, tente novamente e confira status finalizado e vaga liberada.
+- Na lista recebida do parceiro, uma reserva em permanência com atraso deve
+  apresentar tempo excedido e valor atualizado. Confira especialmente a tarifa
+  adicional da categoria da vaga.
+- Cliente pode cancelar somente pré-reserva não paga e ainda em estado
+  `pre_reserved`, antes de `hold_expires_at`. O botão deve sumir quando expirar;
+  a API deve rejeitar uma tentativa atrasada. Reserva confirmada/paga não pode
+  ser cancelada por esse botão. O fluxo de solicitação de reembolso ainda não
+  está implementado; não mostrar indicação de que foi solicitado ou pago.
+- Confira número de exibição `PH-XXXXXXXX` nos cards/detalhes e ordenação por
+  criação mais recente. O UUID continua como chave técnica.
+- A carteira de teste mostra cartões em cartões visuais empilhados e oferece
+  bandeira, titular, número e validade. Após salvar, entre com a mesma conta em
+  outro dispositivo: a bandeira, titular, últimos quatro dígitos, validade e
+  cartão padrão devem ser recuperados do backend. Confirme que a requisição não
+  contém PAN completo ou CVV; cartões do MVP são apenas perfis de teste e não
+  devem ser usados para cobrança real.
+- Cartões antigos que existiam apenas no aparelho precisam ser cadastrados
+  novamente uma vez; não são importados automaticamente para evitar associar
+  dados de uma pessoa à conta de outra em aparelhos compartilhados.
+- O fluxo formal de reembolso (motivo, anexo opcional, prazo de três dias úteis,
+  decisão auditada e estorno no provedor) ainda não está implementado. Não
+  anunciar o valor de `cancellation_credit_amount` como dinheiro estornado.
+
+## Jornadas, cores por unidade e PDF
+
+- Em **Minha empresa → unidade**, defina a jornada-base: horário comercial,
+  cobertura 24h em três turnos, plantão 24h com três dias de folga, ou setor
+  administrativo de até 8h por dia. Configure também os dias e horários semanais
+  de abertura; portaria 24h é uma configuração separada.
+- Gere a escala a partir de uma data e escolha a jornada a aplicar naquele
+  período. Para três turnos, confirme as faixas de 00–08, 08–16 e 16–00; sem
+  operadores suficientes, os turnos restantes devem aparecer abertos. Para
+  24h/3 folgas, confirme a rotação e a indicação de cobertura pendente quando
+  não houver quatro operadores. Para horário comercial, confirme que os dias
+  fechados não recebem turno e que o fechamento é respeitado.
+- Na visão do gestor, use os filtros de unidade e operador; confirme que cada
+  unidade mantém uma cor consistente no calendário, legenda e cartões. A visão
+  mensal e semanal deve mostrar dias mesmo sem turno.
+- Exporte o PDF para todas as unidades e depois para uma unidade/operador.
+  Quando houver mais de uma unidade, confira se cada bloco tem cabeçalho próprio
+  (matriz/filial), legenda de turno aberto e operador, data e horários. No perfil
+  do operador, exporte somente a escala permitida para ele.
+- Tente editar e cancelar um turno futuro; confira que os turnos abertos podem
+  receber operador depois e que conflitos do mesmo operador entre filiais são
+  rejeitados.
+
+## Funcionalidade paga e conferência do comprovante
+
+- No painel admin → Funcionalidades, configure preço individual para mensal,
+  anual e compra única (30 dias). Confira que cada parceiro recebe os três
+  valores configurados; preços zero representam recurso gratuito.
+- Na conta gestora, escolha o período, Pix/cartão de crédito/cartão de débito,
+  envie o comprovante e confirme o estado **Aguardando análise**. Teste PDF,
+  JPG e PNG e rejeite arquivo maior que 30 MB ou formato não aceito.
+- No painel admin → Aprovações, confira parceiro, funcionalidade, modalidade,
+  valor e método. Abra o comprovante, aprove e confirme liberação. Rejeite uma
+  solicitação e confirme que a funcionalidade não é liberada.
+- Reinicie/recrie somente API e web e confirme que os comprovantes continuam
+  disponíveis nos volumes Docker `feature_request_receipts` e
+  `operator_package_receipts`; não remova esses volumes durante atualizações.
+- A liberação mensal vence em 30 dias e a anual em 365; compra única vale 30
+  dias. A renovação recorrente automática e a confirmação automática Pix/cartão
+  dependem da integração Mercado Pago; até lá, cada pedido depende de revisão
+  administrativa do comprovante.
+# Homologação: abertura de turno e PDV
+
+- O seed inicia os turnos na data local de Brasília (Valença/BA). Após recriar o
+  banco, o operador deve abrir o turno pela tela **Minha escala** ou pelo ícone
+  de caixa, informando o saldo inicial do estacionamento e da conveniência.
+- Sem turno vigente, o mapa e o PDV permanecem bloqueados.
+- No PDV, vendas em dinheiro mostram o troco no formulário e no comprovante.
+  Uma venda Pix em homologação exibe um QR Code fictício identificado como
+  simulado; ele não movimenta dinheiro real.
+
+# Descoberta por cidade e serviço
+
+- Depois de recriar o seed, entre como cliente e selecione **Valença**. O mapa
+  deve mostrar os dois estacionamentos, as duas locadoras (incluindo a filial
+  da empresa híbrida) e os dois guias aprovados.
+- Use os chips de serviço **Estacionamentos**, **Locadoras** e **Guias
+  turísticos**. Cada chip deve ocultar os demais marcadores sem alterar o
+  fluxo de reserva do estacionamento.
+- Pesquise `Valenca` sem acento e confirme que a cidade exibida volta como
+  **Valença**. Pesquise uma cidade inexistente e confirme estado vazio, sem
+  erro ou dados fictícios.
+- Toque no marcador de locadora e confirme a abertura da página de planos e
+  frota. O marcador de guia apresenta a identificação do serviço; o fluxo de
+  contratação de guia permanece no módulo próprio.
+
+# Frota: cadastro e documentação
+
+- No gestor da locadora, abra **Operação da frota > Cadastrar veículo** e
+  selecione um grupo, marca, modelo e ano. Use **Buscar modelo** e confirme o
+  carregamento, o estado vazio e a exibição das imagens encontradas.
+- Preencha placa, ano de fabricação, código CRLV, RENAVAM e chassi. Anexe um
+  PDF/JPG/PNG de até 30 MB e confirme a mensagem de sucesso; arquivo inválido
+  deve mostrar o erro sem deixar a tela em carregamento.
+- Reabra o veículo e confirme que grupo, dados e foto estão persistidos. O
+  documento deve ser acessível ao gestor/operador autorizado e ao cliente que
+  possui uma reserva do veículo, mas não por URL pública.
+- Crie uma reserva pendente e uma confirmada e confira os dois blocos na tela
+  de reservas da locadora; o cliente deve ver somente veículos disponíveis.
+
+Para a matriz completa de cenários por perfil, serviço, mapa e riscos do seed,
+consulte [`docs/rental-qa-matrix.md`](rental-qa-matrix.md).
+

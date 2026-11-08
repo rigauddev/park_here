@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/local_storage_service.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../../checkin_checkout/models/pre_checkin_model.dart';
 import '../../checkin_checkout/pages/checkin_page.dart';
+import '../../checkin_checkout/pages/route_preview_page.dart';
 import '../../parking_search/models/parking_model.dart';
 import '../../parking_search/models/parking_pricing.dart';
 import '../../parking_search/models/payment_plan_enum.dart';
 import '../models/reservation_enum.dart';
 import '../models/reservation_model.dart';
+import '../services/reservation_cancellation_rules.dart';
 import '../providers/pre_reservation_provider.dart';
 import '../providers/reservation_provider.dart';
 import 'resevation_details_page.dart';
@@ -34,6 +39,13 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
       child: Scaffold(
         appBar: AppBar(
           title: const Text("Reservas e serviços"),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.link),
+              tooltip: 'Vincular reserva por código',
+              onPressed: () => _showClaimReservationDialog(context),
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Reservas'),
@@ -103,11 +115,15 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                     tourGuide: false,
                     transport: false,
                     total: preReservation.total,
+                    reservationId: preReservation.id,
                     userLocationLat: 0,
                     userLocationLng: 0,
                   ),
                 ),
-              ...reservations.where((item) => preReservation == null || item.id != preReservation.id),
+              ...reservations.where(
+                (item) =>
+                    preReservation == null || item.id != preReservation.id,
+              ),
             ];
 
             if (allReservations.isEmpty) {
@@ -133,11 +149,38 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
                     ref.invalidate(reservationsProvider);
                     await ref.read(reservationsProvider.future);
                   },
-                  child: ListView.builder(
+                  child: ListView(
                     padding: const EdgeInsets.all(16),
-                    itemCount: ordered.length,
-                    itemBuilder: (context, index) =>
-                        _ReservationCard(reservation: ordered[index]),
+                    children: [
+                      Card(
+                        elevation: 0.5,
+                        color: AppTheme.softCyan.withValues(alpha: 0.3),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.2)),
+                        ),
+                        child: ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.white,
+                            child: Icon(Icons.qr_code_scanner, size: 20),
+                          ),
+                          title: const Text('Tem um código de reserva?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          subtitle: const Text('Vincule uma reserva criada pelo operador no balcão.', style: TextStyle(fontSize: 12)),
+                          trailing: OutlinedButton(
+                            onPressed: () => _showClaimReservationDialog(context),
+                            child: const Text('Vincular'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (final item in ordered)
+                        _ReservationCard(
+                          reservation: item,
+                          onCancel: () => _cancelPreReservation(item),
+                          onChanged: () => ref.invalidate(reservationsProvider),
+                        ),
+                    ],
                   ),
                 ),
                 ListView(
@@ -195,6 +238,218 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
     );
   }
 
+  Future<void> _showClaimReservationDialog(BuildContext context) async {
+    final codeController = TextEditingController();
+    Map<String, dynamic>? searchResult;
+    bool isSearching = false;
+    bool isClaiming = false;
+    String? errorMessage;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.link, color: AppTheme.primary),
+              SizedBox(width: 8),
+              Text('Vincular Reserva', style: TextStyle(fontSize: 18)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Cole o código recebido por WhatsApp ou no comprovante impresso para acompanhar no seu app.',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: codeController,
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: InputDecoration(
+                            labelText: 'Código da reserva',
+                            hintText: 'Ex: A1B2C3',
+                            prefixIcon: const Icon(Icons.receipt_outlined),
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                            errorText: errorMessage,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: isSearching
+                            ? null
+                            : () async {
+                                final rawCode = codeController.text.replaceAll('#', '').trim();
+                                if (rawCode.isEmpty) {
+                                  setDialogState(() => errorMessage = 'Informe o código');
+                                  return;
+                                }
+                                setDialogState(() {
+                                  isSearching = true;
+                                  errorMessage = null;
+                                  searchResult = null;
+                                });
+                                try {
+                                  final token = (await LocalStorageService().getTokens())['access'];
+                                  if (token == null) throw Exception('Sessão expirada');
+                                  final res = await ApiService().getAuthorizedMap(
+                                    '/reservations/search-by-code?code=$rawCode',
+                                    token,
+                                  );
+                                  setDialogState(() {
+                                    searchResult = res;
+                                    isSearching = false;
+                                  });
+                                } catch (e) {
+                                  setDialogState(() {
+                                    errorMessage = 'Reserva não encontrada com este código.';
+                                    isSearching = false;
+                                  });
+                                }
+                              },
+                        child: isSearching
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Text('Buscar'),
+                      ),
+                    ],
+                  ),
+                  if (searchResult != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            searchResult!['parking_name'] ?? 'Estacionamento',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('Placa: ${searchResult!['vehicle_plate'] ?? 'Não informada'}'),
+                          Text('Valor: R\$ ${(searchResult!['final_total'] as num? ?? 0).toStringAsFixed(2)}'),
+                          Text('Status: ${searchResult!['status']} · Pagamento: ${searchResult!['payment_status']}'),
+                          const SizedBox(height: 12),
+                          if (searchResult!['is_mine'] == true)
+                            const Text('Esta reserva já está vinculada à sua conta.', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))
+                          else if (searchResult!['can_claim'] == true)
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                                onPressed: isClaiming
+                                    ? null
+                                    : () async {
+                                        setDialogState(() => isClaiming = true);
+                                        try {
+                                          final token = (await LocalStorageService().getTokens())['access'];
+                                          if (token == null) throw Exception('Sessão expirada');
+                                          final rawCode = codeController.text.replaceAll('#', '').trim();
+                                          await ApiService().postAuthorized(
+                                            '/reservations/associate',
+                                            {'code': rawCode},
+                                            token,
+                                          );
+                                          if (!mounted || !dialogCtx.mounted) return;
+                                          Navigator.of(dialogCtx).pop();
+                                          ref.invalidate(reservationsProvider);
+                                          if (mounted) {
+                                            await ApiFeedback.show(context, 'Reserva associada com sucesso à sua conta!', isError: false);
+                                          }
+                                        } catch (e) {
+                                          setDialogState(() {
+                                            errorMessage = 'Erro ao associar: $e';
+                                            isClaiming = false;
+                                          });
+                                        }
+                                      },
+                                icon: isClaiming
+                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : const Icon(Icons.check),
+                                label: const Text('Associar a Minha Conta'),
+                              ),
+                            )
+                          else
+                            const Text('Esta reserva já pertence a outro usuário.', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Fechar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _cancelPreReservation(ReservationModel reservation) async {
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar pré-reserva'),
+        content: TextField(
+          controller: reasonController,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Motivo (opcional)'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Voltar'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, reasonController.text),
+            child: const Text('Cancelar pré-reserva'),
+          ),
+        ],
+      ),
+    );
+    reasonController.dispose();
+    if (reason == null) return;
+    try {
+      final token = (await LocalStorageService().getTokens())['access'];
+      if (token == null) throw const ApiUnauthorizedException();
+      await ApiService().postAuthorized(
+        '/reservations/${reservation.id}/cancel',
+        {'reason': reason.trim().isEmpty ? null : reason.trim()},
+        token,
+      );
+      ref.invalidate(reservationsProvider);
+      // Fetch the server state immediately. This prevents a committed
+      // cancellation from remaining visible as an open hold in the local
+      // provider after a timeout or retry.
+      await ref.read(reservationsProvider.future);
+    } catch (error) {
+      if (mounted) {
+        await ApiFeedback.show(context, '$error');
+      }
+    }
+  }
+
   List<_ContractedService> _contractedServices(
     List<ReservationModel> reservations,
   ) {
@@ -245,6 +500,11 @@ class _ReservationPageState extends ConsumerState<ReservationPage>
 
     return services;
   }
+}
+
+String _displayReservationNumber(String id) {
+  final compact = id.replaceAll('-', '').toUpperCase();
+  return 'PH-${compact.substring(0, compact.length.clamp(0, 8))}';
 }
 
 class _ContractedService {
@@ -303,8 +563,14 @@ class _ContractedServiceCard extends StatelessWidget {
 
 class _ReservationCard extends StatelessWidget {
   final ReservationModel reservation;
+  final VoidCallback onCancel;
+  final VoidCallback onChanged;
 
-  const _ReservationCard({required this.reservation});
+  const _ReservationCard({
+    required this.reservation,
+    required this.onCancel,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -334,7 +600,7 @@ class _ReservationCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        reservation.parkingName,
+                        '${reservation.parkingName} · ${_displayReservationNumber(reservation.id)}',
                         style: const TextStyle(
                           color: AppTheme.primary,
                           fontWeight: FontWeight.w800,
@@ -406,10 +672,6 @@ class _ReservationCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _InfoPill(
-                  label: 'Vagas disponíveis',
-                  value: '${reservation.preCheckin.parking.availableSpots}',
-                ),
                 if (reservation.tourGuide)
                   const _InfoPill(label: 'Guia', value: 'Indicado'),
               ],
@@ -423,18 +685,47 @@ class _ReservationCard extends StatelessWidget {
                   if (reservation.status == ReservationStatus.open &&
                       !reservation.checkedIn)
                     OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
+                      onPressed: () async {
+                        await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) =>
                                 CheckinPage(preCheckin: reservation.preCheckin),
                           ),
                         );
+                        onChanged();
                       },
                       icon: const Icon(Icons.login),
                       label: const Text('Check-in'),
                     ),
+                  if (reservation.status == ReservationStatus.open &&
+                      reservation.paymentStatus == 'paid')
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RoutePreviewPage(
+                            preCheckin: reservation.preCheckin,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.route_outlined),
+                      label: const Text('Rota'),
+                    ),
+                  if (ReservationCancellationRules.canCustomerCancel(
+                    apiStatus: reservation.apiStatus,
+                    paymentStatus: reservation.paymentStatus,
+                    status: reservation.status,
+                    checkedIn: reservation.checkedIn,
+                    holdExpiresAt: reservation.validUntil,
+                  ))
+                    OutlinedButton.icon(
+                      onPressed: onCancel,
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('Cancelar pré-reserva'),
+                    ),
+                  if (reservation.cancelledByName != null)
+                    Text('Cancelada por ${reservation.cancelledByName}'),
                   TextButton.icon(
                     onPressed: () {
                       Navigator.push(
@@ -471,6 +762,7 @@ class _ReservationCard extends StatelessWidget {
   }
 
   String _formatDate(DateTime date) {
+    date = date.toLocal();
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     final hour = date.hour.toString().padLeft(2, '0');

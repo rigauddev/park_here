@@ -25,7 +25,33 @@ class PreReservationModel {
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 
-  PreReservationModel copyWith({bool? active}) {
+  factory PreReservationModel.fromApi(Map<String, dynamic> json) {
+    final created = DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now();
+    final expires = DateTime.tryParse(json['hold_expires_at'] as String? ?? '') ??
+        created.add(const Duration(minutes: 5));
+    return PreReservationModel(
+      id: json['id'] as String,
+      parkingId: json['parking_id'] as String? ?? '',
+      parkingName: json['parking_name'] as String? ?? 'Estacionamento',
+      createdAt: created,
+      expiresAt: expires,
+      active: json['status'] == 'pre_reserved' ||
+          json['status'] == 'pending_operator_approval',
+      plan: json['pricing_plan'] as String? ?? 'hourly',
+      spotType: json['spot_type'] as String? ?? 'uncovered',
+      total: (json['final_total'] as num?)?.toDouble() ??
+          (json['estimated_total'] as num?)?.toDouble() ?? 0,
+      availableSpots: (json['available_spots'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  PreReservationModel copyWith({
+    bool? active,
+    String? plan,
+    String? spotType,
+    double? total,
+    int? availableSpots,
+  }) {
     return PreReservationModel(
       id: id,
       parkingId: parkingId,
@@ -33,6 +59,10 @@ class PreReservationModel {
       createdAt: createdAt,
       expiresAt: expiresAt,
       active: active ?? this.active,
+      plan: plan ?? this.plan,
+      spotType: spotType ?? this.spotType,
+      total: total ?? this.total,
+      availableSpots: availableSpots ?? this.availableSpots,
     );
   }
 

@@ -38,7 +38,7 @@ async def get_current_user(
 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    if not user.is_active:
+    if not user.is_active or user.deleted_at is not None:
         raise HTTPException(status_code=403, detail="User account is inactive")
 
     # Role/tenant claims are part of the authorization boundary. In particular,

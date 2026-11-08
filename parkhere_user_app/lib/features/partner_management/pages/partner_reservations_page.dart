@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../core/widgets/api_feedback.dart';
+import '../../../core/i18n/app_localizations.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -10,10 +14,12 @@ class PartnerReservationsPage extends ConsumerStatefulWidget {
   const PartnerReservationsPage({super.key});
 
   @override
-  ConsumerState<PartnerReservationsPage> createState() => _PartnerReservationsPageState();
+  ConsumerState<PartnerReservationsPage> createState() =>
+      _PartnerReservationsPageState();
 }
 
-class _PartnerReservationsPageState extends ConsumerState<PartnerReservationsPage> {
+class _PartnerReservationsPageState
+    extends ConsumerState<PartnerReservationsPage> {
   String parkingFilter = 'Todos';
 
   @override
@@ -39,21 +45,55 @@ class _PartnerReservationsPageState extends ConsumerState<PartnerReservationsPag
             return const Center(child: Text('Nenhuma reserva recebida.'));
           }
 
-          final parkings = ['Todos', ...{for (final item in items) item.parkingName}];
+          final parkings = [
+            'Todos',
+            ...{for (final item in items) item.parkingName},
+          ];
           final filtered = parkingFilter == 'Todos'
               ? items
-              : items.where((item) => item.parkingName == parkingFilter).toList();
+              : items
+                    .where((item) => item.parkingName == parkingFilter)
+                    .toList();
+          final pendingOutsideHours = filtered
+              .where((item) => item.status == 'pending_operator_approval')
+              .length;
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               DropdownButtonFormField<String>(
-                initialValue: parkings.contains(parkingFilter) ? parkingFilter : 'Todos',
-                decoration: const InputDecoration(labelText: 'Filtrar por estacionamento'),
-                items: [for (final item in parkings) DropdownMenuItem(value: item, child: Text(item, overflow: TextOverflow.ellipsis))],
-                onChanged: (value) => setState(() => parkingFilter = value ?? 'Todos'),
+                initialValue: parkings.contains(parkingFilter)
+                    ? parkingFilter
+                    : 'Todos',
+                decoration: const InputDecoration(
+                  labelText: 'Filtrar por estacionamento',
+                ),
+                items: [
+                  for (final item in parkings)
+                    DropdownMenuItem(
+                      value: item,
+                      child: Text(item, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (value) =>
+                    setState(() => parkingFilter = value ?? 'Todos'),
               ),
               const SizedBox(height: 12),
-              for (final item in filtered) _PartnerReservationCard(reservation: item),
+              if (pendingOutsideHours > 0)
+                Card(
+                  color: Colors.orange.shade50,
+                  child: ListTile(
+                    leading: const Icon(
+                      Icons.notifications_active_outlined,
+                      color: Colors.orange,
+                    ),
+                    title: const Text('Solicitação fora do horário'),
+                    subtitle: Text(
+                      '$pendingOutsideHours reserva(s) aguardam sua decisão. Esta notificação aparece no painel web e no aplicativo.',
+                    ),
+                  ),
+                ),
+              for (final item in filtered)
+                _PartnerReservationCard(reservation: item),
             ],
           );
         },
@@ -113,12 +153,18 @@ class _PartnerReservationCard extends ConsumerWidget {
                   alignment: WrapAlignment.end,
                   children: [
                     Chip(
-                      label: Text(_statusLabel(reservation.status)),
+                      label: Text(
+                        context.strings.reservationStatus(reservation.status),
+                      ),
                       backgroundColor: color.withValues(alpha: 0.1),
                       side: BorderSide.none,
                     ),
                     Chip(
-                      label: Text(_paymentLabel(reservation.paymentStatus)),
+                      label: Text(
+                        context.strings.paymentStatus(
+                          reservation.paymentStatus,
+                        ),
+                      ),
                       backgroundColor: AppTheme.softCyan,
                       side: BorderSide.none,
                     ),
@@ -128,6 +174,11 @@ class _PartnerReservationCard extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             _Line('Estacionamento', reservation.parkingName),
+            _Line('Reserva', _displayReservationNumber(reservation.id)),
+            if (reservation.createdByName != null)
+              _Line('Criada por', reservation.createdByName!),
+            if (reservation.customerPhone != null)
+              _Line('Telefone', reservation.customerPhone!),
             _Line('Plano', _planLabel(reservation.pricingPlan)),
             _Line('Tipo de vaga', _spotTypeLabel(reservation.spotType)),
             _Line('Base', 'R\$ ${reservation.baseAmount.toStringAsFixed(2)}'),
@@ -140,6 +191,29 @@ class _PartnerReservationCard extends ConsumerWidget {
               'R\$ ${reservation.platformFeeAmount.toStringAsFixed(2)}',
             ),
             _Line('Total', 'R\$ ${reservation.finalTotal.toStringAsFixed(2)}'),
+            if (reservation.customerPhone != null &&
+                reservation.customerName != 'Cliente nao informado')
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _shareApp(reservation),
+                  icon: const Icon(Icons.share_outlined),
+                  label: const Text('Compartilhar app'),
+                ),
+              ),
+            if (reservation.cancelledByName != null)
+              _Line('Cancelada por', reservation.cancelledByName!),
+            if (reservation.status == 'checked_in' &&
+                reservation.checkoutExcessMinutes > 0) ...[
+              _Line(
+                'Tempo excedido',
+                '${reservation.checkoutExcessMinutes} min',
+              ),
+              _Line(
+                'Excedente no checkout',
+                'R\$ ${reservation.checkoutExcessAmount.toStringAsFixed(2)}',
+              ),
+            ],
             if (reservation.selectedServices.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
@@ -159,6 +233,32 @@ class _PartnerReservationCard extends ConsumerWidget {
                       backgroundColor: const Color(0xFFF7FBFD),
                       side: const BorderSide(color: Color(0xFFD9E8F0)),
                     ),
+                ],
+              ),
+            ],
+            if (reservation.status == 'pending_operator_approval' ||
+                reservation.notificationStatus ==
+                    'awaiting_operating_hours_approval') ...[
+              const SizedBox(height: 12),
+              Text(
+                'Entrada fora do horário: confirme se o estacionamento aceitará esta chegada.',
+                style: TextStyle(color: Colors.orange.shade800),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => _reviewArrival(context, ref, 'approve'),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Aceitar entrada'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _reviewArrival(context, ref, 'reject'),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Recusar'),
+                  ),
                 ],
               ),
             ],
@@ -197,23 +297,43 @@ class _PartnerReservationCard extends ConsumerWidget {
     );
   }
 
-  String _statusLabel(String value) {
-    return switch (value) {
-      'pre_reserved' => 'Pre-reserva',
-      'confirmed' => 'Confirmada',
-      'checked_in' => 'Em permanencia',
-      'completed' => 'Finalizada',
-      _ => value,
-    };
+  Future<void> _reviewArrival(
+    BuildContext context,
+    WidgetRef ref,
+    String decision,
+  ) async {
+    final token = ref.read(authProvider).accessToken;
+    if (token == null) return;
+    try {
+      await reviewArrivalApproval(
+        token: token,
+        reservationId: reservation.id,
+        decision: decision,
+      );
+      ref.invalidate(partnerReservationsProvider);
+      ref.invalidate(partnerParkingMapProvider);
+      if (context.mounted) {
+        await ApiFeedback.show(
+          context,
+          decision == 'approve'
+              ? 'Entrada aceita e reserva confirmada.'
+              : 'Solicitação recusada e vaga liberada.',
+          isError: false,
+        );
+      }
+    } catch (error) {
+      if (context.mounted) await ApiFeedback.show(context, '$error');
+    }
   }
 
-  String _paymentLabel(String value) {
-    return switch (value) {
-      'pending_checkin' => 'Pagamento no checkout',
-      'payment_pending' => 'Pagamento pendente',
-      'paid' => 'Pago',
-      _ => value,
-    };
+  Future<void> _shareApp(PartnerReservationSummary item) async {
+    final phone = (item.customerPhone ?? '').replaceAll(RegExp(r'\D'), '');
+    if (phone.isEmpty) return;
+    final message = Uri.encodeComponent(
+      'Olá ${item.customerName}, cadastre-se e acompanhe sua reserva, realize o pagamento e agilize seu checkout no app ParkHere: https://parkhere.app/download',
+    );
+    final uri = Uri.parse('https://wa.me/$phone?text=$message');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   String _planLabel(String value) {
@@ -237,6 +357,11 @@ class _PartnerReservationCard extends ConsumerWidget {
       _ => value,
     };
   }
+}
+
+String _displayReservationNumber(String id) {
+  final compact = id.replaceAll('-', '').toUpperCase();
+  return 'PH-${compact.substring(0, compact.length.clamp(0, 8))}';
 }
 
 class _ReservationCancelDialog extends ConsumerStatefulWidget {
@@ -327,14 +452,10 @@ class _ReservationCancelDialogState
       widget.onCompleted();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Reserva cancelada.')));
+      await ApiFeedback.show(context, 'Reserva cancelada.', isError: false);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao cancelar reserva: $error')),
-      );
+      await ApiFeedback.show(context, 'Erro ao cancelar reserva: $error');
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }

@@ -9,6 +9,9 @@ class Reservation(BaseModel):
 
     parking_id = Column(String(36), ForeignKey("parkings.id"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    # Staff-created reservations keep the creator separate from the customer
+    # so the customer can be linked later by plate/phone.
+    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     walk_in_plate = Column(String(7), nullable=True)
     walk_in_phone = Column(String(20), nullable=True)
     vehicle_id = Column(String(36), ForeignKey("vehicles.id"), nullable=True)
@@ -33,11 +36,18 @@ class Reservation(BaseModel):
     platform_fee_snapshot = Column(Text, nullable=True)
     payment_status = Column(String(40), nullable=False, default="pending_checkin")
     payment_method = Column(String(20), nullable=True)
+    payment_confirmed_at = Column(DateTime(timezone=True), nullable=True)
     terms_accepted_at = Column(DateTime(timezone=True), nullable=True)
     terms_version = Column(String(40), nullable=True)
     terms_locale = Column(String(10), nullable=True)
     accepted_terms_snapshot = Column(Text, nullable=True)
-    notification_status = Column(String(40), nullable=False, default="sent_to_parking")
+    # New fields for recurring payments and check‑in alerts
+    is_recurring = Column(Boolean, nullable=False, default=False)
+    recurring_discount_percent = Column(Float, nullable=False, default=0.0)
+    needs_checkin_alert = Column(Boolean, nullable=False, default=False)
+    notification_status = Column(
+        String(40), nullable=False, default="none", server_default="none"
+    )
     spot_code = Column(String(20), nullable=True)
     arrival_estimate_at = Column(DateTime(timezone=True), nullable=True)
     is_manual_arrival = Column(Boolean, nullable=False, default=False)
@@ -46,7 +56,7 @@ class Reservation(BaseModel):
     cancellation_reason = Column(Text, nullable=True)
     cancellation_fee_amount = Column(Float, nullable=False, default=0)
     cancellation_credit_amount = Column(Float, nullable=False, default=0)
-    checkout_grace_minutes = Column(Integer, nullable=False, default=15)
+    checkout_grace_minutes = Column(Integer, nullable=False, default=10)
     checkout_excess_minutes = Column(Integer, nullable=False, default=0)
     checkout_excess_amount = Column(Float, nullable=False, default=0)
     checkout_excess_paid_at = Column(DateTime(timezone=True), nullable=True)

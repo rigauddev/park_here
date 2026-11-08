@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/api_feedback.dart';
 import '../providers/auth_provider.dart';
 import 'reset_password_page.dart';
 
@@ -101,7 +102,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
 
   Future<void> _requestCode() async {
     if (emailController.text.trim().isEmpty) {
-      _showError('Informe o e-mail cadastrado.');
+      await _showError('Informe o e-mail cadastrado.');
       return;
     }
 
@@ -112,11 +113,13 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
           .requestPasswordReset(emailController.text);
       if (!mounted) return;
       setState(() => resetToken = token);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Codigo enviado para o e-mail.')),
+      await ApiFeedback.show(
+        context,
+        'Codigo enviado para o e-mail.',
+        isError: false,
       );
     } catch (_) {
-      _showError('Nao foi possivel enviar o codigo.');
+      await _showError('Nao foi possivel enviar o codigo.');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -125,7 +128,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   Future<void> _verifyCode() async {
     final token = resetToken;
     if (token == null || codeController.text.trim().isEmpty) {
-      _showError('Informe o codigo.');
+      await _showError('Informe o codigo.');
       return;
     }
 
@@ -145,16 +148,14 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         ),
       );
     } catch (_) {
-      _showError('Codigo invalido ou expirado.');
+      await _showError('Codigo invalido ou expirado.');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
   }
 
-  void _showError(String message) {
+  Future<void> _showError(String message) async {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    await ApiFeedback.show(context, message);
   }
 }

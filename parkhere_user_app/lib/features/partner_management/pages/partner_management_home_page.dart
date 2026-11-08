@@ -18,6 +18,8 @@ import 'guide_services_page.dart';
 import 'partner_cash_report_page.dart';
 import 'guide_offer_settings_page.dart';
 import 'partner_feature_access_page.dart';
+import '../../rental/pages/rental_management_page.dart';
+import '../../rental/pages/rental_reservations_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -60,8 +62,35 @@ class _PartnerManagementBody extends StatelessWidget {
       children: [
         _PartnerHeader(partner: partner),
         const SizedBox(height: 16),
+        if (partner.serviceUnits.length > 1) ...[
+          Text(
+            'Serviços e unidades da conta',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          ...partner.serviceUnits.map(
+            (unit) => Card(
+              child: ListTile(
+                leading: Icon(
+                  unit.serviceType == 'vehicle_rental'
+                      ? Icons.directions_car_filled_outlined
+                      : Icons.local_parking_outlined,
+                ),
+                title: Text(unit.name),
+                subtitle: Text(
+                  '${unit.serviceLabel} · ${unit.unitKind == 'matrix' ? 'Matriz' : 'Filial'}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: unit.serviceType == 'vehicle_rental'
+                    ? () => _open(context, const RentalManagementPage())
+                    : () => _open(context, const ParkingManagementPage()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Text(
-          'Gestao disponivel',
+          'Gestão de serviços',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 10),
@@ -94,7 +123,7 @@ class _PartnerManagementBody extends StatelessWidget {
           return [
             _ManagementAction(
               icon: Icons.map_outlined,
-              title: 'Mapa de vagas',
+              title: 'Serviços',
               description: 'Vagas livres, pre-reservadas e ocupadas.',
               onTap: () => _open(context, const PartnerParkingMapPage()),
               featureKey: 'parking_operations',
@@ -126,14 +155,22 @@ class _PartnerManagementBody extends StatelessWidget {
           ),
           _ManagementAction(
             icon: Icons.local_parking,
-            title: 'Estacionamento',
-            description: 'Vagas, areas cobertas, tarifas e disponibilidade.',
+            title: 'Gestão de serviços',
+            description:
+                'Serviços oferecidos, unidades, tarifas e disponibilidade.',
             onTap: () => _open(context, const ParkingManagementPage()),
             featureKey: 'parking_management',
           ),
           _ManagementAction(
+            icon: Icons.shopping_bag_outlined,
+            title: 'Conveniências',
+            description: 'Produtos e serviços extras de cada unidade.',
+            onTap: () => _open(context, const ParkingManagementPage()),
+            featureKey: 'convenience_management',
+          ),
+          _ManagementAction(
             icon: Icons.map_outlined,
-            title: 'Mapa de vagas',
+            title: 'Serviços',
             description:
                 'Painel visual das vagas livres, pre-reservadas e ocupadas.',
             onTap: () => _open(context, const PartnerParkingMapPage()),
@@ -148,13 +185,6 @@ class _PartnerManagementBody extends StatelessWidget {
             featureKey: 'cash_management_basic',
           ),
           _ManagementAction(
-            icon: Icons.design_services_outlined,
-            title: 'Servicos cadastrados',
-            description: 'Lava jato, seguro, transporte e servicos extras.',
-            onTap: () => _open(context, const ParkingManagementPage()),
-            featureKey: 'services_management',
-          ),
-          _ManagementAction(
             icon: Icons.account_balance_wallet_outlined,
             title: 'Conta de repasse',
             description: _paymentDescription(partner),
@@ -163,7 +193,8 @@ class _PartnerManagementBody extends StatelessWidget {
           _ManagementAction(
             icon: Icons.group_outlined,
             title: 'Usuarios',
-            description: 'Crie ate 2 operadores no plano atual.',
+            description:
+                'Use ${partner.operatorCount} de ${partner.operatorLimit} operadores permitidos pelos serviços ativos.',
             onTap: () => _open(context, const PartnerUsersPage()),
             featureKey: 'team_management',
           ),
@@ -260,6 +291,86 @@ class _PartnerManagementBody extends StatelessWidget {
             featureKey: 'services_management',
           ),
         ];
+      case 'vehicle_rental':
+        if (partner.role == 'operator') {
+          return [
+            _ManagementAction(
+              icon: Icons.directions_car_filled_outlined,
+              title: 'Operação da frota',
+              description: 'Disponibilidade, veículos e vistoria operacional.',
+              onTap: () => _open(
+                context,
+                const RentalManagementPage(operatorMode: true),
+              ),
+              featureKey: 'rental_management',
+            ),
+            _ManagementAction(
+              icon: Icons.assignment_outlined,
+              title: 'Reservas de locação',
+              description: 'Criar, acompanhar e finalizar reservas.',
+              onTap: () => _open(context, const RentalReservationsPage()),
+              featureKey: 'rental_management',
+            ),
+            _ManagementAction(
+              icon: Icons.point_of_sale_outlined,
+              title: 'Caixa e movimentações',
+              description: 'Abrir e fechar o caixa do turno.',
+              onTap: () => _open(context, const PartnerCashReportPage()),
+              featureKey: 'cash_management_basic',
+            ),
+          ];
+        }
+        return [
+          _ManagementAction(
+            icon: Icons.dashboard_outlined,
+            title: 'Dashboard',
+            description: 'Reservas, recebimentos e desempenho da locadora.',
+            onTap: () => _open(context, const ParkingDashboardPage()),
+            featureKey: 'dashboard',
+          ),
+          _ManagementAction(
+            icon: Icons.directions_car_filled,
+            title: 'Gestão de serviços',
+            description: 'Unidades, frota, grupos, planos e disponibilidade.',
+            onTap: () => _open(context, const RentalManagementPage()),
+            featureKey: 'rental_management',
+          ),
+          _ManagementAction(
+            icon: Icons.assignment_outlined,
+            title: 'Serviços',
+            description: 'Operação da frota e reservas de locação.',
+            onTap: () => _open(context, const RentalManagementPage()),
+            featureKey: 'rental_management',
+          ),
+          _ManagementAction(
+            icon: Icons.point_of_sale_outlined,
+            title: 'Caixa e movimentações',
+            description: 'Entradas, saídas e fechamento operacional.',
+            onTap: () => _open(context, const PartnerCashReportPage()),
+            featureKey: 'cash_management_basic',
+          ),
+          _ManagementAction(
+            icon: Icons.group_outlined,
+            title: 'Usuários',
+            description: 'Operadores autorizados para os serviços desta conta.',
+            onTap: () => _open(context, const PartnerUsersPage()),
+            featureKey: 'team_management',
+          ),
+          _ManagementAction(
+            icon: Icons.handshake_outlined,
+            title: 'Afiliações',
+            description: 'Guias e indicações vinculadas aos serviços.',
+            onTap: () => _open(context, const GuideRequestsPage()),
+            featureKey: 'guide_affiliations',
+          ),
+          _ManagementAction(
+            icon: Icons.account_balance_outlined,
+            title: 'Financeiro Pro',
+            description: _financialDescription(context, partner),
+            onTap: () => _open(context, const PartnerFinancialPage()),
+            featureKey: 'financial_management',
+          ),
+        ];
       case 'tourism_company':
         return [
           _ManagementAction(
@@ -301,8 +412,6 @@ class _PartnerManagementBody extends StatelessWidget {
       final price = (feature?['price'] as num? ?? 0).toDouble();
       final period = feature?['billing_period'] == 'annual'
           ? (context.strings.isEnglish ? 'year' : 'ano')
-          : feature?['billing_period'] == 'one_time'
-          ? (context.strings.isEnglish ? 'once' : 'única')
           : (context.strings.isEnglish ? 'month' : 'mês');
       return context.strings.isEnglish
           ? 'Optional add-on: R\$ ${price.toStringAsFixed(2)} / $period. Contact ParkHere to enable.'

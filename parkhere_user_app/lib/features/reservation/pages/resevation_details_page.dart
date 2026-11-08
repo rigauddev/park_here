@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../checkin_checkout/pages/checkout_page.dart';
+import '../../checkin_checkout/pages/route_preview_page.dart';
 import '../../payments/pages/payment_page.dart';
+import '../../parking_search/models/payment_plan_enum.dart';
 import '../models/reservation_enum.dart';
 import '../models/reservation_model.dart';
 import '../providers/reservation_provider.dart';
@@ -51,7 +53,7 @@ class _ReservationDetailsPageState
           ),
           const SizedBox(height: 6),
           Text(
-            "Reserva #${reservation.id}",
+            "Reserva #PH-${reservation.id.replaceAll('-', '').substring(0, reservation.id.replaceAll('-', '').length.clamp(0, 8)).toUpperCase()}",
             style: const TextStyle(color: AppTheme.textMuted),
           ),
           const SizedBox(height: 18),
@@ -59,6 +61,8 @@ class _ReservationDetailsPageState
             title: "Resumo",
             children: [
               _DetailRow("Status", _statusLabel(reservation.status)),
+              if (reservation.cancelledByName != null)
+                _DetailRow('Cancelada por', reservation.cancelledByName!),
               _DetailRow("Pagamento", _paymentLabel(reservation.paymentStatus)),
               if (reservation.paymentMethod != null)
                 _DetailRow("Método", _methodLabel(reservation.paymentMethod!)),
@@ -96,7 +100,8 @@ class _ReservationDetailsPageState
               ),
             ],
           ),
-          if (reservation.status == ReservationStatus.open &&
+          if (reservation.plan == PlanType.hourly &&
+              reservation.checkedIn &&
               reservation.paymentStatus != 'paid' &&
               reservation.id.isNotEmpty)
             Padding(
@@ -104,27 +109,31 @@ class _ReservationDetailsPageState
               child: Card(
                 child: ListTile(
                   leading: const Icon(Icons.lock_outline),
-                  title: const Text('Garantir reserva antecipadamente'),
+                  title: const Text('Realizar pagamento da permanência'),
                   subtitle: Text(
-                    'Pague agora R\$ ${reservation.estimatedValue.toStringAsFixed(2)}',
+                    'Disponível até 70 m do estacionamento. O excedente será calculado no checkout.',
                   ),
                   trailing: FilledButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PaymentPage(
-                          amount: reservation.estimatedValue,
-                          reservationId: reservation.id,
-                          payNow: true,
-                          onPaymentSuccess: () async {
-                            ref.invalidate(reservationsProvider);
-                          },
-                        ),
-                      ),
-                    ),
+                    onPressed: () => _payHourlyReservation(reservation),
                     child: const Text('Pagar'),
                   ),
                 ),
+              ),
+            ),
+          if (reservation.status == ReservationStatus.open &&
+              reservation.paymentStatus == 'paid')
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: FilledButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        RoutePreviewPage(preCheckin: reservation.preCheckin),
+                  ),
+                ),
+                icon: const Icon(Icons.route_outlined),
+                label: const Text('Resumo de reserva'),
               ),
             ),
           const SizedBox(height: 14),
@@ -203,6 +212,23 @@ class _ReservationDetailsPageState
     );
   }
 
+  Future<void> _payHourlyReservation(ReservationModel reservation) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentPage(
+          amount: reservation.estimatedValue,
+          reservationId: reservation.id,
+          payNow: false,
+          requireParkingLocation: true,
+          onPaymentSuccess: () async {
+            ref.invalidate(reservationsProvider);
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveRating() async {
     if (parkingRating == 0 || appRating == 0) {
       ScaffoldMessenger.of(
@@ -259,6 +285,7 @@ class _ReservationDetailsPageState
   };
 
   String _formatDate(DateTime date) {
+    date = date.toLocal();
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     final hour = date.hour.toString().padLeft(2, '0');

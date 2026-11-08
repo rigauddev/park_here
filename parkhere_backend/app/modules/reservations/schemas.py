@@ -68,11 +68,22 @@ class CancelReservationRequest(BaseModel):
     reason: str | None = None
 
 
+class ArrivalApprovalRequest(BaseModel):
+    decision: str = Field(pattern="^(approve|reject)$")
+
+
 class ReservationResponse(BaseModel):
     walk_in_plate: str | None = None
     walk_in_phone: str | None = None
     id: str
+    created_at: str | None = None
+    created_by_name: str | None = None
+    created_by_phone: str | None = None
     parking_id: str
+    parking_name: str | None = None
+    parking_lat: float | None = None
+    parking_lng: float | None = None
+    parking_city: str | None = None
     status: str
     checked_in_at: str | None = None
     checked_out_at: str | None = None
@@ -103,9 +114,11 @@ class ReservationResponse(BaseModel):
     accepted_terms: list[dict] = Field(default_factory=list)
     notification_status: str
     cancelled_at: str | None = None
+    cancelled_by_user_id: str | None = None
+    cancelled_by_name: str | None = None
     cancellation_fee_amount: float = 0
     cancellation_credit_amount: float = 0
-    checkout_grace_minutes: int = 15
+    checkout_grace_minutes: int = 10
     checkout_excess_minutes: int = 0
     checkout_excess_amount: float = 0
     checkout_excess_paid_at: str | None = None

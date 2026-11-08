@@ -1,6 +1,7 @@
 enum DriverDocumentType { cnh, rg }
 
 enum VehicleOwnershipType { owner, rented }
+enum VehicleType { car, motorcycle, bicycle }
 
 enum WalletMethodType { creditCard, debitCard, pix }
 
@@ -28,6 +29,8 @@ class VehicleModel {
   final String? documentFileName;
   final VehicleOwnershipType ownershipType;
   final bool isActive;
+  final VehicleType vehicleType;
+  final String? bicycleParts;
 
   const VehicleModel({
     required this.id,
@@ -39,6 +42,8 @@ class VehicleModel {
     this.documentFileName,
     required this.ownershipType,
     required this.isActive,
+    this.vehicleType = VehicleType.car,
+    this.bicycleParts,
   });
 
   VehicleModel copyWith({bool? isActive}) {
@@ -52,6 +57,8 @@ class VehicleModel {
       documentFileName: documentFileName,
       ownershipType: ownershipType,
       isActive: isActive ?? this.isActive,
+      vehicleType: vehicleType,
+      bicycleParts: bicycleParts,
     );
   }
 }

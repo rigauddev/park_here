@@ -18,7 +18,9 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
   final nicknameController = TextEditingController(text: 'Meu carro');
   final plateController = TextEditingController();
   final colorController = TextEditingController();
+  final bicyclePartsController = TextEditingController();
 
+  VehicleType vehicleType = VehicleType.car;
   String? selectedBrand;
   String? selectedModel;
   String? vehicleDocumentFileName;
@@ -29,15 +31,19 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
     nicknameController.dispose();
     plateController.dispose();
     colorController.dispose();
+    bicyclePartsController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(accountProvider);
+    final catalog = vehicleType == VehicleType.motorcycle
+        ? motorcycleCatalog
+        : vehicleCatalog;
     final models = selectedBrand == null
         ? const <String>[]
-        : vehicleCatalog[selectedBrand] ?? const <String>[];
+        : catalog[selectedBrand] ?? const <String>[];
 
     return Scaffold(
       appBar: AppBar(title: const Text('Veiculos')),
@@ -55,15 +61,31 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
           ),
           const SizedBox(height: 18),
           _field(nicknameController, 'Apelido do veiculo', Icons.sell_outlined),
-          _field(plateController, 'Placa', Icons.pin_outlined),
-          DropdownButtonFormField<String>(
+          DropdownButtonFormField<VehicleType>(
+            initialValue: vehicleType,
+            decoration: const InputDecoration(labelText: 'Tipo de veículo', prefixIcon: Icon(Icons.directions_car_outlined)),
+            items: const [
+              DropdownMenuItem(value: VehicleType.car, child: Text('Carro')),
+              DropdownMenuItem(value: VehicleType.motorcycle, child: Text('Motocicleta')),
+              DropdownMenuItem(value: VehicleType.bicycle, child: Text('Bicicleta')),
+            ],
+            onChanged: (value) => setState(() {
+              vehicleType = value ?? VehicleType.car;
+              selectedBrand = null;
+              selectedModel = null;
+            }),
+          ),
+          _field(plateController, vehicleType == VehicleType.bicycle ? 'Número de identificação' : 'Placa', Icons.pin_outlined),
+          if (vehicleType == VehicleType.bicycle)
+            _field(bicyclePartsController, 'Peças e características (opcional)', Icons.build_outlined),
+          if (vehicleType != VehicleType.bicycle) DropdownButtonFormField<String>(
             initialValue: selectedBrand,
             decoration: const InputDecoration(
               labelText: 'Marca',
               prefixIcon: Icon(Icons.directions_car_filled_outlined),
             ),
             items: [
-              for (final brand in vehicleCatalog.keys)
+              for (final brand in catalog.keys)
                 DropdownMenuItem(value: brand, child: Text(brand)),
             ],
             onChanged: (value) {
@@ -74,7 +96,7 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
             },
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
+          if (vehicleType != VehicleType.bicycle) DropdownButtonFormField<String>(
             initialValue: selectedModel,
             decoration: const InputDecoration(
               labelText: 'Modelo',
@@ -190,8 +212,7 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
   Future<void> _saveVehicle() async {
     if (nicknameController.text.trim().isEmpty ||
         plateController.text.trim().isEmpty ||
-        selectedBrand == null ||
-        selectedModel == null ||
+        (vehicleType != VehicleType.bicycle && (selectedBrand == null || selectedModel == null)) ||
         colorController.text.trim().isEmpty ||
         vehicleDocumentFileName == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -209,12 +230,14 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
             id: DateTime.now().microsecondsSinceEpoch.toString(),
             nickname: nicknameController.text.trim(),
             plate: plateController.text.trim().toUpperCase(),
-            brand: selectedBrand!,
-            model: selectedModel!,
+            brand: vehicleType == VehicleType.bicycle ? 'Bicicleta' : selectedBrand!,
+            model: vehicleType == VehicleType.bicycle ? 'Bicicleta' : selectedModel!,
             color: colorController.text.trim(),
             documentFileName: vehicleDocumentFileName,
             ownershipType: ownershipType,
             isActive: true,
+            vehicleType: vehicleType,
+            bicycleParts: bicyclePartsController.text.trim().isEmpty ? null : bicyclePartsController.text.trim(),
           ),
         );
 
@@ -228,6 +251,8 @@ class _VehiclesPageState extends ConsumerState<VehiclesPage> {
       selectedModel = null;
       vehicleDocumentFileName = null;
       ownershipType = VehicleOwnershipType.owner;
+      vehicleType = VehicleType.car;
+      bicyclePartsController.clear();
     });
 
     ScaffoldMessenger.of(

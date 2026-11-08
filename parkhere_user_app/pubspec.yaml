@@ -45,10 +45,15 @@ dependencies:
   shared_preferences: ^2.5.4
   uuid: ^4.5.1
   url_launcher: ^6.3.1
+  intl: ^0.20.2
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  flutter_svg: ^2.3.2
   file_picker: ^8.3.7
+  pdf: ^3.11.3
+  printing: ^5.14.3
+  mobile_scanner: ^6.0.2
 
 dev_dependencies:
   flutter_test:
@@ -74,6 +79,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    # Local development only; release builds inject API_URL via --dart-define.
+    - .env
     - assets/branding/logo_rigaud_tech.png
     - assets/branding/logo_rigaud_tech_clean.png
     - assets/branding/logo_park_here_transparent.png
@@ -82,6 +89,8 @@ flutter:
     - assets/branding/logo_park_here_portugues.png
     - assets/branding/logo_park_here.svg
     - assets/branding/icon_padrao.svg
+    - assets/branding/servicehub_logo_concept.svg
+    - assets/branding/servicehub_icon_concept.svg
 
   # To add assets to your application, add an assets section, like this:
   # assets:
