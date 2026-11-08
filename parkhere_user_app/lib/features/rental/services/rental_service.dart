@@ -24,6 +24,18 @@ class RentalService {
     if (parentServiceType != null) 'parent_service_type': parentServiceType,
   }, token);
 
+  Future<Map<String, dynamic>> uploadCompanyLogo({
+    required String companyId,
+    required String token,
+    required String fileName,
+    required List<int> bytes,
+  }) => _api.uploadAuthorizedFile(
+    '/rentals/companies/$companyId/logo',
+    token,
+    fileName,
+    bytes,
+  );
+
   Future<List<Map<String, dynamic>>> vehicles(
     String companyId,
     String token,

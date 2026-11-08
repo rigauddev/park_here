@@ -19,5 +19,6 @@ class RentalCompany(BaseModel):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     cnpj = Column(String(20), nullable=True)
+    logo_file_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     vehicles = relationship("RentalVehicle", back_populates="company")

@@ -17,6 +17,15 @@ async def list_companies(db: AsyncSession = Depends(get_db), current_user: User 
 async def create_company(data: RentalCompanyCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.create_company(db, data, current_user)
 
+@router.post("/companies/{company_id}/logo")
+async def upload_company_logo(company_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await RentalService.upload_company_logo(db, company_id, file, current_user)
+
+@router.get("/companies/{company_id}/logo/{name}")
+async def read_company_logo(company_id: str, name: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    path = await RentalService.read_company_logo(db, company_id, name, current_user)
+    return FileResponse(path)
+
 @router.get("/companies/{company_id}/vehicles", response_model=list[VehicleOut])
 async def list_vehicles(company_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await RentalService.list_vehicles(db, company_id, current_user)

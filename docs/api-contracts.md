@@ -1281,6 +1281,14 @@ Cada grupo retorna `is_blocked`; `PATCH /rentals/groups/{group_id}/block?blocked
 bloqueia/desbloqueia a categoria para novas reservas quando a frota estiver
 sem disponibilidade. O bloqueio não apaga veículos nem reservas existentes.
 
+Uma locadora é um serviço/unidade do parceiro, não uma funcionalidade paga
+separada. A conta do parceiro continua usando a mesma tela Minha empresa para
+listar estacionamento, locação e demais serviços; a gestão específica da
+locação abre frota, grupos, planos, reservas, manutenção e checkout. Cada
+unidade pode cadastrar uma logo própria com `POST /rentals/companies/{id}/logo`
+(JPG, PNG ou WEBP, até 10 MB); a URL retornada permanece protegida por escopo
+do parceiro.
+
 `GET /rentals/catalog/models?make=&year=&vehicle_type=&model=` consulta o vPIC
 da NHTSA para sugerir marca/modelo/ano e consulta imagens públicas do Wikimedia
 Commons. As URLs retornadas são sugestões (`photo_urls`); o parceiro deve

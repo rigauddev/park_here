@@ -12,6 +12,7 @@ class RentalCompanyCreate(BaseModel):
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     cnpj: str | None = Field(default=None, max_length=20)
+    logo_file_url: str | None = Field(default=None, max_length=500)
 
 class RentalCompanyOut(RentalCompanyCreate):
     model_config = ConfigDict(from_attributes=True)

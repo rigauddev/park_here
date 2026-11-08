@@ -342,6 +342,37 @@ class RentalService:
         db.add(company); await db.commit(); await db.refresh(company); return company
 
     @staticmethod
+    async def upload_company_logo(db, company_id, file, current_user):
+        company = await RentalService.company(db, company_id, current_user)
+        if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail='Sem permissão para alterar a logo do serviço')
+        suffix = Path(file.filename or '').suffix.lower()
+        if suffix not in {'.jpg', '.jpeg', '.png', '.webp'}:
+            raise HTTPException(status_code=415, detail='A logo deve estar em JPG, PNG ou WEBP')
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail='A logo deve ter no máximo 10 MB')
+        folder = Path(os.getenv('RENTAL_DOCUMENTS_DIR', '/app/storage/rental_documents'))
+        folder.mkdir(parents=True, exist_ok=True)
+        name = f'{company.id}-logo-{uuid4().hex}{suffix}'
+        (folder / name).write_bytes(content)
+        company.logo_file_url = f'/rentals/companies/{company.id}/logo/{name}'
+        await db.commit(); await db.refresh(company)
+        return {'logo_url': company.logo_file_url}
+
+    @staticmethod
+    async def read_company_logo(db, company_id, name, current_user):
+        company = await RentalService.company(db, company_id, current_user)
+        if not company.logo_file_url or not company.logo_file_url.endswith('/' + name):
+            raise HTTPException(status_code=404, detail='Logo não encontrada')
+        if current_user.role not in {UserRoleEnum.CUSTOMER, UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.OPERATOR, UserRoleEnum.SUPER_ADMIN}:
+            raise HTTPException(status_code=403, detail='Sem permissão para acessar a logo')
+        path = Path(os.getenv('RENTAL_DOCUMENTS_DIR', '/app/storage/rental_documents')) / name
+        if not path.exists():
+            raise HTTPException(status_code=404, detail='Arquivo da logo não encontrado')
+        return path
+
+    @staticmethod
     async def create_vehicle(db, data, current_user):
         company = await RentalService.company(db, data.company_id, current_user)
         if current_user.role not in {UserRoleEnum.PARTNER_MANAGER, UserRoleEnum.SUPER_ADMIN} or company.tenant_id != current_user.tenant_id:

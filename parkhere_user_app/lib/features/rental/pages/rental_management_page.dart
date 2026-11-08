@@ -61,12 +61,20 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     final result = await _showCompanyDialog();
     if (result == null || _token == null) return;
     try {
-      await _service.createCompany(
+      final company = await _service.createCompany(
         token: _token!,
         name: result.name,
         address: result.address,
         cnpj: result.cnpj,
       );
+      if (result.logoName != null && result.logoBytes != null) {
+        await _service.uploadCompanyLogo(
+          companyId: company['id'].toString(),
+          token: _token!,
+          fileName: result.logoName!,
+          bytes: result.logoBytes!,
+        );
+      }
       if (mounted) setState(() => _future = _load());
     } catch (error) {
       if (mounted) _message('Não foi possível criar a locadora: $error');
@@ -498,7 +506,7 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 OutlinedButton.icon(
                   onPressed: _createCompany,
                   icon: const Icon(Icons.add_business),
-                  label: const Text('Adicionar unidade de locação'),
+                  label: const Text('Adicionar serviço'),
                 ),
             ],
           ),
@@ -672,6 +680,8 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
     final name = TextEditingController();
     final address = TextEditingController();
     final cnpj = TextEditingController();
+    String? logoName;
+    List<int>? logoBytes;
     return showDialog<_CompanyForm>(
       context: context,
       builder: (context) => AlertDialog(
@@ -692,6 +702,29 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
                 controller: cnpj,
                 decoration: const InputDecoration(labelText: 'CNPJ (opcional)'),
               ),
+              const SizedBox(height: 8),
+              StatefulBuilder(
+                builder: (context, setLogoState) => OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await FilePicker.platform.pickFiles(
+                      type: FileType.image,
+                      withData: true,
+                    );
+                    if (picked != null && picked.files.single.bytes != null) {
+                      setLogoState(() {
+                        logoName = picked.files.single.name;
+                        logoBytes = picked.files.single.bytes;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: Text(
+                    logoName == null
+                        ? 'Adicionar logo da empresa'
+                        : 'Logo: $logoName',
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -705,7 +738,13 @@ class _RentalManagementPageState extends State<RentalManagementPage> {
               if (name.text.trim().length >= 2)
                 Navigator.pop(
                   context,
-                  _CompanyForm(name.text, address.text, cnpj.text),
+                  _CompanyForm(
+                    name.text,
+                    address.text,
+                    cnpj.text,
+                    logoName,
+                    logoBytes,
+                  ),
                 );
             },
             child: const Text('Salvar'),
@@ -1365,7 +1404,15 @@ class _StatusChip extends StatelessWidget {
 
 class _CompanyForm {
   final String name, address, cnpj;
-  const _CompanyForm(this.name, this.address, this.cnpj);
+  final String? logoName;
+  final List<int>? logoBytes;
+  const _CompanyForm(
+    this.name,
+    this.address,
+    this.cnpj,
+    this.logoName,
+    this.logoBytes,
+  );
 }
 
 class _VehicleForm {

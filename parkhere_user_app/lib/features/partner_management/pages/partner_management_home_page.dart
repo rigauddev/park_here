@@ -293,26 +293,54 @@ class _PartnerManagementBody extends StatelessWidget {
       case 'vehicle_rental':
         return [
           _ManagementAction(
+            icon: Icons.dashboard_outlined,
+            title: 'Dashboard',
+            description: 'Reservas, recebimentos e desempenho da locadora.',
+            onTap: () => _open(context, const ParkingDashboardPage()),
+            featureKey: 'dashboard',
+          ),
+          _ManagementAction(
             icon: Icons.directions_car_filled,
-            title: 'Locadora e frota',
-            description: 'Unidades, veículos, planos e disponibilidade.',
+            title: 'Gestão de serviços',
+            description: 'Unidades, frota, grupos, planos e disponibilidade.',
             onTap: () => _open(context, const RentalManagementPage()),
             featureKey: 'rental_management',
           ),
           _ManagementAction(
             icon: Icons.assignment_outlined,
-            title: 'Reservas de locação',
-            description: 'Acompanhe contratos, check-in e checkout.',
-            onTap: () => _showPending(context),
+            title: 'Serviços',
+            description: 'Operação da frota e reservas de locação.',
+            onTap: () => _open(context, const RentalManagementPage()),
             featureKey: 'rental_management',
           ),
           _ManagementAction(
-            icon: Icons.build_outlined,
-            title: 'Manutenção da frota',
+            icon: Icons.point_of_sale_outlined,
+            title: 'Caixa e movimentações',
+            description: 'Entradas, saídas e fechamento operacional.',
+            onTap: () => _open(context, const PartnerCashReportPage()),
+            featureKey: 'cash_management_basic',
+          ),
+          _ManagementAction(
+            icon: Icons.group_outlined,
+            title: 'Usuários',
             description:
-                'Registre revisões, quilometragem e próximos serviços.',
-            onTap: () => _showPending(context),
-            featureKey: 'rental_management',
+                'Operadores autorizados para os serviços desta conta.',
+            onTap: () => _open(context, const PartnerUsersPage()),
+            featureKey: 'team_management',
+          ),
+          _ManagementAction(
+            icon: Icons.handshake_outlined,
+            title: 'Afiliações',
+            description: 'Guias e indicações vinculadas aos serviços.',
+            onTap: () => _open(context, const GuideRequestsPage()),
+            featureKey: 'guide_affiliations',
+          ),
+          _ManagementAction(
+            icon: Icons.account_balance_outlined,
+            title: 'Financeiro Pro',
+            description: _financialDescription(context, partner),
+            onTap: () => _open(context, const PartnerFinancialPage()),
+            featureKey: 'financial_management',
           ),
         ];
       case 'tourism_company':
