@@ -160,17 +160,14 @@ class _LoginPageState extends ConsumerState<LoginPage>
             Positioned.fill(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  if (constraints.maxWidth < 960) {
+                  if (constraints.maxWidth < 1100) {
                     return const SizedBox.shrink();
                   }
                   return Align(
                     alignment: Alignment.centerLeft,
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 72, right: 520),
-                      child: _ServiceHubHero(
-                        isPortuguese: isPortuguese,
-                        loginMode: loginMode,
-                      ),
+                      padding: const EdgeInsets.only(left: 64, right: 500),
+                      child: _ServiceHubHero(isPortuguese: isPortuguese),
                     ),
                   );
                 },
@@ -178,11 +175,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
             ),
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 960;
+                final isWide = constraints.maxWidth >= 1100;
                 return Align(
                   alignment: isWide ? Alignment.centerRight : Alignment.center,
                   child: Padding(
-                    padding: EdgeInsets.only(right: isWide ? 72 : 0),
+                    padding: EdgeInsets.only(right: isWide ? 64 : 0),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: ConstrainedBox(
@@ -593,14 +590,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
 class _ServiceHubHero extends StatelessWidget {
   final bool isPortuguese;
-  final LoginMode loginMode;
-  final bool compact;
 
-  const _ServiceHubHero({
-    required this.isPortuguese,
-    required this.loginMode,
-    this.compact = false,
-  });
+  const _ServiceHubHero({required this.isPortuguese});
 
   @override
   Widget build(BuildContext context) {
@@ -611,44 +602,30 @@ class _ServiceHubHero extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _ServiceHubBrand(scale: compact ? 1.15 : 2.15),
-        if (!compact) ...[
-          const SizedBox(height: 26),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (var i = 0; i < labels.length; i++) ...[
-                if (i > 0)
-                  Container(
-                    height: 42,
-                    width: 1,
-                    margin: const EdgeInsets.symmetric(horizontal: 18),
-                    color: Colors.white.withValues(alpha: 0.35),
-                  ),
-                _ServiceFeature(
-                  icon: switch (i) {
-                    0 => Icons.local_parking_outlined,
-                    1 => Icons.directions_car_outlined,
-                    _ => Icons.tour_outlined,
-                  },
-                  label: labels[i],
+        _ServiceHubBrand(scale: 2.15),
+        const SizedBox(height: 26),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < labels.length; i++) ...[
+              if (i > 0)
+                Container(
+                  height: 42,
+                  width: 1,
+                  margin: const EdgeInsets.symmetric(horizontal: 18),
+                  color: Colors.white.withValues(alpha: 0.35),
                 ),
-              ],
+              _ServiceFeature(
+                icon: switch (i) {
+                  0 => Icons.local_parking_outlined,
+                  1 => Icons.directions_car_outlined,
+                  _ => Icons.tour_outlined,
+                },
+                label: labels[i],
+              ),
             ],
-          ),
-        ],
-        if (compact)
-          Text(
-            loginMode == LoginMode.partner
-                ? (isPortuguese ? 'Gestão de serviços' : 'Service management')
-                : (isPortuguese ? 'Seu hub de serviços' : 'Your service hub'),
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.5,
-            ),
-          ),
+          ],
+        ),
       ],
     );
   }
@@ -1204,36 +1181,10 @@ class _LoginBackgroundPainter extends CustomPainter {
       );
     canvas.drawPath(lowerPath, accentPaint);
 
-    _drawPin(canvas, Offset(size.width * 0.14, size.height * 0.20), 20);
-    _drawPin(canvas, Offset(size.width * 0.82, size.height * 0.30), 16);
-    _drawVehicle(
-      canvas,
-      Offset(size.width * 0.16, size.height * 0.72),
-      mode == LoginMode.customer ? Icons.directions_car : Icons.local_car_wash,
-      36,
-    );
-    _drawVehicle(
-      canvas,
-      Offset(size.width * 0.76, size.height * 0.76),
-      mode == LoginMode.customer ? Icons.two_wheeler : Icons.storefront,
-      34,
-    );
-    _drawVehicle(
-      canvas,
-      Offset(size.width * 0.90, size.height * 0.55),
-      Icons.pedal_bike,
-      28,
-    );
-
-    for (var i = 0; i < 16; i++) {
-      final x = (math.sin(i * 2.1) * 0.5 + 0.5) * size.width;
-      final y = (i / 16) * size.height;
-      canvas.drawCircle(
-        Offset(x, y),
-        2.2,
-        Paint()..color = Colors.white.withValues(alpha: 0.13),
-      );
-    }
+    // A origem e o destino permanecem discretos; o único elemento em
+    // movimento é o veículo da rota, evitando poluir o card de autenticação.
+    _drawPin(canvas, Offset(size.width * 0.05, size.height * 0.25), 14);
+    _drawPin(canvas, Offset(size.width * 0.88, size.height * 0.30), 14);
   }
 
   Offset _routePoint(Size size, double t) {
@@ -1263,25 +1214,6 @@ class _LoginBackgroundPainter extends CustomPainter {
       ..lineTo(center.dx + size * 0.30, center.dy + size * 0.25)
       ..close();
     canvas.drawPath(path, paint);
-  }
-
-  void _drawVehicle(Canvas canvas, Offset center, IconData icon, double size) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(icon.codePoint),
-        style: TextStyle(
-          fontSize: size,
-          fontFamily: icon.fontFamily,
-          package: icon.fontPackage,
-          color: Colors.white.withValues(alpha: 0.18),
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(
-      canvas,
-      center - Offset(painter.width / 2, painter.height / 2),
-    );
   }
 
   void _drawMovingVehicle(
