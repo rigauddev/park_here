@@ -367,3 +367,6 @@ e horário.
 - Crie uma reserva pendente e uma confirmada e confira os dois blocos na tela
   de reservas da locadora; o cliente deve ver somente veículos disponíveis.
 
+Para a matriz completa de cenários por perfil, serviço, mapa e riscos do seed,
+consulte [`docs/rental-qa-matrix.md`](rental-qa-matrix.md).
+
