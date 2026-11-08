@@ -19,6 +19,7 @@ import 'partner_cash_report_page.dart';
 import 'guide_offer_settings_page.dart';
 import 'partner_feature_access_page.dart';
 import '../../rental/pages/rental_management_page.dart';
+import '../../rental/pages/rental_reservations_page.dart';
 
 class PartnerManagementHomePage extends ConsumerWidget {
   const PartnerManagementHomePage({super.key});
@@ -291,6 +292,34 @@ class _PartnerManagementBody extends StatelessWidget {
           ),
         ];
       case 'vehicle_rental':
+        if (partner.role == 'operator') {
+          return [
+            _ManagementAction(
+              icon: Icons.directions_car_filled_outlined,
+              title: 'Operação da frota',
+              description: 'Disponibilidade, veículos e vistoria operacional.',
+              onTap: () => _open(
+                context,
+                const RentalManagementPage(operatorMode: true),
+              ),
+              featureKey: 'rental_management',
+            ),
+            _ManagementAction(
+              icon: Icons.assignment_outlined,
+              title: 'Reservas de locação',
+              description: 'Criar, acompanhar e finalizar reservas.',
+              onTap: () => _open(context, const RentalReservationsPage()),
+              featureKey: 'rental_management',
+            ),
+            _ManagementAction(
+              icon: Icons.point_of_sale_outlined,
+              title: 'Caixa e movimentações',
+              description: 'Abrir e fechar o caixa do turno.',
+              onTap: () => _open(context, const PartnerCashReportPage()),
+              featureKey: 'cash_management_basic',
+            ),
+          ];
+        }
         return [
           _ManagementAction(
             icon: Icons.dashboard_outlined,
@@ -323,8 +352,7 @@ class _PartnerManagementBody extends StatelessWidget {
           _ManagementAction(
             icon: Icons.group_outlined,
             title: 'Usuários',
-            description:
-                'Operadores autorizados para os serviços desta conta.',
+            description: 'Operadores autorizados para os serviços desta conta.',
             onTap: () => _open(context, const PartnerUsersPage()),
             featureKey: 'team_management',
           ),

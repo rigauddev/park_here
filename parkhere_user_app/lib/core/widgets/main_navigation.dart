@@ -907,7 +907,11 @@ class _WebMenu extends ConsumerWidget {
             if (!isAdmin &&
                 isPartner &&
                 !isGuide &&
-                serviceUnits.any((unit) => unit.serviceType == 'parking') &&
+                serviceUnits.any(
+                  (unit) =>
+                      unit.serviceType == 'parking' ||
+                      unit.serviceType == 'vehicle_rental',
+                ) &&
                 (isPartnerOwner || (isOperator && operatorHasShiftToday)))
               _MenuCategory(
                 expanded: expanded,
@@ -1240,7 +1244,11 @@ class _MobileDrawer extends StatelessWidget {
                       ..._mobileOperationalItems(serviceUnits, onSelected),
                   ],
                 ),
-                if (serviceUnits.any((unit) => unit.serviceType == 'parking') &&
+                if (serviceUnits.any(
+                      (unit) =>
+                          unit.serviceType == 'parking' ||
+                          unit.serviceType == 'vehicle_rental',
+                    ) &&
                     (isPartnerOwner || (isOperator && operatorHasShiftToday)))
                   _MobileMenuGroup(
                     title: 'Conveniência',
